@@ -98,6 +98,74 @@
         { "expr": "medusa_chunk_processed{network=~\"$network\"}", "legendFormat": "{{network}} {{phase}} processed" },
         { "expr": "medusa_chunk_queued{network=~\"$network\"}", "legendFormat": "{{network}} {{phase}} queued" }
       ]
+    },
+    {
+      "title": "Lua Heap Size",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 50 },
+      "targets": [{
+        "expr": "medusa_lua_memory_kb",
+        "legendFormat": "Heap (KB)"
+      }],
+      "fieldConfig": { "defaults": { "unit": "deckbytes", "custom": { "fillOpacity": 15 } } }
+    },
+    {
+      "title": "Heap Growth Between Snapshots",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 50 },
+      "targets": [{
+        "expr": "medusa_lua_memory_delta_kb",
+        "legendFormat": "Delta (KB)"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "deckbytes",
+          "custom": { "fillOpacity": 15 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 500 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      }
+    },
+    {
+      "title": "Per-Tick Memory Allocation",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 58 },
+      "targets": [{
+        "expr": "medusa_tick_memory_after_kb - medusa_tick_memory_before_kb",
+        "legendFormat": "Tick Alloc (KB)"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "deckbytes",
+          "custom": { "fillOpacity": 15 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      }
+    },
+    {
+      "title": "Tick Memory Snapshot",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 58 },
+      "targets": [
+        { "expr": "medusa_tick_memory_before_kb", "legendFormat": "Before Tick (KB)" },
+        { "expr": "medusa_tick_memory_after_kb", "legendFormat": "After Tick (KB)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "deckbytes" } }
     }
   ],
   "refresh": "10s",
