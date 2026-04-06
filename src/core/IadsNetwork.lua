@@ -1317,6 +1317,7 @@ function Medusa.Core.IadsNetwork:tick()
 	local now = GetTime()
 	local hpt = Medusa.hpTimer
 	local t0 = hpt()
+	local memBefore = collectgarbage("count")
 
 	if self._tickCounter == 1 then
 		self._lastScanTime = now
@@ -1373,10 +1374,14 @@ function Medusa.Core.IadsNetwork:tick()
 	end
 
 	if (self._tickCounter % 4) ~= 0 then
+		MetricsService.set("medusa_tick_memory_before_kb", memBefore)
+		MetricsService.set("medusa_tick_memory_after_kb", collectgarbage("count"))
 		MetricsService.observe("medusa_tick_duration_seconds", hpt() - t0)
 		return
 	end
 	if (now - self._lastScanTime) < 1 then
+		MetricsService.set("medusa_tick_memory_before_kb", memBefore)
+		MetricsService.set("medusa_tick_memory_after_kb", collectgarbage("count"))
 		MetricsService.observe("medusa_tick_duration_seconds", hpt() - t0)
 		return
 	end
@@ -1385,6 +1390,8 @@ function Medusa.Core.IadsNetwork:tick()
 
 	self:_logAssetSummary(now)
 
+	MetricsService.set("medusa_tick_memory_before_kb", memBefore)
+	MetricsService.set("medusa_tick_memory_after_kb", collectgarbage("count"))
 	MetricsService.observe("medusa_tick_duration_seconds", hpt() - t0)
 end
 
