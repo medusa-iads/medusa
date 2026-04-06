@@ -96,4 +96,3 @@ function TestAirspaceZoneStore:test_count_tracks_adds_and_removes()
 	self.store:remove("Zone-Bravo")
 	lu.assertEquals(self.store:count(), 0)
 end
-

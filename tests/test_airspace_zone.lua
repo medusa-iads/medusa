@@ -34,4 +34,3 @@ function TestAirspaceZone:test_missing_network_id_errors()
 		Medusa.Entities.AirspaceZone.new({ ZoneName = "Zone Alpha" })
 	end)
 end
-

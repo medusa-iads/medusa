@@ -32,4 +32,3 @@ function TestC2Node:test_missing_network_id_errors()
 		Medusa.Entities.C2Node.new({})
 	end)
 end
-

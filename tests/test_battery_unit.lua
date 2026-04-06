@@ -22,4 +22,3 @@ function TestBatteryUnit:test_missing_unit_id_errors()
 		Medusa.Entities.Battery.newUnit({})
 	end)
 end
-

@@ -38,4 +38,3 @@ function TestAirbase:test_missing_airbase_name_errors()
 		Medusa.Entities.Airbase.new({ NetworkId = "net-1" })
 	end)
 end
-

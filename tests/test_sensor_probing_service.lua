@@ -201,4 +201,3 @@ function TestSensorProbingService:test_applyBatteryRanges_takes_max_across_units
 end
 
 -- getCapabilities tests
-

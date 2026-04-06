@@ -119,4 +119,3 @@ function TestSensorUnitStore:test_count_tracks_adds_and_removes()
 	self.store:remove("s-2")
 	lu.assertEquals(self.store:count(), 0)
 end
-

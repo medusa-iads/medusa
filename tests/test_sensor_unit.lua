@@ -60,4 +60,3 @@ function TestSensorUnit:test_missing_unit_name_errors()
 		Medusa.Entities.SensorUnit.new({ NetworkId = "net-1", UnitId = 1 })
 	end)
 end
-
