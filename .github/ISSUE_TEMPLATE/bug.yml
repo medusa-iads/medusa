@@ -1,0 +1,33 @@
+name: Bug Report
+description: Something isn't working right
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug and what you expected instead.
+    validations:
+      required: true
+
+  - type: input
+    id: medusa-version
+    attributes:
+      label: Medusa version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: dcs-version
+    attributes:
+      label: DCS World version
+      placeholder: "2.9.12.1234"
+
+  - type: textarea
+    id: dcs-log
+    attributes:
+      label: Log file
+      description: Attach your dcs.log or relevant Medusa logs as a plaintext file. Please remove all personal information like usernames in directory paths before doing so.
+    validations:
+      required: true
