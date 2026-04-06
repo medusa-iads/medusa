@@ -1,0 +1,6 @@
+groups:
+  - name: medusa_liveness
+    interval: 3s
+    rules:
+      - record: medusa:live
+        expr: medusa_heartbeat_epoch and (time() - medusa_heartbeat_epoch) < 30

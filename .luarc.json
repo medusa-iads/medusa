@@ -1,0 +1,3 @@
+{
+	"workspace.library": ["./dependencies/harness-luals.lua"]
+}

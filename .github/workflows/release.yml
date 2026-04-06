@@ -1,0 +1,209 @@
+name: Medusa Release
+
+on:
+    push:
+        tags:
+            - 'v*.*.*'
+
+env:
+    ARTIFACT_NAME: medusa-thin.lua
+    BUNDLED_ARTIFACT_NAME: medusa.lua
+    BUILD_DIR: ./dist
+
+permissions: {}
+
+jobs:
+    release-guard:
+        name: Guard - Tag points to main
+        runs-on: ubuntu-24.04
+        permissions:
+            contents: read
+        outputs:
+            on_main: ${{ steps.check.outputs.on_main }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              with:
+                  fetch-depth: 0
+            - name: Determine if tag commit is on main
+              id: check
+              shell: bash
+              run: |
+                  git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
+                  if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+                    echo "on_main=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "on_main=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+    validate:
+        name: Validate release
+        runs-on: ubuntu-24.04
+        needs: release-guard
+        if: needs.release-guard.outputs.on_main == 'true'
+        permissions:
+            contents: read
+        steps:
+            - name: Checkout
+              uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              with:
+                  fetch-depth: 0
+
+            - name: Setup Python
+              uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+
+            - name: Setup Task
+              uses: arduino/setup-task@e26d8975574116b0097a1161e0fe16ba75d84c1c # v1.0.3
+
+            - name: Set up Lua ${{ env.LUA_VERSION }}
+              uses: leafo/gh-actions-lua@35bcb06abec04ec87df82e08caa84d545348536e # v10
+              with:
+                luaVersion: "5.1"
+
+            - name: Verify tag matches pyproject.toml version
+              env:
+                REF_NAME: ${{ github.ref_name }}
+              shell: bash
+              run: |
+                  set -e
+                  TAG_VERSION="${REF_NAME#v}"
+                  FILE_VERSION=$(python -c "
+                  import re; from pathlib import Path
+                  m = re.search(r'version\s*=\s*\"(\d+\.\d+\.\d+)\"', Path('pyproject.toml').read_text())
+                  print(m.group(1) if m else '')
+                  ")
+                  if [ "$TAG_VERSION" != "$FILE_VERSION" ]; then
+                    echo "::error::Tag version ($TAG_VERSION) does not match pyproject.toml ($FILE_VERSION)"
+                    exit 1
+                  fi
+                  echo "Version match: $TAG_VERSION"
+
+            - name: Verify changelog section is non-empty
+              env:
+                REF_NAME: ${{ github.ref_name }}
+              shell: bash
+              run: |
+                  set -e
+                  VERSION="${REF_NAME#v}"
+                  SECTION=$(python -c "
+                  import re; from pathlib import Path
+                  content = Path('CHANGELOG.md').read_text()
+                  version = '$VERSION'
+                  pat = re.compile(rf'(?ms)^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)')
+                  m = pat.search(content)
+                  body = m.group(1).strip() if m else ''
+                  has_entries = bool(re.search(r'^\s*[-*]', body, re.MULTILINE))
+                  print('yes' if has_entries else 'no')
+                  ")
+                  if [ "$SECTION" != "yes" ]; then
+                    echo "::error::CHANGELOG.md has no entries for version $VERSION"
+                    exit 1
+                  fi
+                  echo "Changelog section for $VERSION is non-empty"
+
+            - name: Format check
+              run: task format:ci
+
+            - name: Test
+              run: task test
+
+            - name: Build
+              run: task build
+
+            - name: Syntax check
+              run: |
+                luac -p '${{ env.BUILD_DIR }}/${{ env.ARTIFACT_NAME }}'
+                luac -p '${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}'
+
+            - name: Verify version stamped
+              run: |
+                if grep -q '{{VERSION}}' '${{ env.BUILD_DIR }}/${{ env.ARTIFACT_NAME }}'; then
+                  echo "::error::{{VERSION}} placeholder found in ${{ env.ARTIFACT_NAME }}"
+                  exit 1
+                fi
+                if grep -q '{{VERSION}}' '${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}'; then
+                  echo "::error::{{VERSION}} placeholder found in ${{ env.BUNDLED_ARTIFACT_NAME }}"
+                  exit 1
+                fi
+
+            - name: Lint
+              uses: YoloWingPixie/selene-lua-linter-action@24ecf180fd5bb4d3b40b4296de61b32179cb79d1 # v1
+              with:
+                config-path: 'selene.toml'
+                lint-path: '${{ env.BUILD_DIR }}/${{ env.ARTIFACT_NAME }}'
+                report-as-annotations: 'true'
+                working-directory: '.'
+
+    release:
+        name: Release on main tags only
+        runs-on: ubuntu-24.04
+        needs: validate
+        permissions:
+            contents: write
+        steps:
+            - name: Checkout
+              id: checkout
+              uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              with:
+                  fetch-depth: 0
+
+            - name: Setup Python
+              id: setup-python
+              uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+
+            - name: Setup Task
+              id: setup-task
+              uses: arduino/setup-task@e26d8975574116b0097a1161e0fe16ba75d84c1c # v1.0.3
+
+            - name: Build
+              id: build
+              run: task build
+
+            - name: Generate checksums
+              id: checksums
+              run: |
+                  cd '${{ env.BUILD_DIR }}'
+                  sha256sum '${{ env.ARTIFACT_NAME }}' '${{ env.BUNDLED_ARTIFACT_NAME }}' > SHA256SUMS.txt
+
+            - name: Extract release notes
+              id: notes
+              env:
+                REF_NAME: ${{ github.ref_name }}
+              shell: bash
+              run: |
+                  python ./scripts/build/extract_changelog_section.py "$REF_NAME" CHANGELOG.md RELEASE_NOTES.md
+
+            - name: Create Github Release
+              uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
+              with:
+                name: 'Release ${{ github.ref_name }}'
+                make_latest: true
+                prerelease: false
+                draft: false
+                body_path: RELEASE_NOTES.md
+                fail_on_unmatched_files: true
+                files: |
+                    ${{ env.BUILD_DIR }}/${{ env.ARTIFACT_NAME }}
+                    ${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}
+                    ${{ env.BUILD_DIR }}/SHA256SUMS.txt
+                    LICENSE
+
+            - name: Upload to R2 (versioned)
+              uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65 # v3.14.1
+              with:
+                apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                command: |
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.ARTIFACT_NAME }} --file=${{ env.BUILD_DIR }}/${{ env.ARTIFACT_NAME }}
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.BUNDLED_ARTIFACT_NAME }} --file=${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/SHA256SUMS.txt --file=${{ env.BUILD_DIR }}/SHA256SUMS.txt
+
+            - name: Upload to R2 (latest)
+              uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65 # v3.14.1
+              with:
+                apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                command: |
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.ARTIFACT_NAME }} --file=${{ env.BUILD_DIR }}/${{ env.ARTIFACT_NAME }}
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.BUNDLED_ARTIFACT_NAME }} --file=${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/SHA256SUMS.txt --file=${{ env.BUILD_DIR }}/SHA256SUMS.txt

@@ -1,0 +1,8 @@
+:8080
+
+root * /srv
+file_server
+
+handle /api/* {
+	reverse_proxy medusa-prometheus:9090
+}

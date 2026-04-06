@@ -1,0 +1,9 @@
+std = "tools/selene/dcs-world+tools/selene/harness"
+
+[lints]
+empty_if = "allow"
+mixed_table = "allow"
+# Shadowing is a false positive from the dist concatenation build.
+# Each source file defines its own `local C = Medusa.Constants` inside
+# a do...end block, but selene sees the concatenated dist as one chunk.
+shadowing = "allow"

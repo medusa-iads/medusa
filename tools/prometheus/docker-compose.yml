@@ -1,0 +1,101 @@
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: medusa-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: medusa-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      # Mount DCS Saved Games Logs directory — the .prom file is written here by Medusa
+      # Adjust the path if your DCS install uses a different folder (e.g. DCS instead of DCS.openbeta)
+      - ${DCS_SAVED_GAMES:-C:/Users/${USERNAME}/Saved Games/DCS.openbeta}/Logs:/textfile:ro
+    command:
+      - "--collector.textfile.directory=/textfile"
+      - "--no-collector.arp"
+      - "--no-collector.bcache"
+      - "--no-collector.bonding"
+      - "--no-collector.conntrack"
+      - "--no-collector.cpu"
+      - "--no-collector.cpufreq"
+      - "--no-collector.diskstats"
+      - "--no-collector.edac"
+      - "--no-collector.entropy"
+      - "--no-collector.fibrechannel"
+      - "--no-collector.filefd"
+      - "--no-collector.filesystem"
+      - "--no-collector.hwmon"
+      - "--no-collector.infiniband"
+      - "--no-collector.ipvs"
+      - "--no-collector.loadavg"
+      - "--no-collector.mdadm"
+      - "--no-collector.meminfo"
+      - "--no-collector.netclass"
+      - "--no-collector.netdev"
+      - "--no-collector.netstat"
+      - "--no-collector.nfs"
+      - "--no-collector.nfsd"
+      - "--no-collector.nvme"
+      - "--no-collector.os"
+      - "--no-collector.powersupplyclass"
+      - "--no-collector.pressure"
+      - "--no-collector.rapl"
+      - "--no-collector.schedstat"
+      - "--no-collector.sockstat"
+      - "--no-collector.softnet"
+      - "--no-collector.stat"
+      - "--no-collector.tapestats"
+      - "--no-collector.thermal_zone"
+      - "--no-collector.time"
+      - "--no-collector.timex"
+      - "--no-collector.udp_queues"
+      - "--no-collector.uname"
+      - "--no-collector.vmstat"
+      - "--no-collector.xfs"
+      - "--no-collector.zfs"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: medusa-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=medusa
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  tactical:
+    image: caddy:alpine
+    container_name: medusa-tactical
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./tactical:/srv:ro
+      - ./tactical/Caddyfile:/etc/caddy/Caddyfile:ro
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus-data:
+  grafana-data:

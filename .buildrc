@@ -1,0 +1,9 @@
+{
+  "src_dir": "src",
+  "dist_dir": "dist",
+  "output": "medusa-thin.lua",
+  "prepend": ["src/_header.lua"],
+  "module_roots": ["src"],
+  "strip_requires": true,
+  "exclude_globs": []
+}

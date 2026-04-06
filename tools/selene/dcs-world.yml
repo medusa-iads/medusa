@@ -1,0 +1,3625 @@
+base: lua51
+name: dcs-world
+globals:
+  DCS.getMissionName:
+    args: []
+  DCS.isServer:
+    args: []
+  AI.Option:
+    property: new-fields
+  AI.Option.*:
+    property: full-write
+  AI.Option.*.*:
+    property: full-write
+  AI.Task:
+    property: new-fields
+  AI.Task.*:
+    property: full-write
+  AI.Task.*.*:
+    property: full-write
+  AI.Skill:
+    property: read-only
+  Airbase.getByName:
+    args:
+    - type: string
+  Airbase.getCommunicator:
+    args:
+    - type:
+        display: Airbase
+  Airbase.getCountry:
+    args:
+    - type:
+        display: Airbase
+  Airbase.getDescByName:
+    args:
+    - type: string
+  Airbase.getForcesName:
+    args:
+    - type:
+        display: Airbase
+  Airbase.getLife:
+    args:
+    - type:
+        display: Airbase
+  Airbase.getNearest:
+    args:
+    - type:
+        display: Vec3
+  Airbase.getWorldID:
+    args:
+    - type:
+        display: Airbase
+  Airbase.getCallsign:
+    method: true
+    args: []
+  Airbase.getUnit:
+    method: true
+    args:
+    - type: number
+  Airbase.getID:
+    method: true
+    args: []
+  Airbase.getCategory:
+    method: true
+    args: []
+  Airbase.getCategoryEx:
+    method: true
+    args: []
+  Airbase.getParking:
+    method: true
+    args:
+    - type: bool
+      required: false
+  Airbase.getRunways:
+    method: true
+    args: []
+  Airbase.getDispatcherTowerPos:
+    method: true
+    args: []
+  Airbase.getRadioSilentMode:
+    method: true
+    args: []
+  Airbase.setRadioSilentMode:
+    method: true
+    args:
+    - type: bool
+  Airbase.autoCapture:
+    method: true
+    args:
+    - type: bool
+  Airbase.autoCaptureIsOn:
+    method: true
+    args: []
+  Airbase.setCoalition:
+    method: true
+    args:
+    - type:
+        display: coalition.side
+  Airbase.getWarehouse:
+    method: true
+    args: []
+  Airbase.getName:
+    method: true
+    args: []
+  Airbase.getTypeName:
+    method: true
+    args: []
+  Airbase.getPoint:
+    method: true
+    args: []
+  Airbase.getPosition:
+    method: true
+    args: []
+  Airbase.getVelocity:
+    method: true
+    args: []
+  Airbase.getDesc:
+    method: true
+    args: []
+  Airbase.getCoalition:
+    method: true
+    args: []
+  Controller.setTask:
+    method: true
+    args:
+    - type:
+        display: ControllerTask
+  Controller.resetTask:
+    method: true
+    args: []
+  Controller.pushTask:
+    method: true
+    args:
+    - type:
+        display: ControllerTask
+  Controller.popTask:
+    method: true
+    args: []
+  Controller.hasTask:
+    method: true
+    args: []
+  Controller.setCommand:
+    method: true
+    args:
+    - type:
+        display: ControllerCommand
+  Controller.setOption:
+    method: true
+    args:
+    - type:
+        display: AIOptionId
+    - type:
+        display: number | boolean | string | FormationType
+  Controller.setOnOff:
+    method: true
+    args:
+    - type: bool
+  Controller.setAltitude:
+    method: true
+    args:
+    - type: number
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  Controller.setSpeed:
+    method: true
+    args:
+    - type: number
+    - type: bool
+      required: false
+  Controller.knowTarget:
+    method: true
+    args:
+    - type:
+        display: Object
+    - type: bool
+    - type: bool
+  Controller.isTargetDetected:
+    method: true
+    args:
+    - type:
+        display: Object
+    - type:
+        display: Controller.Detection
+      required: false
+    - type:
+        display: Controller.Detection
+      required: false
+    - type:
+        display: Controller.Detection
+      required: false
+  Controller.getDetectedTargets:
+    method: true
+    args:
+    - type:
+        display: Controller.Detection
+      required: false
+    - type:
+        display: Controller.Detection
+      required: false
+    - type:
+        display: Controller.Detection
+      required: false
+  Disposition.DriftRoute:
+    args:
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3
+    - type:
+        display: coalition.side
+  Disposition.getElipsSideZones:
+    args:
+    - type: number
+    - type: number
+    - type: table
+    - type: number
+    - type: number
+  Disposition.getPointHeight:
+    args:
+    - type:
+        display: Vec3
+  Disposition.getPointWater:
+    args:
+    - type:
+        display: Vec3
+    - type: number
+    - type: number
+  Disposition.getRandom:
+    args:
+    - type: bool
+    - type: number
+    - type: number
+  Disposition.getRandomIn:
+    args: []
+  Disposition.getRandomSort:
+    args:
+    - type: table
+  Disposition.getRouteAwayWater:
+    args:
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3
+    - type: number
+    - type: number
+  Disposition.getRunwayPerimetr:
+    args:
+    - type: table
+  Disposition.getSimpleZones:
+    args:
+    - type:
+        display: Vec3
+    - type: number
+    - type: number
+    - type: number
+  Disposition.getThresholdFourZones:
+    args:
+    - type: number
+    - type: table
+  Disposition.setMarkerPoint:
+    args: []
+  Group.getByName:
+    args:
+    - type: string
+  Group.isExist:
+    method: true
+    args: []
+  Group.activate:
+    method: true
+    args: []
+  Group.destroy:
+    method: true
+    args: []
+  Group.getCategory:
+    method: true
+    args: []
+  Group.getCategoryEx:
+    method: true
+    args: []
+  Group.getCoalition:
+    method: true
+    args: []
+  Group.getName:
+    method: true
+    args: []
+  Group.getID:
+    method: true
+    args: []
+  Group.getUnit:
+    method: true
+    args:
+    - type: number
+  Group.getUnits:
+    method: true
+    args: []
+  Group.getSize:
+    method: true
+    args: []
+  Group.getInitialSize:
+    method: true
+    args: []
+  Group.getController:
+    method: true
+    args: []
+  Group.enableEmission:
+    method: true
+    args:
+    - type: bool
+  Group.embarking:
+    method: true
+    args: []
+  Group.markGroup:
+    method: true
+    args:
+    - type:
+        display: Vec3
+    - type: string
+      required: false
+  Object.isExist:
+    method: true
+    args: []
+  Object.destroy:
+    method: true
+    args: []
+  Object.getCategory:
+    method: true
+    args: []
+  Object.getTypeName:
+    method: true
+    args: []
+  Object.hasAttribute:
+    method: true
+    args:
+    - type:
+        display: string | Attributes
+  Object.getName:
+    method: true
+    args: []
+  Object.getPoint:
+    method: true
+    args: []
+  Object.getPosition:
+    method: true
+    args: []
+  Object.getVelocity:
+    method: true
+    args: []
+  Object.inAir:
+    method: true
+    args: []
+  Object.getAttributes:
+    method: true
+    args: []
+  Object.cancelChoosingCargo:
+    method: true
+    args: []
+  SceneryObject.getDescByName:
+    args:
+    - type: string
+  SceneryObject.getLife:
+    method: true
+    args: []
+  SceneryObject.getDesc:
+    method: true
+    args: []
+  Spot.createInfraRed:
+    args:
+    - type:
+        display: Object
+    - type:
+        display: Vec3 | nil
+      required: false
+    - type:
+        display: Vec3
+  Spot.createLaser:
+    args:
+    - type:
+        display: Object
+    - type:
+        display: Vec3 | nil
+      required: false
+    - type:
+        display: Vec3
+    - type: number
+      required: false
+  Spot.destroy:
+    method: true
+    args: []
+  Spot.getCategory:
+    method: true
+    args: []
+  Spot.getCategoryEx:
+    method: true
+    args: []
+  Spot.getPoint:
+    method: true
+    args: []
+  Spot.setPoint:
+    method: true
+    args:
+    - type:
+        display: Vec3
+  Spot.getCode:
+    method: true
+    args: []
+  Spot.setCode:
+    method: true
+    args:
+    - type: number
+  StaticObject.getByName:
+    args:
+    - type: string
+  StaticObject.getDescByName:
+    args:
+    - type: string
+  StaticObject.getLife:
+    method: true
+    args: []
+  StaticObject.getDesc:
+    method: true
+    args: []
+  StaticObject.getID:
+    method: true
+    args: []
+  StaticObject.getCoalition:
+    method: true
+    args: []
+  StaticObject.getCountry:
+    method: true
+    args: []
+  StaticObject.getForcesName:
+    method: true
+    args: []
+  StaticObject.getDrawArgumentValue:
+    method: true
+    args:
+    - type: number
+  StaticObject.chooseCargo:
+    method: true
+    args: []
+  StaticObject.getCargoDisplayName:
+    method: true
+    args: []
+  StaticObject.getCargoWeight:
+    method: true
+    args: []
+  Unit.getByName:
+    args:
+    - type: string
+  Unit.getDescByName:
+    args:
+    - type: string
+  Unit.isActive:
+    method: true
+    args: []
+  Unit.getPlayerName:
+    method: true
+    args: []
+  Unit.getID:
+    method: true
+    args: []
+  Unit.getNumber:
+    method: true
+    args: []
+  Unit.getCategoryEx:
+    method: true
+    args: []
+  Unit.getObjectID:
+    method: true
+    args: []
+  Unit.getController:
+    method: true
+    args: []
+  Unit.getGroup:
+    method: true
+    args: []
+  Unit.getCallsign:
+    method: true
+    args: []
+  Unit.getLife:
+    method: true
+    args: []
+  Unit.getLife0:
+    method: true
+    args: []
+  Unit.getFuel:
+    method: true
+    args: []
+  Unit.getAmmo:
+    method: true
+    args: []
+  Unit.getSensors:
+    method: true
+    args: []
+  Unit.hasSensors:
+    method: true
+    args:
+    - type:
+        display: Unit.SensorType
+    - type: number
+  Unit.getRadar:
+    method: true
+    args: []
+  Unit.getDrawArgumentValue:
+    method: true
+    args:
+    - type: number
+  Unit.getNearestCargos:
+    method: true
+    args: []
+  Unit.enableEmission:
+    method: true
+    args:
+    - type: bool
+  Unit.getDescentCapacity:
+    method: true
+    args: []
+  Unit.getDesc:
+    method: true
+    args: []
+  Unit.getAirbase:
+    method: true
+    args: []
+  Unit.canShipLanding:
+    method: true
+    args: []
+  Unit.checkOpenRamp:
+    method: true
+    args: []
+  Unit.disembarking:
+    method: true
+    args: []
+  Unit.getCargosOnBoard:
+    method: true
+    args: []
+  Unit.getCoalition:
+    method: true
+    args: []
+  Unit.getCommunicator:
+    method: true
+    args: []
+  Unit.getCountry:
+    method: true
+    args: []
+  Unit.getDescentOnBoard:
+    method: true
+    args: []
+  Unit.getForcesName:
+    method: true
+    args: []
+  Unit.getFuelLowState:
+    method: true
+    args: []
+  Unit.getNearestCargosForAircraft:
+    method: true
+    args: []
+  Unit.getSeats:
+    method: true
+    args: []
+  Unit.hasCarrier:
+    method: true
+    args: []
+  Unit.LoadOnBoard:
+    method: true
+    args: []
+  Unit.markDisembarkingTask:
+    method: true
+    args: []
+  Unit.OldCarrierMenuShow:
+    method: true
+    args: []
+  Unit.openRamp:
+    method: true
+    args: []
+  Unit.UnloadCargo:
+    method: true
+    args: []
+  Unit.vtolableLA:
+    method: true
+    args: []
+  VoiceChat.RadioHandlers:
+    property: read-only
+  VoiceChat.RadioHandlersSingletons:
+    property: read-only
+  VoiceChat.Side:
+    property: read-only
+  VoiceChat.RoomType:
+    property: read-only
+  VoiceChat.createRoom:
+    args:
+    - type: string
+    - type:
+        display: VoiceChat.Side
+    - type:
+        display: VoiceChat.RoomType
+  VoiceChat.addUser:
+    args:
+    - type: any
+      required: false
+  VoiceChat.changeSlot:
+    args:
+    - type: any
+      required: false
+  VoiceChat.changeVoiceChatOption:
+    args:
+    - type: any
+      required: false
+  VoiceChat.deleteRoom:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getAccessPeersList:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getActiveRoom:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getCurrentTransmittingRadio:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getEncryptionEnabled:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getIntercomData:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getIntercomIndication:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getIntercomMicMode:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getIntercomVolume:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getIsExternallyControlled:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getLastTransmittingRadio:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getMicMode:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getOptions:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getPeerAudioState:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getPeersList:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioChannel:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioEncryptionKey:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioFrequency:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioFrequencyByUnits:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioGuardReceiverFrequency:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioGuardReceiverModulation:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioGuardReceiverOnOff:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioIndication:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioList:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioModulation:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioOnOff:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioPower:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioSquelchOnOff:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRadioVolume:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getRooms:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getSide:
+    args:
+    - type: any
+      required: false
+  VoiceChat.getVoiceChatMode:
+    args:
+    - type: any
+      required: false
+  VoiceChat.isInUnit:
+    args:
+    - type: any
+      required: false
+  VoiceChat.isIntercom:
+    args:
+    - type: any
+      required: false
+  VoiceChat.isRadioAvailableForTransmission:
+    args:
+    - type: any
+      required: false
+  VoiceChat.leaveRoom:
+    args:
+    - type: any
+      required: false
+  VoiceChat.onPeerConnect:
+    args:
+    - type: any
+      required: false
+  VoiceChat.onPeerDisconnect:
+    args:
+    - type: any
+      required: false
+  VoiceChat.onProcessState:
+    args:
+    - type: any
+      required: false
+  VoiceChat.onRtcConnectionChange:
+    args:
+    - type: any
+      required: false
+  VoiceChat.onRtcFailure:
+    args:
+    - type: any
+      required: false
+  VoiceChat.onRtcSignalingChange:
+    args:
+    - type: any
+      required: false
+  VoiceChat.peerVoiceEnable:
+    args:
+    - type: any
+      required: false
+  VoiceChat.radioEncryptionOnOff:
+    args:
+    - type: any
+      required: false
+  VoiceChat.reconnect:
+    args:
+    - type: any
+      required: false
+  VoiceChat.removeUser:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setActiveRoom:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setEncryptionEnabled:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setIntercomMicMode:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setIsExternallyControlled:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setMicMode:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setOptions:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setRadioChannel:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setRadioEncryptionKey:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setRadioFrequency:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setRadioGuardReceiverFrequency:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setRadioGuardReceiverModulation:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setRadioGuardReceiverOnOff:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setRadioModulation:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setRadioOnOff:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setRadioPower:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setRadioSquelchOnOff:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setRadioVolume:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setTrackAudioVolume:
+    args:
+    - type: any
+      required: false
+  VoiceChat.setVoiceChatMode:
+    args:
+    - type: any
+      required: false
+  VoiceChat.startStopTestSoundFilterOptions:
+    args:
+    - type: any
+      required: false
+  VoiceChat.startStream:
+    args:
+    - type: any
+      required: false
+  VoiceChat.startTestPeekMeter:
+    args:
+    - type: any
+      required: false
+  VoiceChat.stopStream:
+    args:
+    - type: any
+      required: false
+  VoiceChat.stopTestPeekMeter:
+    args:
+    - type: any
+      required: false
+  VoiceChat.testCallPeekMeterFunc:
+    args:
+    - type: any
+      required: false
+  VoiceChat.updateCrewVolume:
+    args:
+    - type: any
+      required: false
+  VoiceChat.updateSoundFilterParameters:
+    args:
+    - type: any
+      required: false
+  Warehouse.getByName:
+    args:
+    - type: string
+  Warehouse.getCargoAsWarehouse:
+    args:
+    - type:
+        display: StaticObject
+  Warehouse.getResourceMap:
+    args: []
+  Warehouse.addItem:
+    method: true
+    args:
+    - type:
+        display: string | table
+    - type: number
+  Warehouse.getItemCount:
+    method: true
+    args:
+    - type:
+        display: string | table
+  Warehouse.setItem:
+    method: true
+    args:
+    - type:
+        display: string | table
+    - type: number
+  Warehouse.removeItem:
+    method: true
+    args:
+    - type:
+        display: string | table
+    - type: number
+  Warehouse.addLiquid:
+    method: true
+    args:
+    - type:
+        display: LiquidType
+    - type: number
+  Warehouse.getLiquidAmount:
+    method: true
+    args:
+    - type:
+        display: LiquidType
+  Warehouse.setLiquidAmount:
+    method: true
+    args:
+    - type:
+        display: LiquidType
+    - type: number
+  Warehouse.removeLiquid:
+    method: true
+    args:
+    - type:
+        display: LiquidType
+    - type: number
+  Warehouse.getOwner:
+    method: true
+    args: []
+  Warehouse.getInventory:
+    method: true
+    args:
+    - type:
+        display: string | table
+  Weapon.getCategory:
+    method: true
+    args: []
+  Weapon.getPoint:
+    method: true
+    args: []
+  Weapon.getVelocity:
+    method: true
+    args: []
+  Weapon.getCoalition:
+    method: true
+    args: []
+  Weapon.getName:
+    method: true
+    args: []
+  Weapon.getTypeName:
+    method: true
+    args: []
+  Weapon.getDesc:
+    method: true
+    args: []
+  Weapon.destroy:
+    method: true
+    args: []
+  Weapon.isExist:
+    method: true
+    args: []
+  Weapon.getPosition:
+    method: true
+    args: []
+  Weapon.getLauncher:
+    method: true
+    args: []
+  Weapon.getTarget:
+    method: true
+    args: []
+  Weapon.getCategoryEx:
+    method: true
+    args: []
+  Weapon.getCountry:
+    method: true
+    args: []
+  Weapon.getForcesName:
+    method: true
+    args: []
+  atmosphere.getWind:
+    args:
+    - type:
+        display: Vec3
+  atmosphere.getWindWithTurbulence:
+    args:
+    - type:
+        display: Vec3
+  atmosphere.getTemperatureAndPressure:
+    args:
+    - type:
+        display: Vec3
+  coalition.side:
+    property: read-only
+  coalition.service:
+    property: read-only
+  coalition.addGroup:
+    args:
+    - type:
+        display: coalition.side
+    - type:
+        display: country.id
+    - type:
+        display: GroupSpawnData
+  coalition.add_dyn_group:
+    args:
+    - type:
+        display: coalition.side
+    - type:
+        display: country.id
+    - type:
+        display: GroupSpawnData
+  coalition.remove_dyn_group:
+    args:
+    - type: string
+  coalition.addStaticObject:
+    args:
+    - type:
+        display: country.id
+    - type:
+        display: StaticObjectSpawnData
+  coalition.getGroups:
+    args:
+    - type:
+        display: coalition.side
+    - type:
+        display: country.id
+  coalition.getStaticObjects:
+    args:
+    - type:
+        display: coalition.side
+    - type:
+        display: country.id
+  coalition.getAirbases:
+    args:
+    - type:
+        display: coalition.side
+    - type:
+        display: country.id
+  coalition.getPlayers:
+    args:
+    - type:
+        display: coalition.side
+  coalition.getServiceProviders:
+    args:
+    - type:
+        display: coalition.side
+    - type:
+        display: coalition.service
+  coalition.addRefPoint:
+    args:
+    - type:
+        display: coalition.side
+    - type:
+        display: RefPoint
+  coalition.getRefPoints:
+    args:
+    - type:
+        display: coalition.side
+  coalition.getMainRefPoint:
+    args:
+    - type:
+        display: coalition.side
+  coalition.getCountryCoalition:
+    args:
+    - type:
+        display: country.id
+  coalition.checkChooseCargo:
+    args:
+    - type:
+        display: coalition.side
+    - type: number
+  coalition.checkDescent:
+    args:
+    - type:
+        display: coalition.side
+    - type: number
+  coalition.getAllDescents:
+    args:
+    - type:
+        display: coalition.side
+  coalition.getDescentsOnBoard:
+    args:
+    - type: number
+  coord.LLtoLO:
+    args:
+    - type:
+        display: number | LatLon
+    - type: number
+      required: false
+  coord.LOtoLL:
+    args:
+    - type: number
+    - type: number
+  coord.LLtoMGRS:
+    args:
+    - type:
+        display: number | LatLon
+    - type: number
+  coord.MGRStoLL:
+    args:
+    - type:
+        display: MGRS
+  dcs.UNIT_NAME:
+    property: read-only
+  dcs.UNIT_TYPE:
+    property: read-only
+  dcs.UNIT_HEADING:
+    property: read-only
+  dcs.UNIT_CATEGORY:
+    property: read-only
+  dcs.UNIT_GROUPNAME:
+    property: read-only
+  dcs.UNIT_GROUPID:
+    property: read-only
+  dcs.UNIT_CALLSIGN:
+    property: read-only
+  dcs.UNIT_HIDDEN:
+    property: read-only
+  dcs.UNIT_COALITION:
+    property: read-only
+  dcs.UNIT_COUNTRY_ID:
+    property: read-only
+  dcs.UNIT_TASK:
+    property: read-only
+  dcs.UNIT_PLAYER_NAME:
+    property: read-only
+  dcs.UNIT_ROLE:
+    property: read-only
+  dcs.UNIT_INVISIBLE_MAP_ICON:
+    property: read-only
+  dcs.getCurrentMission:
+    args: []
+  dcs.setPause:
+    args:
+    - type: bool
+  dcs.getPause:
+    args: []
+  dcs.stopMission:
+    args: []
+  dcs.exitProcess:
+    args: []
+  dcs.isMultiplayer:
+    args: []
+  dcs.isServer:
+    args: []
+  dcs.getModelTime:
+    args: []
+  dcs.getRealTime:
+    args: []
+  dcs.getMissionOptions:
+    args: []
+  dcs.getAvailableCoalitions:
+    args: []
+  dcs.getAvailableSlots:
+    args:
+    - type:
+        display: number | string
+  dcs.getAvailableSlotsAll:
+    args: []
+  env.mission:
+    property: new-fields
+  env.mission.*:
+    property: full-write
+  env.mission.*.*:
+    property: full-write
+  env.warehouses:
+    property: new-fields
+  env.warehouses.*:
+    property: full-write
+  env.warehouses.*.*:
+    property: full-write
+  env.info:
+    args:
+    - type: string
+    - type: bool
+      required: false
+  env.warning:
+    args:
+    - type: string
+    - type: bool
+      required: false
+  env.error:
+    args:
+    - type: string
+    - type: bool
+      required: false
+  env.setErrorMessageBoxEnabled:
+    args:
+    - type: bool
+  env.getValueDictByKey:
+    args:
+    - type: string
+  env.showTraining:
+    args: []
+  land.getHeight:
+    args:
+    - type:
+        display: Vec2
+  land.getSurfaceHeightWithSeabed:
+    args:
+    - type:
+        display: Vec2
+  land.getSurfaceType:
+    args:
+    - type:
+        display: Vec2
+  land.isVisible:
+    args:
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3
+  land.getIP:
+    args:
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3
+    - type: number
+  land.profile:
+    args:
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3
+  land.getClosestPointOnRoads:
+    args:
+    - type: string
+    - type: number
+    - type: number
+  land.findPathOnRoads:
+    args:
+    - type: string
+    - type: number
+    - type: number
+    - type: number
+    - type: number
+  missionCommands.addCommand:
+    args:
+    - type: string
+    - type:
+        display: table | nil
+      required: false
+    - type: function
+    - type: any
+      required: false
+  missionCommands.addSubMenu:
+    args:
+    - type: string
+    - type: table
+      required: false
+  missionCommands.removeItem:
+    args:
+    - type:
+        display: table | nil
+      required: false
+  missionCommands.addCommandForCoalition:
+    args:
+    - type:
+        display: coalition.side
+    - type: string
+    - type:
+        display: table | nil
+      required: false
+    - type: function
+    - type: any
+      required: false
+  missionCommands.addSubMenuForCoalition:
+    args:
+    - type: number
+    - type: string
+    - type: table
+      required: false
+  missionCommands.removeItemForCoalition:
+    args:
+    - type: number
+    - type:
+        display: table | nil
+      required: false
+  missionCommands.addCommandForGroup:
+    args:
+    - type: number
+    - type: string
+    - type:
+        display: table | nil
+      required: false
+    - type: function
+    - type: any
+      required: false
+  missionCommands.addSubMenuForGroup:
+    args:
+    - type: number
+    - type: string
+    - type: table
+      required: false
+  missionCommands.removeItemForGroup:
+    args:
+    - type: number
+    - type:
+        display: table | nil
+      required: false
+  missionCommands.doAction:
+    args:
+    - type: table
+  net.send_chat:
+    args:
+    - type: string
+    - type: bool
+  net.send_chat_to:
+    args:
+    - type: string
+    - type: number
+    - type: number
+      required: false
+  net.get_player_list:
+    args: []
+  net.load_mission:
+    args: []
+  net.load_next_mission:
+    args: []
+  net.get_my_player_id:
+    args: []
+  net.get_server_id:
+    args: []
+  net.get_player_info:
+    args:
+    - type: number
+    - type: string
+      required: false
+  net.kick:
+    args:
+    - type: number
+    - type: string
+  net.get_stat:
+    args:
+    - type: number
+    - type: number
+  net.get_name:
+    args:
+    - type: number
+  net.get_slot:
+    args:
+    - type: number
+  net.force_player_slot:
+    args:
+    - type: number
+    - type: number
+    - type: string
+  net.lua2json:
+    args:
+    - type: any
+  net.json2lua:
+    args:
+    - type: string
+  net.dostring_in:
+    args:
+    - type: string
+    - type: string
+  net.log:
+    args:
+    - type: string
+  net.get_server_host:
+    args:
+    - type: any
+      required: false
+  net.is_loopback_address:
+    args:
+    - type: any
+      required: false
+  net.is_private_address:
+    args:
+    - type: any
+      required: false
+  net.recv_chat:
+    args:
+    - type: any
+      required: false
+  net.set_name:
+    args:
+    - type: any
+      required: false
+  net.set_slot:
+    args:
+    - type: any
+      required: false
+  net.trace:
+    args:
+    - type: any
+      required: false
+  net.CHAT_ALL:
+    property: read-only
+  net.CHAT_TEAM:
+    property: read-only
+  net.ERR_BAD_CALLSIGN:
+    property: read-only
+  net.ERR_BANNED:
+    property: read-only
+  net.ERR_CONNECT_FAILED:
+    property: read-only
+  net.ERR_DENIED_TRIAL_ONLY:
+    property: read-only
+  net.ERR_INVALID_ADDRESS:
+    property: read-only
+  net.ERR_INVALID_PASSWORD:
+    property: read-only
+  net.ERR_KICKED:
+    property: read-only
+  net.ERR_NOT_ALLOWED:
+    property: read-only
+  net.ERR_PROTOCOL_ERROR:
+    property: read-only
+  net.ERR_REFUSED:
+    property: read-only
+  net.ERR_SERVER_FULL:
+    property: read-only
+  net.ERR_TAINTED_CLIENT:
+    property: read-only
+  net.ERR_THATS_OKAY:
+    property: read-only
+  net.ERR_TIMEOUT:
+    property: read-only
+  net.ERR_WRONG_VERSION:
+    property: read-only
+  net.GAME_MODE_CONQUEST:
+    property: read-only
+  net.GAME_MODE_LAST_MAN_STANDING:
+    property: read-only
+  net.GAME_MODE_MISSION:
+    property: read-only
+  net.GAME_MODE_TEAM_DEATH_MATCH:
+    property: read-only
+  net.PS_CAR:
+    property: read-only
+  net.PS_CRASH:
+    property: read-only
+  net.PS_EJECT:
+    property: read-only
+  net.PS_EXTRA_ALLY_AAA:
+    property: read-only
+  net.PS_EXTRA_ALLY_FIGHTERS:
+    property: read-only
+  net.PS_EXTRA_ALLY_SAM:
+    property: read-only
+  net.PS_EXTRA_ALLY_TRANSPORTS:
+    property: read-only
+  net.PS_EXTRA_ALLY_TROOPS:
+    property: read-only
+  net.PS_EXTRA_ENEMY_AAA:
+    property: read-only
+  net.PS_EXTRA_ENEMY_FIGHTERS:
+    property: read-only
+  net.PS_EXTRA_ENEMY_SAM:
+    property: read-only
+  net.PS_EXTRA_ENEMY_TRANSPORTS:
+    property: read-only
+  net.PS_EXTRA_ENEMY_TROOPS:
+    property: read-only
+  net.PS_LAND:
+    property: read-only
+  net.PS_PING:
+    property: read-only
+  net.PS_PLANE:
+    property: read-only
+  net.PS_SCORE:
+    property: read-only
+  net.PS_SHIP:
+    property: read-only
+  net.RESUME_MANUAL:
+    property: read-only
+  net.RESUME_ON_LOAD:
+    property: read-only
+  net.RESUME_WITH_CLIENTS:
+    property: read-only
+  timer.getTime:
+    args: []
+  timer.getPause:
+    args: []
+  timer.getAbsTime:
+    args: []
+  timer.getTime0:
+    args: []
+  timer.scheduleFunction:
+    args:
+    - type: function
+    - type: any
+    - type: number
+  timer.removeFunction:
+    args:
+    - type: number
+  timer.setFunctionTime:
+    args:
+    - type: number
+    - type: number
+  trigger.action:
+    property: new-fields
+  trigger.action.*:
+    property: full-write
+  trigger.action.*.*:
+    property: full-write
+  trigger.action.activateGroup:
+    args:
+    - type:
+        display: Group
+  trigger.action.addOtherCommand:
+    args:
+    - type: string
+    - type: string
+    - type: number
+  trigger.action.addOtherCommandForCoalition:
+    args:
+    - type:
+        display: coalition.side
+    - type: string
+    - type: string
+    - type: string
+  trigger.action.addOtherCommandForGroup:
+    args:
+    - type: number
+    - type: string
+    - type: string
+    - type: number
+  trigger.action.arrowToAll:
+    args:
+    - type:
+        display: coalition.side
+    - type: number
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3
+    - type:
+        display: ColorRGBA
+    - type:
+        display: ColorRGBA
+    - type:
+        display: MarkupLineType
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  trigger.action.circleToAll:
+    args:
+    - type:
+        display: coalition.side
+    - type: number
+    - type:
+        display: Vec3
+    - type: number
+    - type:
+        display: ColorRGBA
+    - type:
+        display: ColorRGBA
+    - type:
+        display: MarkupLineType
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  trigger.action.ctfColorTag:
+    args:
+    - type: string
+    - type:
+        display: trigger.smokeColor
+  trigger.action.deactivateGroup:
+    args:
+    - type:
+        display: Group
+  trigger.action.effectSmokeBig:
+    args:
+    - type:
+        display: Vec3
+    - type:
+        display: BigSmokeType
+    - type: number
+    - type: string
+      required: false
+  trigger.action.effectSmokeStop:
+    args:
+    - type: string
+  trigger.action.explosion:
+    args:
+    - type:
+        display: Vec3
+    - type: number
+  trigger.action.groupContinueMoving:
+    args:
+    - type:
+        display: Group
+  trigger.action.groupStopMoving:
+    args:
+    - type:
+        display: Group
+  trigger.action.illuminationBomb:
+    args:
+    - type:
+        display: Vec3
+    - type: number
+  trigger.action.lineToAll:
+    args:
+    - type:
+        display: coalition.side
+    - type: number
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3
+    - type:
+        display: ColorRGBA
+    - type:
+        display: MarkupLineType
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  trigger.action.markToAll:
+    args:
+    - type: number
+    - type: string
+    - type:
+        display: Vec3
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  trigger.action.markToCoalition:
+    args:
+    - type: number
+    - type: string
+    - type:
+        display: Vec3
+    - type:
+        display: coalition.side
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  trigger.action.markToGroup:
+    args:
+    - type: number
+    - type: string
+    - type:
+        display: Vec3
+    - type: number
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  trigger.action.outSound:
+    args:
+    - type: string
+  trigger.action.outSoundForCoalition:
+    args:
+    - type:
+        display: coalition.side
+    - type: string
+  trigger.action.outSoundForCountry:
+    args:
+    - type:
+        display: country.id
+    - type: string
+  trigger.action.outSoundForGroup:
+    args:
+    - type: number
+    - type: string
+  trigger.action.outSoundForUnit:
+    args:
+    - type: number
+    - type: string
+  trigger.action.outText:
+    args:
+    - type: string
+    - type: number
+    - type: bool
+      required: false
+  trigger.action.outTextForCoalition:
+    args:
+    - type:
+        display: coalition.side
+    - type: string
+    - type: number
+    - type: bool
+      required: false
+  trigger.action.outTextForCountry:
+    args:
+    - type:
+        display: country.id
+    - type: string
+    - type: number
+    - type: bool
+      required: false
+  trigger.action.outTextForGroup:
+    args:
+    - type: number
+    - type: string
+    - type: number
+    - type: bool
+      required: false
+  trigger.action.outTextForUnit:
+    args:
+    - type: number
+    - type: string
+    - type: number
+    - type: bool
+      required: false
+  trigger.action.pushAITask:
+    args:
+    - type:
+        display: Group
+    - type: number
+  trigger.action.quadToAll:
+    args:
+    - type:
+        display: coalition.side
+    - type: number
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3
+    - type:
+        display: ColorRGBA
+    - type:
+        display: ColorRGBA
+    - type:
+        display: MarkupLineType
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  trigger.action.radioTransmission:
+    args:
+    - type: string
+    - type:
+        display: Vec3
+    - type:
+        display: RadioModulation
+    - type: bool
+    - type: number
+    - type: number
+    - type: string
+      required: false
+  trigger.action.rectToAll:
+    args:
+    - type:
+        display: coalition.side
+    - type: number
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3
+    - type:
+        display: ColorRGBA
+    - type:
+        display: ColorRGBA
+    - type:
+        display: MarkupLineType
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  trigger.action.removeMark:
+    args:
+    - type: number
+  trigger.action.removeOtherCommand:
+    args:
+    - type: string
+  trigger.action.removeOtherCommandForCoalition:
+    args:
+    - type:
+        display: coalition.side
+    - type: string
+  trigger.action.removeOtherCommandForGroup:
+    args:
+    - type: number
+    - type: string
+  trigger.action.setAITask:
+    args:
+    - type:
+        display: Group
+    - type: number
+  trigger.action.setGroupAIOff:
+    args:
+    - type:
+        display: Group
+  trigger.action.setGroupAIOn:
+    args:
+    - type:
+        display: Group
+  trigger.action.setMarkupColor:
+    args:
+    - type: number
+    - type:
+        display: ColorRGBA
+  trigger.action.setMarkupColorFill:
+    args:
+    - type: number
+    - type:
+        display: ColorRGBA
+  trigger.action.setMarkupFontSize:
+    args:
+    - type: number
+    - type: number
+  trigger.action.setMarkupPositionEnd:
+    args:
+    - type: number
+    - type:
+        display: Vec3
+  trigger.action.setMarkupPositionStart:
+    args:
+    - type: number
+    - type:
+        display: Vec3
+  trigger.action.setMarkupRadius:
+    args:
+    - type: number
+    - type: number
+  trigger.action.setMarkupText:
+    args:
+    - type: number
+    - type: string
+  trigger.action.setMarkupTypeLine:
+    args:
+    - type: number
+    - type:
+        display: MarkupLineType
+  trigger.action.setUnitInternalCargo:
+    args:
+    - type: string
+    - type: number
+  trigger.action.signalFlare:
+    args:
+    - type:
+        display: Vec3
+    - type:
+        display: trigger.flareColor
+    - type: number
+  trigger.action.smoke:
+    args:
+    - type:
+        display: Vec3
+    - type:
+        display: trigger.smokeColor
+  trigger.action.stopRadioTransmission:
+    args:
+    - type: string
+  trigger.action.textToAll:
+    args:
+    - type:
+        display: coalition.side
+    - type: number
+    - type:
+        display: Vec3
+    - type:
+        display: ColorRGBA
+    - type:
+        display: ColorRGBA
+    - type: number
+    - type: bool
+      required: false
+    - type: string
+  trigger.action.markupToAll:
+    args:
+    - type:
+        display: MarkupShapeId
+    - type:
+        display: coalition.side
+    - type: number
+    - type:
+        display: Vec3
+    - type:
+        display: Vec3[]
+      required: false
+    - type:
+        display: ColorRGBA
+    - type:
+        display: ColorRGBA
+    - type:
+        display: MarkupLineType
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  trigger.action.outSoundStop:
+    args:
+    - type: string
+  trigger.action.setUserFlag:
+    args:
+    - type:
+        display: string | number
+    - type: number
+  trigger.misc:
+    property: new-fields
+  trigger.misc.*:
+    property: full-write
+  trigger.misc.*.*:
+    property: full-write
+  trigger.misc.addTrigger:
+    args:
+    - type: string
+    - type: string
+    - type: string
+  trigger.misc.addZone:
+    args:
+    - type: string
+    - type:
+        display: Vec3
+    - type: number
+    - type: number
+      required: false
+    - type: bool
+      required: false
+  trigger.misc.getUserFlag:
+    args:
+    - type:
+        display: string | number
+  trigger.misc.getZone:
+    args:
+    - type: string
+  world.weather:
+    property: new-fields
+  world.weather.*:
+    property: full-write
+  world.weather.*.*:
+    property: full-write
+  world.weather.getFogThickness:
+    args: []
+  world.weather.setFogThickness:
+    args:
+    - type: number
+  world.weather.getFogVisibilityDistance:
+    args: []
+  world.weather.setFogVisibilityDistance:
+    args:
+    - type: number
+  world.weather.setFogAnimation:
+    args:
+    - type:
+        display: table | nil
+  world.event:
+    property: read-only
+  world.BirthPlace:
+    property: read-only
+  world.VolumeType:
+    property: read-only
+  world.eventHandlers:
+    property: new-fields
+  world.eventHandlers.*:
+    property: full-write
+  world.eventHandlers.*.*:
+    property: full-write
+  world.persistenceHandlers:
+    property: new-fields
+  world.persistenceHandlers.*:
+    property: full-write
+  world.persistenceHandlers.*.*:
+    property: full-write
+  world.addEventHandler:
+    args:
+    - type:
+        display: EventHandlerTable
+  world.removeEventHandler:
+    args:
+    - type:
+        display: EventHandlerTable
+  world.onEvent:
+    args:
+    - type:
+        display: EventData
+  world.getPlayer:
+    args: []
+  world.getAirbases:
+    args: []
+  world.searchObjects:
+    args:
+    - type:
+        display: Object.Category | ObjectCategoryArray
+    - type: table
+    - type: function
+      required: false
+    - type: any
+      required: false
+  world.getMarkPanels:
+    args: []
+  world.removeJunk:
+    args:
+    - type: table
+  world.getPersistenceData:
+    args: []
+  world.runPersistenceHandlers:
+    args: []
+  world.setPersistenceHandler:
+    args:
+    - type: function
+  AI.Option.Air.id.NO_OPTION:
+    property: read-only
+  AI.Option.Air.id.ROE:
+    property: read-only
+  AI.Option.Air.id.REACTION_ON_THREAT:
+    property: read-only
+  AI.Option.Air.id.RADAR_USING:
+    property: read-only
+  AI.Option.Air.id.FLARE_USING:
+    property: read-only
+  AI.Option.Air.id.FORMATION:
+    property: read-only
+  AI.Option.Air.id.RTB_ON_BINGO:
+    property: read-only
+  AI.Option.Air.id.SILENCE:
+    property: read-only
+  AI.Option.Air.id.RTB_ON_OUT_OF_AMMO:
+    property: read-only
+  AI.Option.Air.id.ECM_USING:
+    property: read-only
+  AI.Option.Air.id.PROHIBIT_AA:
+    property: read-only
+  AI.Option.Air.id.PROHIBIT_JETT:
+    property: read-only
+  AI.Option.Air.id.PROHIBIT_AB:
+    property: read-only
+  AI.Option.Air.id.PROHIBIT_AG:
+    property: read-only
+  AI.Option.Air.id.MISSILE_ATTACK:
+    property: read-only
+  AI.Option.Air.id.PROHIBIT_WP_PASS_REPORT:
+    property: read-only
+  AI.Option.Air.id.OPTION_RADIO_USAGE_CONTACT:
+    property: read-only
+  AI.Option.Air.id.OPTION_RADIO_USAGE_ENGAGE:
+    property: read-only
+  AI.Option.Air.id.OPTION_RADIO_USAGE_KILL:
+    property: read-only
+  AI.Option.Air.id.JETT_TANKS_IF_EMPTY:
+    property: read-only
+  AI.Option.Air.id.FORCED_ATTACK:
+    property: read-only
+  AI.Option.Air.id.PREFER_VERTICAL:
+    property: read-only
+  AI.Option.Air.id.ALLOW_FORMATION_SIDE_SWAP:
+    property: read-only
+  AI.Option.Air.val.ECM_USING.NEVER_USE:
+    property: read-only
+  AI.Option.Air.val.ECM_USING.USE_IF_ONLY_LOCK_BY_RADAR:
+    property: read-only
+  AI.Option.Air.val.ECM_USING.USE_IF_DETECTED_LOCK_BY_RADAR:
+    property: read-only
+  AI.Option.Air.val.ECM_USING.ALWAYS_USE:
+    property: read-only
+  AI.Option.Air.val.FLARE_USING.NEVER:
+    property: read-only
+  AI.Option.Air.val.FLARE_USING.AGAINST_FIRED_MISSILE:
+    property: read-only
+  AI.Option.Air.val.FLARE_USING.WHEN_FLYING_IN_SAM_WEZ:
+    property: read-only
+  AI.Option.Air.val.FLARE_USING.WHEN_FLYING_NEAR_ENEMIES:
+    property: read-only
+  AI.Option.Air.val.MISSILE_ATTACK.MAX_RANGE:
+    property: read-only
+  AI.Option.Air.val.MISSILE_ATTACK.NEZ_RANGE:
+    property: read-only
+  AI.Option.Air.val.MISSILE_ATTACK.HALF_WAY_RMAX_NEZ:
+    property: read-only
+  AI.Option.Air.val.MISSILE_ATTACK.TARGET_THREAT_EST:
+    property: read-only
+  AI.Option.Air.val.MISSILE_ATTACK.RANDOM_RANGE:
+    property: read-only
+  AI.Option.Air.val.RADAR_USING.NEVER:
+    property: read-only
+  AI.Option.Air.val.RADAR_USING.FOR_ATTACK_ONLY:
+    property: read-only
+  AI.Option.Air.val.RADAR_USING.FOR_SEARCH_IF_REQUIRED:
+    property: read-only
+  AI.Option.Air.val.RADAR_USING.FOR_CONTINUOUS_SEARCH:
+    property: read-only
+  AI.Option.Air.val.REACTION_ON_THREAT.NO_REACTION:
+    property: read-only
+  AI.Option.Air.val.REACTION_ON_THREAT.PASSIVE_DEFENCE:
+    property: read-only
+  AI.Option.Air.val.REACTION_ON_THREAT.EVADE_FIRE:
+    property: read-only
+  AI.Option.Air.val.REACTION_ON_THREAT.BYPASS_AND_ESCAPE:
+    property: read-only
+  AI.Option.Air.val.REACTION_ON_THREAT.ALLOW_ABORT_MISSION:
+    property: read-only
+  AI.Option.Air.val.ROE.WEAPON_FREE:
+    property: read-only
+  AI.Option.Air.val.ROE.OPEN_FIRE_WEAPON_FREE:
+    property: read-only
+  AI.Option.Air.val.ROE.OPEN_FIRE:
+    property: read-only
+  AI.Option.Air.val.ROE.RETURN_FIRE:
+    property: read-only
+  AI.Option.Air.val.ROE.WEAPON_HOLD:
+    property: read-only
+  AI.Option.Ground.id.NO_OPTION:
+    property: read-only
+  AI.Option.Ground.id.ROE:
+    property: read-only
+  AI.Option.Ground.id.FORMATION:
+    property: read-only
+  AI.Option.Ground.id.DISPERSE_ON_ATTACK:
+    property: read-only
+  AI.Option.Ground.id.ALARM_STATE:
+    property: read-only
+  AI.Option.Ground.id.ENGAGE_AIR_WEAPONS:
+    property: read-only
+  AI.Option.Ground.id.AC_ENGAGEMENT_RANGE_RESTRICTION:
+    property: read-only
+  AI.Option.Ground.id.EVASION_OF_ARM:
+    property: read-only
+  AI.Option.Ground.val.ALARM_STATE.AUTO:
+    property: read-only
+  AI.Option.Ground.val.ALARM_STATE.GREEN:
+    property: read-only
+  AI.Option.Ground.val.ALARM_STATE.RED:
+    property: read-only
+  AI.Option.Ground.val.ROE.OPEN_FIRE:
+    property: read-only
+  AI.Option.Ground.val.ROE.RETURN_FIRE:
+    property: read-only
+  AI.Option.Ground.val.ROE.WEAPON_HOLD:
+    property: read-only
+  AI.Option.Naval.id.NO_OPTION:
+    property: read-only
+  AI.Option.Naval.id.ROE:
+    property: read-only
+  AI.Option.Naval.val.ROE.OPEN_FIRE:
+    property: read-only
+  AI.Option.Naval.val.ROE.RETURN_FIRE:
+    property: read-only
+  AI.Option.Naval.val.ROE.WEAPON_HOLD:
+    property: read-only
+  AI.Skill.PLAYER:
+    property: read-only
+  AI.Skill.CLIENT:
+    property: read-only
+  AI.Skill.AVERAGE:
+    property: read-only
+  AI.Skill.GOOD:
+    property: read-only
+  AI.Skill.HIGH:
+    property: read-only
+  AI.Skill.EXCELLENT:
+    property: read-only
+  AI.Task.AltitudeType.RADIO:
+    property: read-only
+  AI.Task.AltitudeType.BARO:
+    property: read-only
+  AI.Task.Designation.NO:
+    property: read-only
+  AI.Task.Designation.WP:
+    property: read-only
+  AI.Task.Designation.IR_POINTER:
+    property: read-only
+  AI.Task.Designation.LASER:
+    property: read-only
+  AI.Task.Designation.AUTO:
+    property: read-only
+  AI.Task.OrbitPattern.RACE_TRACK:
+    property: read-only
+  AI.Task.OrbitPattern.CIRCLE:
+    property: read-only
+  AI.Task.TurnMethod.FLY_OVER_POINT:
+    property: read-only
+  AI.Task.TurnMethod.FIN_POINT:
+    property: read-only
+  AI.Task.VehicleFormation.VEE:
+    property: read-only
+  AI.Task.VehicleFormation.ECHELON_RIGHT:
+    property: read-only
+  AI.Task.VehicleFormation.OFF_ROAD:
+    property: read-only
+  AI.Task.VehicleFormation.RANK:
+    property: read-only
+  AI.Task.VehicleFormation.ECHELON_LEFT:
+    property: read-only
+  AI.Task.VehicleFormation.ON_ROAD:
+    property: read-only
+  AI.Task.VehicleFormation.CONE:
+    property: read-only
+  AI.Task.VehicleFormation.DIAMOND:
+    property: read-only
+  AI.Task.WaypointType.TAKEOFF:
+    property: read-only
+  AI.Task.WaypointType.TAKEOFF_PARKING:
+    property: read-only
+  AI.Task.WaypointType.TURNING_POINT:
+    property: read-only
+  AI.Task.WaypointType.TAKEOFF_PARKING_HOT:
+    property: read-only
+  AI.Task.WaypointType.LAND:
+    property: read-only
+  AI.Task.WeaponExpend.QUARTER:
+    property: read-only
+  AI.Task.WeaponExpend.TWO:
+    property: read-only
+  AI.Task.WeaponExpend.ONE:
+    property: read-only
+  AI.Task.WeaponExpend.FOUR:
+    property: read-only
+  AI.Task.WeaponExpend.HALF:
+    property: read-only
+  AI.Task.WeaponExpend.ALL:
+    property: read-only
+  Airbase.Category.AIRDROME:
+    property: read-only
+  Airbase.Category.HELIPAD:
+    property: read-only
+  Airbase.Category.SHIP:
+    property: read-only
+  Attributes.plane_carrier:
+    property: read-only
+  Attributes.no_tail_trail:
+    property: read-only
+  Attributes.cord:
+    property: read-only
+  Attributes.ski_jump:
+    property: read-only
+  Attributes.catapult:
+    property: read-only
+  Attributes.low_reflection_vessel:
+    property: read-only
+  Attributes.AA_flak:
+    property: read-only
+  Attributes.AA_missile:
+    property: read-only
+  Attributes.Cruise missiles:
+    property: read-only
+  Attributes.Anti-Ship missiles:
+    property: read-only
+  Attributes.Missiles:
+    property: read-only
+  Attributes.Fighters:
+    property: read-only
+  Attributes.Interceptors:
+    property: read-only
+  Attributes.Multirole fighters:
+    property: read-only
+  Attributes.Bombers:
+    property: read-only
+  Attributes.Battleplanes:
+    property: read-only
+  Attributes.AWACS:
+    property: read-only
+  Attributes.Tankers:
+    property: read-only
+  Attributes.Aux:
+    property: read-only
+  Attributes.Transports:
+    property: read-only
+  Attributes.Strategic bombers:
+    property: read-only
+  Attributes.UAVs:
+    property: read-only
+  Attributes.Attack helicopters:
+    property: read-only
+  Attributes.Transport helicopters:
+    property: read-only
+  Attributes.Planes:
+    property: read-only
+  Attributes.Helicopters:
+    property: read-only
+  Attributes.Cars:
+    property: read-only
+  Attributes.Trucks:
+    property: read-only
+  Attributes.Infantry:
+    property: read-only
+  Attributes.Tanks:
+    property: read-only
+  Attributes.Artillery:
+    property: read-only
+  Attributes.MLRS:
+    property: read-only
+  Attributes.IFV:
+    property: read-only
+  Attributes.APC:
+    property: read-only
+  Attributes.Fortifications:
+    property: read-only
+  Attributes.Armed vehicles:
+    property: read-only
+  Attributes.Static AAA:
+    property: read-only
+  Attributes.Mobile AAA:
+    property: read-only
+  Attributes.SAM SR:
+    property: read-only
+  Attributes.SAM TR:
+    property: read-only
+  Attributes.SAM LL:
+    property: read-only
+  Attributes.SAM CC:
+    property: read-only
+  Attributes.SAM AUX:
+    property: read-only
+  Attributes.SR SAM:
+    property: read-only
+  Attributes.MR SAM:
+    property: read-only
+  Attributes.LR SAM:
+    property: read-only
+  Attributes.SAM elements:
+    property: read-only
+  Attributes.IR Guided SAM:
+    property: read-only
+  Attributes.SAM:
+    property: read-only
+  Attributes.SAM related:
+    property: read-only
+  Attributes.AAA:
+    property: read-only
+  Attributes.EWR:
+    property: read-only
+  Attributes.Air Defence vehicles:
+    property: read-only
+  Attributes.MANPADS:
+    property: read-only
+  Attributes.MANPADS AUX:
+    property: read-only
+  Attributes.Unarmed vehicles:
+    property: read-only
+  Attributes.Armed ground units:
+    property: read-only
+  Attributes.Armed Air Defence:
+    property: read-only
+  Attributes.Air Defence:
+    property: read-only
+  Attributes.Aircraft Carriers:
+    property: read-only
+  Attributes.Cruisers:
+    property: read-only
+  Attributes.Destroyers:
+    property: read-only
+  Attributes.Frigates:
+    property: read-only
+  Attributes.Corvettes:
+    property: read-only
+  Attributes.Heavy armed ships:
+    property: read-only
+  Attributes.Light armed ships:
+    property: read-only
+  Attributes.Armed ships:
+    property: read-only
+  Attributes.Unarmed ships:
+    property: read-only
+  Attributes.Air:
+    property: read-only
+  Attributes.Ground vehicles:
+    property: read-only
+  Attributes.Ships:
+    property: read-only
+  Attributes.Buildings:
+    property: read-only
+  Attributes.HeavyArmoredUnits:
+    property: read-only
+  Attributes.ATGM:
+    property: read-only
+  Attributes.Old Tanks:
+    property: read-only
+  Attributes.Modern Tanks:
+    property: read-only
+  Attributes.LightArmoredUnits:
+    property: read-only
+  Attributes.Rocket Attack Valid AirDefence:
+    property: read-only
+  Attributes.Battle airplanes:
+    property: read-only
+  Attributes.All:
+    property: read-only
+  Attributes.Infantry carriers:
+    property: read-only
+  Attributes.Vehicles:
+    property: read-only
+  Attributes.Ground Units:
+    property: read-only
+  Attributes.Ground Units Non Airdefence:
+    property: read-only
+  Attributes.Armored vehicles:
+    property: read-only
+  Attributes.AntiAir Armed Vehicles:
+    property: read-only
+  Attributes.Airfields:
+    property: read-only
+  Attributes.Heliports:
+    property: read-only
+  Attributes.Grass Airfields:
+    property: read-only
+  Attributes.Point:
+    property: read-only
+  Attributes.NonArmoredUnits:
+    property: read-only
+  Attributes.NonAndLightArmoredUnits:
+    property: read-only
+  Attributes.human_vehicle:
+    property: read-only
+  Attributes.RADAR_BAND1_FOR_ARM:
+    property: read-only
+  Attributes.RADAR_BAND2_FOR_ARM:
+    property: read-only
+  Attributes.Prone:
+    property: read-only
+  Attributes.DetectionByAWACS:
+    property: read-only
+  Attributes.Datalink:
+    property: read-only
+  Attributes.CustomAimPoint:
+    property: read-only
+  Attributes.Indirect fire:
+    property: read-only
+  Attributes.Refuelable:
+    property: read-only
+  Attributes.Weapon:
+    property: read-only
+  Attributes.Shell:
+    property: read-only
+  Attributes.Rocket:
+    property: read-only
+  Attributes.Bomb:
+    property: read-only
+  Attributes.Missile:
+    property: read-only
+  BeaconSystemName.PAR_10:
+    property: read-only
+  BeaconSystemName.RSBN_5:
+    property: read-only
+  BeaconSystemName.TACAN:
+    property: read-only
+  BeaconSystemName.TACAN_TANKER:
+    property: read-only
+  BeaconSystemName.ILS_LOCALIZER:
+    property: read-only
+  BeaconSystemName.ILS_GLIDESLOPE:
+    property: read-only
+  BeaconSystemName.BROADCAST_STATION:
+    property: read-only
+  BeaconType.BEACON_TYPE_NULL:
+    property: read-only
+  BeaconType.BEACON_TYPE_VOR:
+    property: read-only
+  BeaconType.BEACON_TYPE_DME:
+    property: read-only
+  BeaconType.BEACON_TYPE_VOR_DME:
+    property: read-only
+  BeaconType.BEACON_TYPE_TACAN:
+    property: read-only
+  BeaconType.BEACON_TYPE_VORTAC:
+    property: read-only
+  BeaconType.BEACON_TYPE_RSBN:
+    property: read-only
+  BeaconType.BEACON_TYPE_BROADCAST_STATION:
+    property: read-only
+  BeaconType.BEACON_TYPE_HOMER:
+    property: read-only
+  BeaconType.BEACON_TYPE_AIRPORT_HOMER:
+    property: read-only
+  BeaconType.BEACON_TYPE_AIRPORT_HOMER_WITH_MARKER:
+    property: read-only
+  BeaconType.BEACON_TYPE_ILS_FAR_HOMER:
+    property: read-only
+  BeaconType.BEACON_TYPE_ILS_NEAR_HOMER:
+    property: read-only
+  BeaconType.BEACON_TYPE_ILS_LOCALIZER:
+    property: read-only
+  BeaconType.BEACON_TYPE_ILS_GLIDESLOPE:
+    property: read-only
+  BeaconType.BEACON_TYPE_NAUTICAL_HOMER:
+    property: read-only
+  BigSmokeType.SmallSmokeAndFire:
+    property: read-only
+  BigSmokeType.MediumSmokeAndFire:
+    property: read-only
+  BigSmokeType.LargeSmokeAndFire:
+    property: read-only
+  BigSmokeType.HugeSmokeAndFire:
+    property: read-only
+  BigSmokeType.SmallSmoke:
+    property: read-only
+  BigSmokeType.MediumSmoke:
+    property: read-only
+  BigSmokeType.LargeSmoke:
+    property: read-only
+  BigSmokeType.HugeSmoke:
+    property: read-only
+  Callsigns_JTAC.Axeman:
+    property: read-only
+  Callsigns_JTAC.Darknight:
+    property: read-only
+  Callsigns_JTAC.Warrior:
+    property: read-only
+  Callsigns_JTAC.Pointer:
+    property: read-only
+  Callsigns_JTAC.Eyeball:
+    property: read-only
+  Callsigns_JTAC.Moonbeam:
+    property: read-only
+  Callsigns_JTAC.Whiplash:
+    property: read-only
+  Callsigns_JTAC.Finger:
+    property: read-only
+  Callsigns_JTAC.Pinpoint:
+    property: read-only
+  Callsigns_JTAC.Ferret:
+    property: read-only
+  Callsigns_JTAC.Shaba:
+    property: read-only
+  Callsigns_JTAC.Playboy:
+    property: read-only
+  Callsigns_JTAC.Hammer:
+    property: read-only
+  Callsigns_JTAC.Jaguar:
+    property: read-only
+  Callsigns_JTAC.Deathstar:
+    property: read-only
+  Callsigns_JTAC.Anvil:
+    property: read-only
+  Callsigns_JTAC.Firefly:
+    property: read-only
+  Callsigns_JTAC.Mantis:
+    property: read-only
+  Callsigns_JTAC.Badger:
+    property: read-only
+  CommandId.CommandScript:
+    property: read-only
+  CommandId.CommandSetCallsign:
+    property: read-only
+  CommandId.CommandSetFrequency:
+    property: read-only
+  CommandId.CommandSetFrequencyForUnit:
+    property: read-only
+  CommandId.CommandSwitchWaypoint:
+    property: read-only
+  CommandId.CommandStopRoute:
+    property: read-only
+  CommandId.CommandSwitchAction:
+    property: read-only
+  CommandId.CommandSetInvisible:
+    property: read-only
+  CommandId.CommandSetImmortal:
+    property: read-only
+  CommandId.CommandSetUnlimitedFuel:
+    property: read-only
+  CommandId.CommandActivateBeacon:
+    property: read-only
+  CommandId.CommandDeactivateBeacon:
+    property: read-only
+  CommandId.CommandActivateICLS:
+    property: read-only
+  CommandId.CommandDeactivateICLS:
+    property: read-only
+  CommandId.CommandEPLRS:
+    property: read-only
+  CommandId.CommandStart:
+    property: read-only
+  CommandId.CommandTransmitMessage:
+    property: read-only
+  CommandId.CommandStopTransmission:
+    property: read-only
+  CommandId.CommandSmokeOnOff:
+    property: read-only
+  CommandId.CommandActivateLink4:
+    property: read-only
+  CommandId.CommandDeactivateLink4:
+    property: read-only
+  CommandId.CommandActivateACLS:
+    property: read-only
+  CommandId.CommandDeactivateACLS:
+    property: read-only
+  CommandId.CommandLoadingShip:
+    property: read-only
+  Controller.Detection.VISUAL:
+    property: read-only
+  Controller.Detection.OPTIC:
+    property: read-only
+  Controller.Detection.RADAR:
+    property: read-only
+  Controller.Detection.IRST:
+    property: read-only
+  Controller.Detection.RWR:
+    property: read-only
+  Controller.Detection.DLINK:
+    property: read-only
+  FormationType.LINE_ABREAST:
+    property: read-only
+  FormationType.TRAIL:
+    property: read-only
+  FormationType.WEDGE:
+    property: read-only
+  FormationType.ECHELON_RIGHT_AIR:
+    property: read-only
+  FormationType.ECHELON_LEFT_AIR:
+    property: read-only
+  FormationType.FINGER_FOUR:
+    property: read-only
+  FormationType.SPREAD_FOUR:
+    property: read-only
+  FormationType.HEL_WEDGE:
+    property: read-only
+  FormationType.HEL_ECHELON:
+    property: read-only
+  FormationType.HEL_FRONT:
+    property: read-only
+  FormationType.HEL_COLUMN:
+    property: read-only
+  FormationType.WW2_BOMBER_ELEMENT:
+    property: read-only
+  FormationType.WW2_BOMBER_ELEMENT_HEIGHT:
+    property: read-only
+  FormationType.WW2_FIGHTER_VIC:
+    property: read-only
+  FormationType.GROUND_VEE:
+    property: read-only
+  FormationType.GROUND_ECHELON_RIGHT:
+    property: read-only
+  FormationType.GROUND_OFF_ROAD:
+    property: read-only
+  FormationType.GROUND_RANK:
+    property: read-only
+  FormationType.GROUND_ECHELON_LEFT:
+    property: read-only
+  FormationType.GROUND_ON_ROAD:
+    property: read-only
+  FormationType.GROUND_CONE:
+    property: read-only
+  FormationType.GROUND_DIAMOND:
+    property: read-only
+  Group.Category.AIRPLANE:
+    property: read-only
+  Group.Category.HELICOPTER:
+    property: read-only
+  Group.Category.GROUND:
+    property: read-only
+  Group.Category.SHIP:
+    property: read-only
+  Group.Category.TRAIN:
+    property: read-only
+  LiquidType.jetfuel:
+    property: read-only
+  LiquidType.Aviation_gasoline:
+    property: read-only
+  LiquidType.MW50:
+    property: read-only
+  LiquidType.Diesel:
+    property: read-only
+  MarkupLineType.NoLine:
+    property: read-only
+  MarkupLineType.Solid:
+    property: read-only
+  MarkupLineType.Dashed:
+    property: read-only
+  MarkupLineType.Dotted:
+    property: read-only
+  MarkupLineType.DotDash:
+    property: read-only
+  MarkupLineType.LongDash:
+    property: read-only
+  MarkupLineType.TwoDash:
+    property: read-only
+  MarkupShapeId.Line:
+    property: read-only
+  MarkupShapeId.Circle:
+    property: read-only
+  MarkupShapeId.Rect:
+    property: read-only
+  MarkupShapeId.Arrow:
+    property: read-only
+  MarkupShapeId.Text:
+    property: read-only
+  MarkupShapeId.Quad:
+    property: read-only
+  MarkupShapeId.Freeform:
+    property: read-only
+  Object.Category.VOID:
+    property: read-only
+  Object.Category.UNIT:
+    property: read-only
+  Object.Category.WEAPON:
+    property: read-only
+  Object.Category.STATIC:
+    property: read-only
+  Object.Category.BASE:
+    property: read-only
+  Object.Category.SCENERY:
+    property: read-only
+  Object.Category.CARGO:
+    property: read-only
+  RadioModulation.AM:
+    property: read-only
+  RadioModulation.FM:
+    property: read-only
+  Spot.Category.INFRA_RED:
+    property: read-only
+  Spot.Category.LASER:
+    property: read-only
+  StaticObject.Category.VOID:
+    property: read-only
+  StaticObject.Category.UNIT:
+    property: read-only
+  StaticObject.Category.WEAPON:
+    property: read-only
+  StaticObject.Category.STATIC:
+    property: read-only
+  StaticObject.Category.BASE:
+    property: read-only
+  StaticObject.Category.SCENERY:
+    property: read-only
+  StaticObject.Category.CARGO:
+    property: read-only
+  TaskEnRouteId.TaskEnRouteEngageTargets:
+    property: read-only
+  TaskEnRouteId.TaskEnRouteEngageTargetsInZone:
+    property: read-only
+  TaskEnRouteId.TaskEnRouteEngageGroup:
+    property: read-only
+  TaskEnRouteId.TaskEnRouteEngageUnit:
+    property: read-only
+  TaskEnRouteId.TaskEnRouteAWACS:
+    property: read-only
+  TaskEnRouteId.TaskEnRouteTanker:
+    property: read-only
+  TaskEnRouteId.TaskEnRouteEWR:
+    property: read-only
+  TaskEnRouteId.TaskEnRouteFACEngageGroup:
+    property: read-only
+  TaskEnRouteId.TaskEnRouteFAC:
+    property: read-only
+  TaskId.TaskAttackGroup:
+    property: read-only
+  TaskId.TaskAttackUnit:
+    property: read-only
+  TaskId.TaskBombing:
+    property: read-only
+  TaskId.TaskStrafing:
+    property: read-only
+  TaskId.TaskCarpetBombing:
+    property: read-only
+  TaskId.TaskAttackMapObject:
+    property: read-only
+  TaskId.TaskBombingRunway:
+    property: read-only
+  TaskId.TaskOrbit:
+    property: read-only
+  TaskId.TaskRefueling:
+    property: read-only
+  TaskId.TaskLand:
+    property: read-only
+  TaskId.TaskFollow:
+    property: read-only
+  TaskId.TaskFollowBigFormation:
+    property: read-only
+  TaskId.TaskEscort:
+    property: read-only
+  TaskId.TaskEmbarking:
+    property: read-only
+  TaskId.TaskFireAtPoint:
+    property: read-only
+  TaskId.TaskHold:
+    property: read-only
+  TaskId.TaskFACAttackGroup:
+    property: read-only
+  TaskId.TaskEmbarkToTransport:
+    property: read-only
+  TaskId.TaskDisembarkFromTransport:
+    property: read-only
+  TaskId.TaskCargoTransportation:
+    property: read-only
+  TaskId.TaskGoToWaypoint:
+    property: read-only
+  TaskId.TaskGroundEscort:
+    property: read-only
+  TaskId.TaskRecoveryTanker:
+    property: read-only
+  Unit.Category.AIRPLANE:
+    property: read-only
+  Unit.Category.HELICOPTER:
+    property: read-only
+  Unit.Category.GROUND_UNIT:
+    property: read-only
+  Unit.Category.SHIP:
+    property: read-only
+  Unit.Category.STRUCTURE:
+    property: read-only
+  Unit.OpticType.TV:
+    property: read-only
+  Unit.OpticType.LLTV:
+    property: read-only
+  Unit.OpticType.IR:
+    property: read-only
+  Unit.RadarType.AS:
+    property: read-only
+  Unit.RadarType.SS:
+    property: read-only
+  Unit.RefuelingSystem.BOOM_AND_RECEPTACLE:
+    property: read-only
+  Unit.RefuelingSystem.PROBE_AND_DROGUE:
+    property: read-only
+  Unit.SensorType.OPTIC:
+    property: read-only
+  Unit.SensorType.RADAR:
+    property: read-only
+  Unit.SensorType.IRST:
+    property: read-only
+  Unit.SensorType.RWR:
+    property: read-only
+  VoiceChat.RadioHandlers.ON_OFF_STATUS:
+    property: read-only
+  VoiceChat.RadioHandlers.FREQUENCY:
+    property: read-only
+  VoiceChat.RadioHandlers.SOUND_VOLUME:
+    property: read-only
+  VoiceChat.RadioHandlers.CHANNEL:
+    property: read-only
+  VoiceChat.RadioHandlers.MODULATION:
+    property: read-only
+  VoiceChat.RadioHandlers.GUARD_STATUS:
+    property: read-only
+  VoiceChat.RadioHandlers.ENCRYPTION_STATUS:
+    property: read-only
+  VoiceChat.RadioHandlers.CRYPTO_KEY:
+    property: read-only
+  VoiceChat.RadioHandlers.SQUELCH_STATUS:
+    property: read-only
+  VoiceChat.RadioHandlers.TRANSMITTER_PWR:
+    property: read-only
+  VoiceChat.RadioHandlers.IS_TRANSMITTING:
+    property: read-only
+  VoiceChat.RadioHandlers.TRANSMISSION_ENABLED:
+    property: read-only
+  VoiceChat.RadioHandlers.EXTERNALLY_CONTROLLED:
+    property: read-only
+  VoiceChat.RadioHandlers.CURRENT_RECEIVING_RADIO:
+    property: read-only
+  VoiceChat.RadioHandlersSingletons.INTERCOM_SOUND_VOLUME:
+    property: read-only
+  VoiceChat.RadioHandlersSingletons.INTERCOM_HOT_MIKE_STATUS:
+    property: read-only
+  VoiceChat.RadioHandlersSingletons.INITIALIZATION_COMPLETE:
+    property: read-only
+  VoiceChat.RoomType.PERSISTENT:
+    property: read-only
+  VoiceChat.RoomType.MULTICREW:
+    property: read-only
+  VoiceChat.RoomType.MANAGEABLE:
+    property: read-only
+  VoiceChat.Side.NEUTRAL:
+    property: read-only
+  VoiceChat.Side.RED:
+    property: read-only
+  VoiceChat.Side.BLUE:
+    property: read-only
+  VoiceChat.Side.ALL:
+    property: read-only
+  Weapon.Category.SHELL:
+    property: read-only
+  Weapon.Category.MISSILE:
+    property: read-only
+  Weapon.Category.ROCKET:
+    property: read-only
+  Weapon.Category.BOMB:
+    property: read-only
+  Weapon.Category.TORPEDO:
+    property: read-only
+  Weapon.GuidanceType.INS:
+    property: read-only
+  Weapon.GuidanceType.IR:
+    property: read-only
+  Weapon.GuidanceType.RADAR_ACTIVE:
+    property: read-only
+  Weapon.GuidanceType.RADAR_SEMI_ACTIVE:
+    property: read-only
+  Weapon.GuidanceType.RADAR_PASSIVE:
+    property: read-only
+  Weapon.GuidanceType.TV:
+    property: read-only
+  Weapon.GuidanceType.LASER:
+    property: read-only
+  Weapon.GuidanceType.TELE:
+    property: read-only
+  Weapon.MissileCategory.AAM:
+    property: read-only
+  Weapon.MissileCategory.SAM:
+    property: read-only
+  Weapon.MissileCategory.BM:
+    property: read-only
+  Weapon.MissileCategory.ANTI_SHIP:
+    property: read-only
+  Weapon.MissileCategory.CRUISE:
+    property: read-only
+  Weapon.MissileCategory.OTHER:
+    property: read-only
+  Weapon.WarheadType.AP:
+    property: read-only
+  Weapon.WarheadType.HE:
+    property: read-only
+  Weapon.WarheadType.SHAPED_EXPLOSIVE:
+    property: read-only
+  Weapon.flag.NoWeapon:
+    property: read-only
+  Weapon.flag.LGB:
+    property: read-only
+  Weapon.flag.TvGB:
+    property: read-only
+  Weapon.flag.SNSGB:
+    property: read-only
+  Weapon.flag.HEBomb:
+    property: read-only
+  Weapon.flag.Penetrator:
+    property: read-only
+  Weapon.flag.NapalmBomb:
+    property: read-only
+  Weapon.flag.FAEBomb:
+    property: read-only
+  Weapon.flag.ClusterBomb:
+    property: read-only
+  Weapon.flag.Dispencer:
+    property: read-only
+  Weapon.flag.CandleBomb:
+    property: read-only
+  Weapon.flag.ParachuteBomb:
+    property: read-only
+  Weapon.flag.GuidedBomb:
+    property: read-only
+  Weapon.flag.AnyBomb:
+    property: read-only
+  Weapon.flag.AnyUnguidedBomb:
+    property: read-only
+  Weapon.flag.LightRocket:
+    property: read-only
+  Weapon.flag.CandleRocket:
+    property: read-only
+  Weapon.flag.HeavyRocket:
+    property: read-only
+  Weapon.flag.MarkerRocket:
+    property: read-only
+  Weapon.flag.AnyRocket:
+    property: read-only
+  Weapon.flag.SAR_AAM:
+    property: read-only
+  Weapon.flag.AR_AAM:
+    property: read-only
+  Weapon.flag.IR_AAM:
+    property: read-only
+  Weapon.flag.SRAAM:
+    property: read-only
+  Weapon.flag.MRAAM:
+    property: read-only
+  Weapon.flag.LRAAM:
+    property: read-only
+  Weapon.flag.AnyAAM:
+    property: read-only
+  Weapon.flag.AnyAAWeapon:
+    property: read-only
+  Weapon.flag.AntiRadarMissile:
+    property: read-only
+  Weapon.flag.AntiRadarMissile2:
+    property: read-only
+  Weapon.flag.AntiShipMissile:
+    property: read-only
+  Weapon.flag.AntiTankMissile:
+    property: read-only
+  Weapon.flag.FireAndForgetASM:
+    property: read-only
+  Weapon.flag.LaserASM:
+    property: read-only
+  Weapon.flag.TeleASM:
+    property: read-only
+  Weapon.flag.CruiseMissile:
+    property: read-only
+  Weapon.flag.GuidedASM:
+    property: read-only
+  Weapon.flag.TacticASM:
+    property: read-only
+  Weapon.flag.AnyASM:
+    property: read-only
+  Weapon.flag.AnyAutonomousMissile:
+    property: read-only
+  Weapon.flag.AnyMissile:
+    property: read-only
+  Weapon.flag.AnyAGWeapon:
+    property: read-only
+  Weapon.flag.Torpedo:
+    property: read-only
+  Weapon.flag.AnyTorpedo:
+    property: read-only
+  Weapon.flag.GUN_POD:
+    property: read-only
+  Weapon.flag.BuiltInCannon:
+    property: read-only
+  Weapon.flag.Cannons:
+    property: read-only
+  Weapon.flag.AnyShell:
+    property: read-only
+  Weapon.flag.ConventionalShell:
+    property: read-only
+  Weapon.flag.GuidedShell:
+    property: read-only
+  Weapon.flag.IlluminationShell:
+    property: read-only
+  Weapon.flag.MarkerShell:
+    property: read-only
+  Weapon.flag.SmokeShell:
+    property: read-only
+  Weapon.flag.SubmunitionDispenserShell:
+    property: read-only
+  Weapon.flag.Decoys:
+    property: read-only
+  Weapon.flag.ArmWeapon:
+    property: read-only
+  Weapon.flag.GuidedWeapon:
+    property: read-only
+  Weapon.flag.MarkerWeapon:
+    property: read-only
+  Weapon.flag.UnguidedWeapon:
+    property: read-only
+  Weapon.flag.AnyWeapon:
+    property: read-only
+  Weapon.flag.AllWeapon:
+    property: read-only
+  coalition.service.ATC:
+    property: read-only
+  coalition.service.AWACS:
+    property: read-only
+  coalition.service.TANKER:
+    property: read-only
+  coalition.service.FAC:
+    property: read-only
+  coalition.service.MAX:
+    property: read-only
+  coalition.side.NEUTRAL:
+    property: read-only
+  coalition.side.RED:
+    property: read-only
+  coalition.side.BLUE:
+    property: read-only
+  country.id.RUSSIA:
+    property: read-only
+  country.id.UKRAINE:
+    property: read-only
+  country.id.USA:
+    property: read-only
+  country.id.TURKEY:
+    property: read-only
+  country.id.UK:
+    property: read-only
+  country.id.FRANCE:
+    property: read-only
+  country.id.GERMANY:
+    property: read-only
+  country.id.AGGRESSORS:
+    property: read-only
+  country.id.CANADA:
+    property: read-only
+  country.id.SPAIN:
+    property: read-only
+  country.id.THE_NETHERLANDS:
+    property: read-only
+  country.id.BELGIUM:
+    property: read-only
+  country.id.NORWAY:
+    property: read-only
+  country.id.DENMARK:
+    property: read-only
+  country.id.ISRAEL:
+    property: read-only
+  country.id.GEORGIA:
+    property: read-only
+  country.id.INSURGENTS:
+    property: read-only
+  country.id.ABKHAZIA:
+    property: read-only
+  country.id.SOUTH_OSETIA:
+    property: read-only
+  country.id.ITALY:
+    property: read-only
+  country.id.AUSTRALIA:
+    property: read-only
+  country.id.SWITZERLAND:
+    property: read-only
+  country.id.AUSTRIA:
+    property: read-only
+  country.id.BELARUS:
+    property: read-only
+  country.id.BULGARIA:
+    property: read-only
+  country.id.CHEZH_REPUBLIC:
+    property: read-only
+  country.id.CHINA:
+    property: read-only
+  country.id.CROATIA:
+    property: read-only
+  country.id.EGYPT:
+    property: read-only
+  country.id.FINLAND:
+    property: read-only
+  country.id.GREECE:
+    property: read-only
+  country.id.HUNGARY:
+    property: read-only
+  country.id.INDIA:
+    property: read-only
+  country.id.IRAN:
+    property: read-only
+  country.id.IRAQ:
+    property: read-only
+  country.id.JAPAN:
+    property: read-only
+  country.id.KAZAKHSTAN:
+    property: read-only
+  country.id.NORTH_KOREA:
+    property: read-only
+  country.id.PAKISTAN:
+    property: read-only
+  country.id.POLAND:
+    property: read-only
+  country.id.ROMANIA:
+    property: read-only
+  country.id.SAUDI_ARABIA:
+    property: read-only
+  country.id.SERBIA:
+    property: read-only
+  country.id.SLOVAKIA:
+    property: read-only
+  country.id.SOUTH_KOREA:
+    property: read-only
+  country.id.SWEDEN:
+    property: read-only
+  country.id.SYRIA:
+    property: read-only
+  country.id.YEMEN:
+    property: read-only
+  country.id.VIETNAM:
+    property: read-only
+  country.id.VENEZUELA:
+    property: read-only
+  country.id.TUNISIA:
+    property: read-only
+  country.id.THAILAND:
+    property: read-only
+  country.id.SUDAN:
+    property: read-only
+  country.id.PHILIPPINES:
+    property: read-only
+  country.id.MOROCCO:
+    property: read-only
+  country.id.MEXICO:
+    property: read-only
+  country.id.MALAYSIA:
+    property: read-only
+  country.id.LIBYA:
+    property: read-only
+  country.id.JORDAN:
+    property: read-only
+  country.id.INDONESIA:
+    property: read-only
+  country.id.HONDURAS:
+    property: read-only
+  country.id.ETHIOPIA:
+    property: read-only
+  country.id.CHILE:
+    property: read-only
+  country.id.BRAZIL:
+    property: read-only
+  country.id.BAHRAIN:
+    property: read-only
+  country.id.THIRDREICH:
+    property: read-only
+  country.id.YUGOSLAVIA:
+    property: read-only
+  country.id.USSR:
+    property: read-only
+  country.id.ITALIAN_SOCIAL_REPUBLIC:
+    property: read-only
+  country.id.ALGERIA:
+    property: read-only
+  country.id.KUWAIT:
+    property: read-only
+  country.id.QATAR:
+    property: read-only
+  country.id.OMAN:
+    property: read-only
+  country.id.UNITED_ARAB_EMIRATES:
+    property: read-only
+  country.id.SOUTH_AFRICA:
+    property: read-only
+  country.id.CUBA:
+    property: read-only
+  country.id.PORTUGAL:
+    property: read-only
+  country.id.GDR:
+    property: read-only
+  country.id.LEBANON:
+    property: read-only
+  country.id.CJTF_BLUE:
+    property: read-only
+  country.id.CJTF_RED:
+    property: read-only
+  country.id.UN_PEACEKEEPERS:
+    property: read-only
+  country.id.Argentina:
+    property: read-only
+  country.id.Cyprus:
+    property: read-only
+  country.id.Slovenia:
+    property: read-only
+  country.id.BOLIVIA:
+    property: read-only
+  country.id.GHANA:
+    property: read-only
+  country.id.NIGERIA:
+    property: read-only
+  country.id.PERU:
+    property: read-only
+  country.id.ECUADOR:
+    property: read-only
+  country.id.AFGHANISTAN:
+    property: read-only
+  country.id.NEW ZEALAND:
+    property: read-only
+  country.name.0:
+    property: read-only
+  country.name.1:
+    property: read-only
+  country.name.2:
+    property: read-only
+  country.name.3:
+    property: read-only
+  country.name.4:
+    property: read-only
+  country.name.5:
+    property: read-only
+  country.name.6:
+    property: read-only
+  country.name.7:
+    property: read-only
+  country.name.8:
+    property: read-only
+  country.name.9:
+    property: read-only
+  country.name.10:
+    property: read-only
+  country.name.11:
+    property: read-only
+  country.name.12:
+    property: read-only
+  country.name.13:
+    property: read-only
+  country.name.14:
+    property: read-only
+  country.name.15:
+    property: read-only
+  country.name.16:
+    property: read-only
+  country.name.17:
+    property: read-only
+  country.name.18:
+    property: read-only
+  country.name.19:
+    property: read-only
+  country.name.20:
+    property: read-only
+  country.name.21:
+    property: read-only
+  country.name.22:
+    property: read-only
+  country.name.23:
+    property: read-only
+  country.name.24:
+    property: read-only
+  country.name.25:
+    property: read-only
+  country.name.26:
+    property: read-only
+  country.name.27:
+    property: read-only
+  country.name.28:
+    property: read-only
+  country.name.29:
+    property: read-only
+  country.name.30:
+    property: read-only
+  country.name.31:
+    property: read-only
+  country.name.32:
+    property: read-only
+  country.name.33:
+    property: read-only
+  country.name.34:
+    property: read-only
+  country.name.35:
+    property: read-only
+  country.name.36:
+    property: read-only
+  country.name.37:
+    property: read-only
+  country.name.38:
+    property: read-only
+  country.name.39:
+    property: read-only
+  country.name.40:
+    property: read-only
+  country.name.41:
+    property: read-only
+  country.name.42:
+    property: read-only
+  country.name.43:
+    property: read-only
+  country.name.44:
+    property: read-only
+  country.name.45:
+    property: read-only
+  country.name.46:
+    property: read-only
+  country.name.47:
+    property: read-only
+  country.name.48:
+    property: read-only
+  country.name.49:
+    property: read-only
+  country.name.50:
+    property: read-only
+  country.name.51:
+    property: read-only
+  country.name.52:
+    property: read-only
+  country.name.53:
+    property: read-only
+  country.name.54:
+    property: read-only
+  country.name.55:
+    property: read-only
+  country.name.56:
+    property: read-only
+  country.name.57:
+    property: read-only
+  country.name.58:
+    property: read-only
+  country.name.59:
+    property: read-only
+  country.name.60:
+    property: read-only
+  country.name.61:
+    property: read-only
+  country.name.62:
+    property: read-only
+  country.name.63:
+    property: read-only
+  country.name.64:
+    property: read-only
+  country.name.65:
+    property: read-only
+  country.name.66:
+    property: read-only
+  country.name.67:
+    property: read-only
+  country.name.68:
+    property: read-only
+  country.name.69:
+    property: read-only
+  country.name.70:
+    property: read-only
+  country.name.71:
+    property: read-only
+  country.name.72:
+    property: read-only
+  country.name.73:
+    property: read-only
+  country.name.74:
+    property: read-only
+  country.name.75:
+    property: read-only
+  country.name.76:
+    property: read-only
+  country.name.77:
+    property: read-only
+  country.name.78:
+    property: read-only
+  country.name.79:
+    property: read-only
+  country.name.80:
+    property: read-only
+  country.name.81:
+    property: read-only
+  country.name.82:
+    property: read-only
+  country.name.83:
+    property: read-only
+  country.name.84:
+    property: read-only
+  country.name.85:
+    property: read-only
+  country.name.86:
+    property: read-only
+  country.name.87:
+    property: read-only
+  country.name.88:
+    property: read-only
+  country.name.89:
+    property: read-only
+  country.name.90:
+    property: read-only
+  country.name.91:
+    property: read-only
+  env.Mode.INIT:
+    property: read-only
+  env.Mode.USER:
+    property: read-only
+  env.Mode.START:
+    property: read-only
+  env.Mode.SIMULATION:
+    property: read-only
+  env.Mode.STOP:
+    property: read-only
+  env.Mode.FINISH:
+    property: read-only
+  land.SurfaceType.LAND:
+    property: read-only
+  land.SurfaceType.SHALLOW_WATER:
+    property: read-only
+  land.SurfaceType.WATER:
+    property: read-only
+  land.SurfaceType.ROAD:
+    property: read-only
+  land.SurfaceType.RUNWAY:
+    property: read-only
+  trigger.flareColor.Green:
+    property: read-only
+  trigger.flareColor.Red:
+    property: read-only
+  trigger.flareColor.White:
+    property: read-only
+  trigger.flareColor.Yellow:
+    property: read-only
+  trigger.smokeColor.Green:
+    property: read-only
+  trigger.smokeColor.Red:
+    property: read-only
+  trigger.smokeColor.White:
+    property: read-only
+  trigger.smokeColor.Orange:
+    property: read-only
+  trigger.smokeColor.Blue:
+    property: read-only
+  world.BirthPlace.wsBirthPlace_Air:
+    property: read-only
+  world.BirthPlace.wsBirthPlace_RunWay:
+    property: read-only
+  world.BirthPlace.wsBirthPlace_Park:
+    property: read-only
+  world.BirthPlace.wsBirthPlace_Heliport_Hot:
+    property: read-only
+  world.BirthPlace.wsBirthPlace_Heliport_Cold:
+    property: read-only
+  world.BirthPlace.wsBirthPlace_Ship:
+    property: read-only
+  world.BirthPlace.wsBirthPlace_Ship_Hot:
+    property: read-only
+  world.BirthPlace.wsBirthPlace_Ship_Cold:
+    property: read-only
+  world.VolumeType.SEGMENT:
+    property: read-only
+  world.VolumeType.BOX:
+    property: read-only
+  world.VolumeType.SPHERE:
+    property: read-only
+  world.VolumeType.PYRAMID:
+    property: read-only
+  world.event.S_EVENT_INVALID:
+    property: read-only
+  world.event.S_EVENT_SHOT:
+    property: read-only
+  world.event.S_EVENT_HIT:
+    property: read-only
+  world.event.S_EVENT_TAKEOFF:
+    property: read-only
+  world.event.S_EVENT_LAND:
+    property: read-only
+  world.event.S_EVENT_CRASH:
+    property: read-only
+  world.event.S_EVENT_EJECTION:
+    property: read-only
+  world.event.S_EVENT_REFUELING:
+    property: read-only
+  world.event.S_EVENT_DEAD:
+    property: read-only
+  world.event.S_EVENT_PILOT_DEAD:
+    property: read-only
+  world.event.S_EVENT_BASE_CAPTURED:
+    property: read-only
+  world.event.S_EVENT_MISSION_START:
+    property: read-only
+  world.event.S_EVENT_MISSION_END:
+    property: read-only
+  world.event.S_EVENT_TOOK_CONTROL:
+    property: read-only
+  world.event.S_EVENT_REFUELING_STOP:
+    property: read-only
+  world.event.S_EVENT_BIRTH:
+    property: read-only
+  world.event.S_EVENT_HUMAN_FAILURE:
+    property: read-only
+  world.event.S_EVENT_DETAILED_FAILURE:
+    property: read-only
+  world.event.S_EVENT_ENGINE_STARTUP:
+    property: read-only
+  world.event.S_EVENT_ENGINE_SHUTDOWN:
+    property: read-only
+  world.event.S_EVENT_PLAYER_ENTER_UNIT:
+    property: read-only
+  world.event.S_EVENT_PLAYER_LEAVE_UNIT:
+    property: read-only
+  world.event.S_EVENT_PLAYER_COMMENT:
+    property: read-only
+  world.event.S_EVENT_SHOOTING_START:
+    property: read-only
+  world.event.S_EVENT_SHOOTING_END:
+    property: read-only
+  world.event.S_EVENT_MARK_ADDED:
+    property: read-only
+  world.event.S_EVENT_MARK_CHANGE:
+    property: read-only
+  world.event.S_EVENT_MARK_REMOVED:
+    property: read-only
+  world.event.S_EVENT_KILL:
+    property: read-only
+  world.event.S_EVENT_SCORE:
+    property: read-only
+  world.event.S_EVENT_UNIT_LOST:
+    property: read-only
+  world.event.S_EVENT_LANDING_AFTER_EJECTION:
+    property: read-only
+  world.event.S_EVENT_PARATROOPER_LENDING:
+    property: read-only
+  world.event.S_EVENT_DISCARD_CHAIR_AFTER_EJECTION:
+    property: read-only
+  world.event.S_EVENT_WEAPON_ADD:
+    property: read-only
+  world.event.S_EVENT_TRIGGER_ZONE:
+    property: read-only
+  world.event.S_EVENT_LANDING_QUALITY_MARK:
+    property: read-only
+  world.event.S_EVENT_BDA:
+    property: read-only
+  world.event.S_EVENT_AI_ABORT_MISSION:
+    property: read-only
+  world.event.S_EVENT_DAYNIGHT:
+    property: read-only
+  world.event.S_EVENT_FLIGHT_TIME:
+    property: read-only
+  world.event.S_EVENT_PLAYER_SELF_KILL_PILOT:
+    property: read-only
+  world.event.S_EVENT_PLAYER_CAPTURE_AIRFIELD:
+    property: read-only
+  world.event.S_EVENT_EMERGENCY_LANDING:
+    property: read-only
+  world.event.S_EVENT_UNIT_CREATE_TASK:
+    property: read-only
+  world.event.S_EVENT_UNIT_DELETE_TASK:
+    property: read-only
+  world.event.S_EVENT_SIMULATION_START:
+    property: read-only
+  world.event.S_EVENT_WEAPON_REARM:
+    property: read-only
+  world.event.S_EVENT_WEAPON_DROP:
+    property: read-only
+  world.event.S_EVENT_UNIT_TASK_COMPLETE:
+    property: read-only
+  world.event.S_EVENT_UNIT_TASK_STAGE:
+    property: read-only
+  world.event.S_EVENT_MAC_EXTRA_SCORE:
+    property: read-only
+  world.event.S_EVENT_MISSION_RESTART:
+    property: read-only
+  world.event.S_EVENT_MISSION_WINNER:
+    property: read-only
+  world.event.S_EVENT_RUNWAY_TAKEOFF:
+    property: read-only
+  world.event.S_EVENT_RUNWAY_TOUCH:
+    property: read-only
+  world.event.S_EVENT_MAC_LMS_RESTART:
+    property: read-only
+  world.event.S_EVENT_SIMULATION_FREEZE:
+    property: read-only
+  world.event.S_EVENT_SIMULATION_UNFREEZE:
+    property: read-only
+  world.event.S_EVENT_HUMAN_AIRCRAFT_REPAIR_START:
+    property: read-only
+  world.event.S_EVENT_HUMAN_AIRCRAFT_REPAIR_FINISH:
+    property: read-only
+  world.event.S_EVENT_MAX:
+    property: read-only
+  lfs:
+    property: new-fields
+  lfs.writedir:
+    args: []

@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Medusa Tactical Display</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@turf/turf@7/turf.min.js"></script>
+<style>
+    @keyframes awacs-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .awacs-spin { width: 18px; height: 18px; animation: awacs-spin 10s linear infinite; will-change: transform; transform-origin: 9px 9px; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; font-family: 'Segoe UI', Tahoma, sans-serif; }
+    #map { width: 100vw; height: 100vh; }
+
+    .panel {
+        background: rgba(20, 20, 30, 0.85);
+        color: #e0e0e0;
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 13px;
+        line-height: 1.5;
+        pointer-events: auto;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+
+    #title-panel {
+        position: absolute;
+        top: 10px;
+        left: 60px;
+        z-index: 1000;
+    }
+    #title-panel h1 {
+        font-size: 18px;
+        font-weight: 600;
+        color: #fff;
+        margin-bottom: 2px;
+    }
+    #title-panel .timestamp {
+        font-size: 11px;
+        color: #999;
+    }
+
+    #legend-panel {
+        position: absolute;
+        bottom: 20px;
+        right: 10px;
+        z-index: 1000;
+        max-height: 60vh;
+        overflow-y: auto;
+    }
+    #legend-panel h3 {
+        font-size: 13px;
+        font-weight: 600;
+        color: #fff;
+        margin-bottom: 6px;
+        cursor: pointer;
+        user-select: none;
+    }
+    #legend-panel h3::before {
+        content: '\25B6';
+        display: inline-block;
+        font-size: 9px;
+        margin-right: 6px;
+        transition: transform 0.2s;
+    }
+    #legend-panel.open h3::before {
+        transform: rotate(90deg);
+    }
+    .legend-content { display: none; }
+    #legend-panel.open .legend-content { display: block; }
+
+    .settings-content { display: none; }
+    #settings-panel.open .settings-content { display: block; }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 2px;
+        font-size: 11px;
+    }
+    .legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+    .legend-dot.blue { background: #4a90d9; }
+    .legend-dot.green { background: #4caf50; }
+    .legend-dot.red { background: #e53935; }
+
+    #stats-panel {
+        position: absolute;
+        bottom: 20px;
+        left: 10px;
+        z-index: 1000;
+    }
+    #stats-panel h3 {
+        font-size: 13px;
+        font-weight: 600;
+        color: #fff;
+        margin-bottom: 6px;
+    }
+    .stat-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        font-size: 12px;
+        margin-bottom: 2px;
+    }
+    .stat-label { color: #999; }
+    .stat-value { color: #fff; font-weight: 600; }
+
+    #toast {
+        display: none;
+        position: absolute;
+        top: 50px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2000;
+        background: rgba(30, 136, 229, 0.92);
+        color: #fff;
+        text-align: center;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 8px 20px;
+        border-radius: 6px;
+        pointer-events: none;
+        transition: opacity 0.5s;
+    }
+
+    #offline-banner {
+        display: none;
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 2000;
+        background: rgba(200, 30, 30, 0.92);
+        color: #fff;
+        text-align: center;
+        font-size: 16px;
+        font-weight: 700;
+        padding: 8px;
+        letter-spacing: 2px;
+    }
+
+    @keyframes pulse-ring {
+        0% { transform: scale(1); opacity: 0.8; }
+        100% { transform: scale(2.5); opacity: 0; }
+    }
+    .battery-pulse {
+        position: absolute;
+        border-radius: 50%;
+        animation: pulse-ring 1s ease-out;
+        pointer-events: none;
+    }
+
+    .leaflet-tooltip {
+        background: rgba(20, 20, 30, 0.9) !important;
+        color: #e0e0e0 !important;
+        border: 1px solid #555 !important;
+        font-size: 12px !important;
+    }
+    .leaflet-tooltip-top::before {
+        border-top-color: rgba(20, 20, 30, 0.9) !important;
+    }
+    .leaflet-tooltip-bottom::before {
+        border-bottom-color: rgba(20, 20, 30, 0.9) !important;
+    }
+
+    #card-deck {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1000;
+        display: flex;
+        gap: 8px;
+        pointer-events: auto;
+        max-width: 90vw;
+        overflow-x: auto;
+    }
+    .detail-card {
+        min-width: 220px;
+        max-width: 280px;
+        flex-shrink: 0;
+    }
+    .detail-card h3 {
+        font-size: 14px;
+        font-weight: 600;
+        color: #fff;
+        margin-bottom: 6px;
+    }
+    .detail-card .close-btn {
+        position: absolute;
+        top: 6px;
+        right: 10px;
+        cursor: pointer;
+        color: #999;
+        font-size: 16px;
+        font-weight: bold;
+        line-height: 1;
+    }
+    .detail-card .close-btn:hover {
+        color: #fff;
+    }
+    .detail-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 12px;
+        margin-bottom: 2px;
+    }
+    .detail-label { color: #999; }
+    .detail-value { color: #fff; font-weight: 600; text-align: right; }
+
+    .kill-marker {
+        color: #e53935;
+        font-size: 24px;
+        font-weight: bold;
+        text-shadow: 0 0 4px #000;
+        line-height: 24px;
+        text-align: center;
+    }
+</style>
+</head>
+<body>
+
+<div id="offline-banner">OFFLINE</div>
+<div id="toast"></div>
+
+<div id="title-panel" class="panel">
+    <h1>Medusa Tactical Display</h1>
+    <div class="timestamp" id="last-update">Waiting for data...</div>
+    <div style="margin-top: 6px;">
+        <label style="font-size: 11px; color: #999;">IADS Filter:</label>
+        <select id="iads-filter" style="background: #1a1a2e; color: #e0e0e0; border: 1px solid #555; border-radius: 3px; padding: 2px 6px; font-size: 12px; margin-left: 4px;">
+            <option value="all">All Networks</option>
+        </select>
+    </div>
+</div>
+
+<div id="settings-panel" class="panel open" style="position:absolute;top:10px;right:10px;z-index:1000;">
+    <h3 onclick="this.parentElement.classList.toggle('open')" style="cursor:pointer;user-select:none;">Display</h3>
+    <div class="settings-content">
+    <label style="display:block;font-size:12px;margin-bottom:4px;cursor:pointer;">
+        <input type="checkbox" id="opt-threat-rings" checked style="margin-right:6px;">Threat Rings <kbd style="color:#777;font-size:10px;">R</kbd>
+    </label>
+    <label style="display:block;font-size:12px;margin-bottom:4px;cursor:pointer;">
+        <input type="checkbox" id="opt-best-pk" checked style="margin-right:6px;">Best Pk Lines <kbd style="color:#777;font-size:10px;">P</kbd>
+    </label>
+    <label style="display:block;font-size:12px;margin-bottom:4px;cursor:pointer;">
+        <input type="checkbox" id="opt-second-pk" checked style="margin-right:6px;">2nd Best Pk Lines <kbd style="color:#777;font-size:10px;">D</kbd>
+    </label>
+    <label style="display:block;font-size:12px;margin-bottom:4px;cursor:pointer;">
+        <input type="checkbox" id="opt-pk-labels" checked style="margin-right:6px;">Pk Labels <kbd style="color:#777;font-size:10px;">L</kbd>
+    </label>
+    <label style="display:block;font-size:12px;margin-bottom:4px;cursor:pointer;">
+        <input type="checkbox" id="opt-track-labels" checked style="margin-right:6px;">Track Labels <kbd style="color:#777;font-size:10px;">T</kbd>
+    </label>
+    <label style="display:block;font-size:12px;margin-bottom:4px;cursor:pointer;">
+        <input type="checkbox" id="opt-bat-labels" style="margin-right:6px;">Battery Labels <kbd style="color:#777;font-size:10px;">B</kbd>
+    </label>
+    <label style="display:block;font-size:12px;margin-bottom:4px;cursor:pointer;">
+        <input type="checkbox" id="opt-border-zones" checked style="margin-right:6px;">Border Zones <kbd style="color:#777;font-size:10px;">Z</kbd>
+    </label>
+    <label style="display:block;font-size:12px;margin-bottom:4px;cursor:pointer;">
+        <input type="checkbox" id="opt-sensors" checked style="margin-right:6px;">Sensors <kbd style="color:#777;font-size:10px;">S</kbd>
+    </label>
+    <div style="margin-top:8px;">
+        <label style="font-size:11px;color:#999;">Refresh Rate:</label>
+        <select id="refresh-rate" style="background:#1a1a2e;color:#e0e0e0;border:1px solid #555;border-radius:3px;padding:2px 6px;font-size:12px;margin-left:4px;">
+            <option value="3">3s (extended)</option>
+            <option value="10">10s (normal)</option>
+        </select>
+    </div>
+    <div style="margin-top:6px;font-size:10px;color:#666;">F = fit bounds</div>
+    </div>
+</div>
+
+<div id="legend-panel" class="panel">
+    <h3 onclick="this.parentElement.classList.toggle('open')">Legend</h3>
+    <div class="legend-content">
+    <div class="legend-item"><div class="legend-dot blue"></div> Battery (COLD/WARM)</div>
+    <div class="legend-item"><div class="legend-dot green"></div> Battery (HOT)</div>
+    <div class="legend-item"><div style="width:14px;height:14px;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 14 14"><polygon points="7,1 13,13 1,13" fill="#e53935" stroke="#b71c1c" stroke-width="1"/></svg></div> Hostile</div>
+    <div class="legend-item"><div style="width:14px;height:14px;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 14 14"><polygon points="7,1 13,13 1,13" fill="none" stroke="#e53935" stroke-width="1.5"/></svg></div> Bandit</div>
+    <div class="legend-item"><div style="width:14px;height:14px;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 14 14"><polygon points="7,1 13,13 1,13" fill="none" stroke="#ffffff" stroke-width="1.5"/></svg></div> Bogey/Unknown</div>
+    <div class="legend-item"><div style="width:14px;height:14px;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 14 14"><polygon points="7,1 13,7 7,13 1,7" fill="#ff00ff" stroke="#aa00aa" stroke-width="1.5"/></svg></div> HARM</div>
+    <div class="legend-item"><div style="width: 20px; border-top: 1.5px dashed #e53935; flex-shrink: 0;"></div> Active engagement</div>
+    <div class="legend-item"><div style="width: 20px; border-top: 1.5px dashed #4fc3f7; flex-shrink: 0;"></div> Best Pk</div>
+    <div class="legend-item"><div style="width: 20px; border-top: 1px dashed #888888; flex-shrink: 0;"></div> 2nd Best Pk</div>
+    <div class="legend-item" style="margin-top: 8px;">
+        <div style="width: 80px; height: 12px; border-radius: 3px; background: linear-gradient(to right, hsl(120,100%,50%), hsl(60,100%,50%), hsl(0,100%,50%), hsl(300,100%,50%)); flex-shrink: 0;"></div>
+        <span>Trail alt: 0 &rarr; 15km</span>
+    </div>
+    <div class="legend-item"><div style="width: 20px; border-top: 1.5px solid #ffffff; flex-shrink: 0;"></div> 30s velocity</div>
+    <div class="legend-item"><div class="legend-dot" style="border: 1px solid #ffeb3b; background: transparent;"></div> SR SAM Range</div>
+    <div class="legend-item"><div class="legend-dot" style="border: 1px solid #ff9800; background: transparent;"></div> MR SAM Range</div>
+    <div class="legend-item"><div class="legend-dot" style="border: 1px solid #e53935; background: transparent;"></div> LR SAM Range</div>
+    <div class="legend-item"><div style="width:14px;height:14px;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 16 16"><polygon points="8,1 14.5,4.5 14.5,11.5 8,15 1.5,11.5 1.5,4.5" fill="#4fc3f7" fill-opacity="0.3" stroke="#4fc3f7" stroke-width="1.2"/></svg></div> EWR / GCI</div>
+    <div class="legend-item"><div style="width:14px;height:14px;flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="#4fc3f7" fill-opacity="0.2" stroke="#4fc3f7" stroke-width="1.5"/><line x1="3.5" y1="14.5" x2="14.5" y2="3.5" stroke="#4fc3f7" stroke-width="1.5"/></svg></div> AWACS</div>
+    <div class="legend-item"><div style="color:#e53935;font-size:14px;font-weight:bold;width:14px;text-align:center;flex-shrink:0;">&times;</div> Kill marker</div>
+    </div>
+</div>
+
+<div id="stats-panel" class="panel">
+    <h3>Status</h3>
+    <div class="stat-row"><span class="stat-label">Posture</span><span class="stat-value" id="stat-posture">-</span></div>
+    <div class="stat-row"><span class="stat-label">Batteries HOT</span><span class="stat-value" id="stat-hot">-</span></div>
+    <div class="stat-row"><span class="stat-label">Batteries Total</span><span class="stat-value" id="stat-total-bat">-</span></div>
+    <div class="stat-row"><span class="stat-label">Tracks Active</span><span class="stat-value" id="stat-tracks">-</span></div>
+    <div class="stat-row"><span class="stat-label">Shots</span><span class="stat-value" id="stat-shots">-</span></div>
+    <div class="stat-row"><span class="stat-label">Kills</span><span class="stat-value" id="stat-kills">-</span></div>
+</div>
+
+<div id="card-deck">
+</div>
+
+<div id="map"></div>
+
+<script src="js/utils.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/render.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
