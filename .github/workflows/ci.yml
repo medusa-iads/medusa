@@ -87,7 +87,7 @@ jobs:
           ERRORS=0
           for f in '${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME }}' '${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}'; do
             # Integer division operator (// is a comment in 5.1, silent bug)
-            if grep -nP '(?<![/-])//' "$f" | grep -vP '^\d+:\s*--'; then
+            if grep -nP '(?<![/:-])//' "$f" | grep -vP '^\d+:\s*--'; then
               echo "::error file=$f::Found // (integer division) - use math.floor(a/b) instead"
               ERRORS=1
             fi
