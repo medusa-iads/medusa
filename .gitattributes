@@ -1,0 +1,28 @@
+# Auto-detect text files and normalize line endings
+* text=auto eol=lf
+
+# Source
+*.lua text
+*.py text
+*.toml text
+*.yml text
+*.yaml text
+*.md text
+*.json text
+
+# Build scripts
+*.sh text eol=lf
+
+# Vendored binaries
+tools/stylua/stylua binary
+tools/stylua/stylua.exe binary
+tools/selene/selene binary
+tools/selene/selene.exe binary
+
+# Archives
+*.zip binary
+
+# Images
+*.png binary
+*.jpg binary
+*.ico binary
