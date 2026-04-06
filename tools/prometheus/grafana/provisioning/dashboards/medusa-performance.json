@@ -1,0 +1,125 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Tick Duration p50 / p90 / p99",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "medusa_tick_duration_seconds{network=~\"$network\",quantile=\"0.5\"}", "legendFormat": "{{network}} p50" },
+        { "expr": "medusa_tick_duration_seconds{network=~\"$network\",quantile=\"0.9\"}", "legendFormat": "{{network}} p90" },
+        { "expr": "medusa_tick_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Tick Average (sum/count)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [{
+        "expr": "rate(medusa_tick_duration_seconds_sum{network=~\"$network\"}[1m]) / rate(medusa_tick_duration_seconds_count{network=~\"$network\"}[1m])",
+        "legendFormat": "{{network}} avg"
+      }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Ticks Per Second",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [{
+        "expr": "rate(medusa_ticks_total{network=~\"$network\"}[1m])",
+        "legendFormat": "{{network}} ticks/s"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "title": "Pipeline Step Duration (p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "medusa_poll_sensors_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} Sensor Poll" },
+        { "expr": "medusa_prune_stale_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} Prune Stale" },
+        { "expr": "medusa_classification_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} Classification" },
+        { "expr": "medusa_harm_eval_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} HARM Eval" },
+        { "expr": "medusa_assignment_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} Assignment" },
+        { "expr": "medusa_handoff_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} Handoff" },
+        { "expr": "medusa_emcon_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} EMCON" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Serialize Duration",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "targets": [
+        { "expr": "medusa_serialize_duration_seconds{quantile=\"0.5\"}", "legendFormat": "p50" },
+        { "expr": "medusa_serialize_duration_seconds{quantile=\"0.99\"}", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Sensor Polling",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "targets": [
+        { "expr": "rate(medusa_detections_total{network=~\"$network\"}[1m])", "legendFormat": "{{network}} Detections/s" },
+        { "expr": "rate(medusa_sensor_empty_polls_total{network=~\"$network\"}[1m])", "legendFormat": "{{network}} Empty Polls/min" }
+      ]
+    },
+    {
+      "title": "Track Age at Expiry",
+      "type": "heatmap",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 34 },
+      "targets": [{
+        "expr": "rate(medusa_track_age_at_expiry_seconds_bucket{network=~\"$network\"}[5m])",
+        "legendFormat": "{{le}}",
+        "format": "heatmap"
+      }]
+    },
+    {
+      "title": "WTA Pairs Evaluated",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 34 },
+      "targets": [{
+        "expr": "rate(medusa_assignment_pairs_evaluated{network=~\"$network\"}[$__rate_interval])",
+        "legendFormat": "{{network}} Pairs"
+      }]
+    },
+    {
+      "title": "Chunk Throughput (processed / queued)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 42 },
+      "targets": [
+        { "expr": "medusa_chunk_processed{network=~\"$network\"}", "legendFormat": "{{network}} {{phase}} processed" },
+        { "expr": "medusa_chunk_queued{network=~\"$network\"}", "legendFormat": "{{network}} {{phase}} queued" }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["medusa", "performance"],
+  "templating": {
+    "list": [
+      {
+        "name": "network",
+        "type": "query",
+        "query": "label_values(medusa_batteries_total, network)",
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "label": "IADS Network",
+        "refresh": 2
+      }
+    ]
+  },
+  "time": { "from": "now-15m", "to": "now" },
+  "title": "Medusa Performance",
+  "uid": "medusa-performance"
+}

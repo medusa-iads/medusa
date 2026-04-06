@@ -1,0 +1,168 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Track Correlation Table",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_track_info{network=~\"$network\"} and on() medusa:live",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "Value": true
+            },
+            "indexByName": {
+              "track": 0,
+              "unit": 1,
+              "type": 2,
+              "aircraft_type": 3,
+              "identification": 4,
+              "maneuver": 5,
+              "network": 6
+            },
+            "renameByName": {
+              "track": "Track ID",
+              "unit": "DCS Unit",
+              "type": "Airframe",
+              "aircraft_type": "Category",
+              "identification": "ID",
+              "maneuver": "Maneuver",
+              "network": "Network"
+            }
+          }
+        }
+      ],
+      "options": {
+        "sortBy": [{ "displayName": "Track ID", "desc": false }]
+      }
+    },
+    {
+      "title": "Track Speed",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_track_speed{network=~\"$network\"} and on() medusa:live",
+          "legendFormat": "{{track}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "velocityms" } }
+    },
+    {
+      "title": "Track Altitude",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_track_pos_y{network=~\"$network\"} and on() medusa:live",
+          "legendFormat": "{{track}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "lengthm" } }
+    },
+    {
+      "title": "Best Pk per Track",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_track_best_pk{network=~\"$network\"} > 0 and on() medusa:live",
+          "legendFormat": "{{track}} \u2190 {{battery}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      }
+    },
+    {
+      "title": "Track Age",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_track_age{network=~\"$network\"} and on() medusa:live",
+          "legendFormat": "{{track}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Track X Position History",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_track_pos_x{network=~\"$network\"} and on() medusa:live",
+          "legendFormat": "{{track}} X",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Track Z Position History",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_track_pos_z{network=~\"$network\"} and on() medusa:live",
+          "legendFormat": "{{track}} Z",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": ["medusa", "tracks"],
+  "templating": {
+    "list": [
+      {
+        "name": "network",
+        "type": "query",
+        "query": "label_values(medusa_batteries_total, network)",
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "label": "IADS Network",
+        "refresh": 2
+      }
+    ]
+  },
+  "time": { "from": "now-15m", "to": "now" },
+  "title": "Medusa Track Details",
+  "uid": "medusa-track-details"
+}

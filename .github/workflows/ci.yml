@@ -1,0 +1,238 @@
+name: Medusa CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release/*
+    paths:
+      - "**/*.lua"
+      - "**/*.py"
+      - ".github/workflows/ci.yml"
+      - ".buildrc"
+      - "**/*.toml"
+      - "**/.python-version"
+      - "**/Taskfile.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LUA_VERSION: 5.1
+  ARTIFACT_NAME: medusa-thin.lua
+  BUNDLED_ARTIFACT_NAME: medusa.lua
+  ARTIFACT_DIR: dist
+  ARTIFACT_NAME_SHA: ci-artifact.lua
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        id: setup-python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+
+      - name: Setup Task
+        id: setup-task
+        uses: arduino/setup-task@e26d8975574116b0097a1161e0fe16ba75d84c1c # v1.0.3
+
+      - name: Set up Lua ${{ env.LUA_VERSION }}
+        id: setup-lua
+        uses: leafo/gh-actions-lua@35bcb06abec04ec87df82e08caa84d545348536e # v10
+        with:
+          luaVersion: "${{ env.LUA_VERSION }}"
+
+      - name: Cache Lua toolchain
+        id: cache-lua
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .lua
+          key: lua-${{ runner.os }}-${{ env.LUA_VERSION }}-ghactionslua-v10
+
+      - name: Format
+        id: format
+        run: task format:ci
+
+      - name: Test
+        id: test
+        run: task test
+
+      - name: Build
+        id: build
+        run: task build
+
+      - name: Syntax check
+        id: syntax-check
+        run: |
+          luac -p '${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME }}'
+          luac -p '${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}'
+
+      - name: Lua 5.1 compatibility check
+        id: lua51-compat
+        run: |
+          ERRORS=0
+          for f in '${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME }}' '${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}'; do
+            # Integer division operator (// is a comment in 5.1, silent bug)
+            if grep -nP '(?<![/-])//' "$f" | grep -vP '^\d+:\s*--'; then
+              echo "::error file=$f::Found // (integer division) - use math.floor(a/b) instead"
+              ERRORS=1
+            fi
+            # Lua 5.2+ standard library functions
+            if grep -nP '\b(string\.pack|string\.unpack|string\.packsize|table\.move|table\.pack|table\.unpack|utf8\.)' "$f"; then
+              echo "::error file=$f::Found Lua 5.2+ stdlib function - not available in DCS Lua 5.1"
+              ERRORS=1
+            fi
+            # Bitwise library (bit32 is 5.2+)
+            if grep -nP '\bbit32\.' "$f"; then
+              echo "::error file=$f::Found bit32 - not available in Lua 5.1"
+              ERRORS=1
+            fi
+          done
+          exit $ERRORS
+
+      - name: Verify version stamped
+        id: version-stamp-check
+        run: |
+          if grep -q '{{VERSION}}' '${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME }}'; then
+            echo "::error::{{VERSION}} placeholder found in ${{ env.ARTIFACT_NAME }}"
+            exit 1
+          fi
+          if grep -q '{{VERSION}}' '${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}'; then
+            echo "::error::{{VERSION}} placeholder found in ${{ env.BUNDLED_ARTIFACT_NAME }}"
+            exit 1
+          fi
+
+      - name: Lint thin
+        id: lint-thin
+        continue-on-error: true
+        uses: YoloWingPixie/selene-lua-linter-action@24ecf180fd5bb4d3b40b4296de61b32179cb79d1 # v1
+        with:
+          config-path: "selene.toml"
+          lint-path: "${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME }}"
+          report-as-annotations: "false"
+          selene-args: "--display-style Json"
+          working-directory: "."
+
+      - name: Lint bundled
+        id: lint-bundled
+        continue-on-error: true
+        uses: YoloWingPixie/selene-lua-linter-action@24ecf180fd5bb4d3b40b4296de61b32179cb79d1 # v1
+        with:
+          config-path: "selene.toml"
+          lint-path: "${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}"
+          report-as-annotations: "false"
+          selene-args: "--display-style Json"
+          working-directory: "."
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            const testResult = '${{ steps.test.outcome }}';
+            const buildResult = '${{ steps.build.outcome }}';
+            const syntaxResult = '${{ steps.syntax-check.outcome }}';
+            const stampResult = '${{ steps.version-stamp-check.outcome }}';
+            const lintThinResult = '${{ steps.lint-thin.outcome }}';
+            const lintBundledResult = '${{ steps.lint-bundled.outcome }}';
+
+            const icon = (r) => r === 'success' ? '✅' : '❌';
+
+            let body = `## CI Results\n\n`;
+            body += `| Check | Result |\n|-------|--------|\n`;
+            body += `| Tests | ${icon(testResult)} ${testResult} |\n`;
+            body += `| Build | ${icon(buildResult)} ${buildResult} |\n`;
+            body += `| Syntax | ${icon(syntaxResult)} ${syntaxResult} |\n`;
+            body += `| Version stamp | ${icon(stampResult)} ${stampResult} |\n`;
+            body += `| Lint (thin) | ${icon(lintThinResult)} ${lintThinResult} |\n`;
+            body += `| Lint (bundled) | ${icon(lintBundledResult)} ${lintBundledResult} |\n`;
+
+            // Find and update existing CI comment or create new
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('## CI Results')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
+
+      - name: Compute artifact names
+        id: compute-artifact-name
+        run: |
+          set -e
+          SAFE_REF_NAME="${GITHUB_REF_NAME//\//-}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "SAFE_REF_NAME=${SAFE_REF_NAME}" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME_SHA=medusa-thin.lua-${SAFE_REF_NAME}-${GITHUB_RUN_ID}-${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "BUNDLED_ARTIFACT_NAME_SHA=medusa.lua-${SAFE_REF_NAME}-${GITHUB_RUN_ID}-${SHORT_SHA}" >> "$GITHUB_ENV"
+
+      - name: Rename build artifacts with SHA
+        id: rename
+        run: |
+          set -e
+          mv '${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME }}' '${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME_SHA }}'
+          mv '${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}' '${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME_SHA }}'
+
+      - name: Upload thin artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload-thin
+        with:
+          name: "${{ env.ARTIFACT_NAME_SHA }}"
+          path: "${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME_SHA }}"
+          retention-days: 14
+
+      - name: Upload bundled artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload-bundled
+        with:
+          name: "${{ env.BUNDLED_ARTIFACT_NAME_SHA }}"
+          path: "${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME_SHA }}"
+          retention-days: 14
+
+      - name: Log artifact digests
+        run: |
+          echo "### Artifact Digests" >> "$GITHUB_STEP_SUMMARY"
+          echo "- thin: \`${{ steps.upload-thin.outputs.artifact-digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- bundled: \`${{ steps.upload-bundled.outputs.artifact-digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if critical checks failed
+        run: |
+          if [ "${{ steps.test.outcome }}" != "success" ] || \
+             [ "${{ steps.build.outcome }}" != "success" ] || \
+             [ "${{ steps.syntax-check.outcome }}" != "success" ] || \
+             [ "${{ steps.version-stamp-check.outcome }}" != "success" ]; then
+            echo "::error::Critical checks failed"
+            exit 1
+          fi

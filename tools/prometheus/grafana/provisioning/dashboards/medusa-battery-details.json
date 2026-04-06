@@ -1,0 +1,362 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Battery Status",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_battery_info{network=~\"$network\", battery=~\"$battery\"} and on() medusa:live",
+          "legendFormat": "",
+          "format": "table",
+          "instant": true,
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "refId": "A"
+        },
+        {
+          "expr": "medusa_battery_shots_fired{network=~\"$network\", battery=~\"$battery\"} and on() medusa:live",
+          "legendFormat": "",
+          "format": "table",
+          "instant": true,
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "battery": 0,
+              "network": 1,
+              "role": 2,
+              "system": 3,
+              "state": 4,
+              "status": 5,
+              "target": 6,
+              "Value #B": 7
+            },
+            "renameByName": {
+              "battery": "Battery",
+              "network": "Network",
+              "role": "Role",
+              "system": "System",
+              "state": "State",
+              "status": "Status",
+              "target": "Current Target",
+              "Value #B": "Shots Fired"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "sortBy": [{ "displayName": "Battery Name", "desc": false }]
+      }
+    },
+    {
+      "title": "Ammo Remaining",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_ammo_remaining{network=~\"$network\", battery=~\"$battery\"} and on() medusa:live",
+          "legendFormat": "{{battery}}",
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "green", "value": 4 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        }
+      }
+    },
+    {
+      "title": "Missiles Fired per Battery",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "increase(medusa_battery_go_hot_total{network=~\"$network\", battery=~\"$battery\"}[$__range]) and on() medusa:live",
+          "legendFormat": "{{battery}}",
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }
+        }
+      ],
+      "fieldConfig": { "defaults": {} }
+    },
+    {
+      "title": "Best Pk Held by Battery",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_track_best_pk{network=~\"$network\", battery=~\"$battery\"} > 0 and on() medusa:live",
+          "legendFormat": "{{battery}} \u2192 {{track}}",
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      }
+    },
+    {
+      "title": "Second Best Pk by Battery",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_track_second_pk{network=~\"$network\", battery=~\"$battery\"} > 0 and on() medusa:live",
+          "legendFormat": "{{battery}} \u2192 {{track}}",
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      }
+    },
+    {
+      "title": "Engagement Range",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "sort_desc(medusa_battery_engagement_range_m{network=~\"$network\", battery=~\"$battery\"} and on() medusa:live)",
+          "legendFormat": "{{system}} | {{battery}}",
+          "instant": true,
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lengthm"
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        }
+      }
+    },
+    {
+      "title": "Battery Weapon Range",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "sort_desc(medusa_battery_weapon_range_m{network=~\"$network\", battery=~\"$battery\"} and on() medusa:live)",
+          "legendFormat": "{{battery}} ({{weapon}})",
+          "instant": true,
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lengthm"
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        }
+      }
+    },
+    {
+      "title": "State Transitions",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 34 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "increase(medusa_battery_go_hot_total{network=~\"$network\", battery=~\"$battery\"}[5m]) and on() medusa:live",
+          "legendFormat": "{{battery}} go_hot",
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }
+        },
+        {
+          "expr": "increase(medusa_battery_go_warm_total{network=~\"$network\", battery=~\"$battery\"}[5m]) and on() medusa:live",
+          "legendFormat": "{{battery}} go_warm",
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }
+        },
+        {
+          "expr": "increase(medusa_battery_go_cold_total{network=~\"$network\", battery=~\"$battery\"}[5m]) and on() medusa:live",
+          "legendFormat": "{{battery}} go_cold",
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }
+        }
+      ],
+      "fieldConfig": { "defaults": {} }
+    },
+    {
+      "title": "HARM Defense Status",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 42 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_battery_harm_threats{network=~\"$network\", battery=~\"$battery\"} and on() medusa:live",
+          "legendFormat": "",
+          "format": "table",
+          "instant": true,
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "refId": "A"
+        },
+        {
+          "expr": "medusa_battery_harm_defenders{network=~\"$network\", battery=~\"$battery\"} and on() medusa:live",
+          "legendFormat": "",
+          "format": "table",
+          "instant": true,
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "refId": "B"
+        },
+        {
+          "expr": "medusa_battery_harm_ratio{network=~\"$network\", battery=~\"$battery\"} and on() medusa:live",
+          "legendFormat": "",
+          "format": "table",
+          "instant": true,
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "refId": "C"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "__name__": true,
+              "instance": true,
+              "job": true
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "title": "Last-Chance Salvo Status",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 50 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        {
+          "expr": "medusa_battery_last_chance{network=~\"$network\", battery=~\"$battery\"} and on() medusa:live",
+          "legendFormat": "",
+          "format": "table",
+          "instant": true,
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "refId": "A"
+        },
+        {
+          "expr": "medusa_battery_last_chance_shots_remaining{network=~\"$network\", battery=~\"$battery\"} and on() medusa:live",
+          "legendFormat": "",
+          "format": "table",
+          "instant": true,
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "__name__": true,
+              "instance": true,
+              "job": true
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": ["medusa", "battery"],
+  "templating": {
+    "list": [
+      {
+        "name": "network",
+        "type": "query",
+        "query": "label_values(medusa_batteries_total, network)",
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "label": "IADS Network",
+        "refresh": 2
+      },
+      {
+        "name": "battery",
+        "type": "query",
+        "query": "label_values(medusa_battery_info{network=~\"$network\"}, battery)",
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "label": "Battery",
+        "refresh": 2
+      }
+    ]
+  },
+  "time": { "from": "now-15m", "to": "now" },
+  "title": "Medusa Battery Details",
+  "uid": "medusa-battery-details"
+}

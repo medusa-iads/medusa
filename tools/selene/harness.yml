@@ -1,0 +1,2234 @@
+base: lua51
+name: harness
+globals:
+  GetAirbaseByName:
+    args:
+    - type: string
+      required: false
+  GetAirbaseDescriptor:
+    args:
+    - type: table
+      required: false
+  GetAirbaseCallsign:
+    args:
+    - type: table
+      required: false
+  GetAirbaseUnit:
+    args:
+    - type: table
+      required: false
+    - type: any
+  GetAirbaseCategoryName:
+    args:
+    - type: table
+      required: false
+  GetAirbaseParking:
+    args:
+    - type: table
+      required: false
+    - type: bool
+      required: false
+  GetAirbaseRunways:
+    args:
+    - type: table
+      required: false
+  GetAirbaseTechObjectPos:
+    args:
+    - type: table
+      required: false
+    - type: number
+  GetAirbaseDispatcherTowerPos:
+    args:
+    - type: table
+      required: false
+  GetAirbaseRadioSilentMode:
+    args:
+    - type: table
+      required: false
+  SetAirbaseRadioSilentMode:
+    args:
+    - type: table
+      required: false
+    - type: bool
+  GetAirbaseBeacon:
+    args:
+    - type: table
+      required: false
+  AirbaseAutoCapture:
+    args:
+    - type: table
+      required: false
+    - type: bool
+  AirbaseAutoCaptureIsOn:
+    args:
+    - type: table
+      required: false
+  SetAirbaseCoalition:
+    args:
+    - type: table
+      required: false
+    - type: number
+  GetAirbaseWarehouse:
+    args:
+    - type: table
+      required: false
+  GetAirbaseFreeParkingTerminal:
+    args:
+    - type: table
+      required: false
+    - type: any
+      required: false
+  GetAirbaseFreeParkingTerminalByType:
+    args:
+    - type: table
+      required: false
+    - type: any
+      required: false
+    - type: bool
+      required: false
+  GetFreeAirbaseParkingTerminal:
+    args:
+    - type: table
+      required: false
+    - type: any
+      required: false
+  GetAirbaseParkingTerminal:
+    args:
+    - type: table
+      required: false
+    - type: number
+  GetAirbaseParkingTerminalByIndex:
+    args:
+    - type: table
+      required: false
+    - type: number
+  GetAirbaseParkingCount:
+    args:
+    - type: table
+      required: false
+  GetAirbaseRunwayDetails:
+    args:
+    - type: table
+      required: false
+    - type: number
+      required: false
+  GetAirbaseMeteo:
+    args:
+    - type: table
+      required: false
+    - type: number
+      required: false
+  GetAirbaseWindWithTurbulence:
+    args:
+    - type: table
+      required: false
+    - type: number
+      required: false
+  GetAirbaseIsServiceProvided:
+    args:
+    - type: table
+      required: false
+    - type: number
+  GetWind:
+    args:
+    - type: table
+      required: false
+  GetWindWithTurbulence:
+    args:
+    - type: table
+      required: false
+  GetTemperatureAndPressure:
+    args:
+    - type: table
+      required: false
+  GetWindKnots:
+    args:
+    - type: table
+  GetWindWithTurbulenceKnots:
+    args:
+    - type: table
+  GetTemperatureC:
+    args:
+    - type: table
+  GetTemperatureF:
+    args:
+    - type: table
+  GetPressureInHg:
+    args:
+    - type: table
+  GetPressurehPa:
+    args:
+    - type: table
+  ClearAllCaches:
+    args: []
+  ClearUnitCache:
+    args: []
+  ClearGroupCache:
+    args: []
+  ClearControllerCache:
+    args: []
+  RemoveUnitFromCache:
+    args:
+    - type: string
+  RemoveGroupFromCache:
+    args:
+    - type: string
+  GetCacheStats:
+    args: []
+  SetCacheConfig:
+    args:
+    - type: table
+  GetCacheTables:
+    args: []
+  CacheDecorator:
+    args:
+    - type: function
+    - type: function
+    - type: string
+    - type: function
+      required: false
+  GetCachedUnit:
+    args:
+    - type: string
+  GetCachedGroup:
+    args:
+    - type: string
+  GetCachedController:
+    args:
+    - type: string
+  BuildUnitEntry:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  BuildWaypoint:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  BuildRoute:
+    args:
+    - type: any
+    - type: any
+  BuildGroupData:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  GetCoalitionByCountry:
+    args:
+    - type: any
+  GetCoalitionPlayers:
+    args:
+    - type: any
+  GetCoalitionGroups:
+    args:
+    - type: number
+    - type: number
+      required: false
+  GetCoalitionAirbases:
+    args:
+    - type: any
+  GetCoalitionCountries:
+    args:
+    - type: any
+  GetCoalitionStaticObjects:
+    args:
+    - type: any
+  AddCoalitionGroup:
+    args:
+    - type: any
+    - type: any
+    - type: any
+  AddCoalitionStaticObject:
+    args:
+    - type: any
+    - type: any
+  GetCoalitionRefPoints:
+    args:
+    - type: any
+  GetCoalitionMainRefPoint:
+    args:
+    - type: any
+  GetCoalitionBullseye:
+    args:
+    - type: any
+  AddCoalitionRefPoint:
+    args:
+    - type: any
+    - type: any
+  RemoveCoalitionRefPoint:
+    args:
+    - type: any
+    - type: any
+  GetCoalitionServiceProviders:
+    args:
+    - type: any
+    - type: any
+  GetControllerDomain:
+    args:
+    - type: table
+  SetControllerTask:
+    args:
+    - type: table
+    - type: table
+  ResetControllerTask:
+    args:
+    - type: table
+  PushControllerTask:
+    args:
+    - type: table
+    - type: table
+  PopControllerTask:
+    args:
+    - type: table
+  HasControllerTask:
+    args:
+    - type: table
+  SetControllerCommand:
+    args:
+    - type: table
+    - type: table
+  SetControllerOnOff:
+    args:
+    - type: table
+    - type: bool
+  SetControllerAltitude:
+    args:
+    - type: table
+    - type: number
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  SetControllerSpeed:
+    args:
+    - type: table
+    - type: number
+    - type: bool
+      required: false
+  SetControllerOption:
+    args:
+    - type: table
+    - type: number
+    - type: any
+  ControllerSetROE:
+    args:
+    - type: table
+    - type: any
+  ControllerSetReactionOnThreat:
+    args:
+    - type: table
+    - type:
+        display: integer|ReactionOnThreat
+  ControllerSetRadarUsing:
+    args:
+    - type: table
+    - type: number
+  ControllerSetFlareUsing:
+    args:
+    - type: table
+    - type: number
+  ControllerSetFormation:
+    args:
+    - type: table
+    - type: number
+  ControllerSetRTBOnBingo:
+    args:
+    - type: table
+    - type: bool
+  ControllerSetSilence:
+    args:
+    - type: table
+    - type: bool
+  ControllerSetAlarmState:
+    args:
+    - type: table
+    - type: any
+  ControllerSetDisperseOnAttack:
+    args:
+    - type: table
+    - type: number
+  ControllerSetRTBOnOutOfAmmo:
+    args:
+    - type: table
+    - type: bool
+  ControllerSetECMUsing:
+    args:
+    - type: table
+    - type: number
+  ControllerSetProhibitWPPassReport:
+    args:
+    - type: table
+    - type: bool
+  ControllerSetProhibitAA:
+    args:
+    - type: table
+    - type: bool
+  ControllerSetProhibitJettison:
+    args:
+    - type: table
+    - type: bool
+  ControllerSetProhibitAB:
+    args:
+    - type: table
+    - type: bool
+  ControllerSetProhibitAG:
+    args:
+    - type: table
+    - type: bool
+  ControllerSetMissileAttack:
+    args:
+    - type: table
+    - type:
+        display: integer|MissileAttackMode
+  GetControllerDetectedTargets:
+    args:
+    - type: table
+    - type: any
+      required: false
+    - type: any
+      required: false
+  KnowControllerTarget:
+    args:
+    - type: table
+    - type: table
+    - type: bool
+      required: false
+    - type: bool
+      required: false
+  IsControllerTargetDetected:
+    args:
+    - type: table
+    - type: table
+    - type: any
+      required: false
+  BuildAirOptionTask:
+    args:
+    - type: any
+    - type: any
+  BuildGroundOptionTask:
+    args:
+    - type: any
+    - type: any
+  BuildNavalOptionTask:
+    args:
+    - type: any
+    - type: any
+  BuildAirOptions:
+    args:
+    - type: any
+  BuildGroundOptions:
+    args:
+    - type: any
+  BuildNavalOptions:
+    args:
+    - type: any
+  CreateOrbitTask:
+    args:
+    - type: string
+      required: false
+    - type: table
+    - type: number
+    - type: number
+    - type: table
+      required: false
+  CreateFollowTask:
+    args:
+    - type: number
+    - type: table
+      required: false
+    - type: number
+      required: false
+  CreateEscortTask:
+    args:
+    - type: number
+    - type: table
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+  CreateAttackGroupTask:
+    args:
+    - type: number
+    - type: any
+      required: false
+    - type: bool
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+  CreateAttackUnitTask:
+    args:
+    - type: number
+    - type: any
+      required: false
+    - type: bool
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+  CreateBombingTask:
+    args:
+    - type: table
+    - type: any
+      required: false
+    - type: bool
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+  CreateBombingRunwayTask:
+    args:
+    - type: number
+    - type: any
+      required: false
+    - type: bool
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+  CreateLandTask:
+    args:
+    - type: table
+    - type: bool
+      required: false
+    - type: number
+      required: false
+  CreateRefuelingTask:
+    args: []
+  CreateHoldTask:
+    args:
+    - type: any
+      required: false
+  CreateGoToWaypointTask:
+    args:
+    - type: number
+    - type: number
+  CreateWrappedAction:
+    args:
+    - type: table
+    - type: bool
+      required: false
+  CtoK:
+    args:
+    - type:
+        display: number|string
+  KtoC:
+    args:
+    - type:
+        display: number|string
+  CtoF:
+    args:
+    - type:
+        display: number|string
+  FtoC:
+    args:
+    - type:
+        display: number|string
+  KtoF:
+    args:
+    - type:
+        display: number|string
+  FtoK:
+    args:
+    - type:
+        display: number|string
+  PaToInHg:
+    args:
+    - type:
+        display: number|string
+  InHgToPa:
+    args:
+    - type:
+        display: number|string
+  PaTohPa:
+    args:
+    - type:
+        display: number|string
+  hPaToPa:
+    args:
+    - type:
+        display: number|string
+  MetersToFeet:
+    args:
+    - type: number
+  FeetToMeters:
+    args:
+    - type: number
+  MpsToKnots:
+    args:
+    - type:
+        display: number|string
+  KnotsToMps:
+    args:
+    - type:
+        display: number|string
+  GetSpeedIAS:
+    args:
+    - type:
+        display: number|string
+  ConvertTemperature:
+    args:
+    - type:
+        display: number|string
+    - type: string
+    - type: string
+  ConvertPressure:
+    args:
+    - type:
+        display: number|string
+    - type: string
+    - type: string
+  ConvertDistance:
+    args:
+    - type:
+        display: number|string
+    - type: string
+    - type: string
+  ConvertSpeed:
+    args:
+    - type:
+        display: number|string
+    - type: string
+    - type: string
+  LOtoLL:
+    args:
+    - type: table
+  LLtoLO:
+    args:
+    - type: number
+    - type: number
+    - type: number
+      required: false
+  LOtoMGRS:
+    args:
+    - type: table
+  MGRStoLO:
+    args:
+    - type: string
+  Queue:
+    args: []
+  Stack:
+    args: []
+  Cache:
+    args:
+    - type: number
+      required: false
+  Memoize:
+    args:
+    - type: function
+    - type: number
+      required: false
+    - type: function
+      required: false
+  Heap:
+    args:
+    - type: bool
+      required: false
+    - type: function
+      required: false
+  Set:
+    args: []
+  PriorityQueue:
+    args:
+    - type: function
+      required: false
+  RingBuffer:
+    args:
+    - type: number
+    - type: bool
+      required: false
+  GetDrawings:
+    args: []
+  ProcessDrawingGeometry:
+    args:
+    - type: table
+  InitializeDrawingCache:
+    args: []
+  GetAllDrawings:
+    args: []
+  GetDrawingByName:
+    args:
+    - type: string
+  FindDrawingsByName:
+    args:
+    - type: string
+  GetDrawingsByType:
+    args:
+    - type: string
+  GetDrawingsByLayer:
+    args:
+    - type: string
+  IsPointInDrawing:
+    args:
+    - type: table
+    - type: table
+  GetUnitsInDrawing:
+    args:
+    - type: string
+    - type: number
+      required: false
+  GetDrawingsAtPoint:
+    args:
+    - type: table
+    - type: string
+      required: false
+  ClearDrawingCache:
+    args: []
+  EventBus:
+    args:
+    - type: any
+      required: false
+  CreateHarnessWorldEventBus:
+    args: []
+  InitHarnessWorldEventBus:
+    args: []
+  GetFlag:
+    args:
+    - type: string
+      required: false
+  SetFlag:
+    args:
+    - type: string
+      required: false
+    - type: number
+      required: false
+  IncFlag:
+    args:
+    - type: string
+    - type: number
+      required: false
+  DecFlag:
+    args:
+    - type: string
+    - type: number
+      required: false
+  ToggleFlag:
+    args:
+    - type: string
+  IsFlagTrue:
+    args:
+    - type: string
+  IsFlagFalse:
+    args:
+    - type: string
+  FlagEquals:
+    args:
+    - type: string
+    - type: number
+  FlagGreaterThan:
+    args:
+    - type: string
+    - type: number
+  FlagLessThan:
+    args:
+    - type: string
+    - type: number
+  FlagBetween:
+    args:
+    - type: string
+    - type: number
+    - type: number
+  SetFlags:
+    args:
+    - type: table
+  GetFlags:
+    args:
+    - type: table
+  ClearFlag:
+    args:
+    - type: string
+  ClearFlags:
+    args:
+    - type: table
+  GeoGrid:
+    args:
+    - type: any
+    - type: any
+  DegToRad:
+    args:
+    - type: number
+  RadToDeg:
+    args:
+    - type: number
+  NauticalMilesToMeters:
+    args:
+    - type: number
+  MetersToNauticalMiles:
+    args:
+    - type: number
+  Distance2D:
+    args:
+    - type: table
+    - type: table
+  Distance3D:
+    args:
+    - type:
+        display: table|Vec3
+    - type:
+        display: table|Vec3
+  BearingBetween:
+    args:
+    - type:
+        display: table|Vec2|Vec3
+    - type:
+        display: table|Vec2|Vec3
+  DisplacePoint2D:
+    args:
+    - type:
+        display: table|Vec2|Vec3
+    - type: number
+    - type: number
+  MidPoint:
+    args:
+    - type:
+        display: table|Vec2|Vec3
+    - type:
+        display: table|Vec2|Vec3
+  RotatePoint2D:
+    args:
+    - type:
+        display: table|Vec2|Vec3
+    - type:
+        display: table|Vec2|Vec3
+    - type: number
+  NormalizeVector2D:
+    args:
+    - type:
+        display: table|Vec2
+  NormalizeVector3D:
+    args:
+    - type:
+        display: table|Vec3
+  DotProduct2D:
+    args:
+    - type:
+        display: table|Vec2
+    - type:
+        display: table|Vec2
+  DotProduct3D:
+    args:
+    - type:
+        display: table|Vec3
+    - type:
+        display: table|Vec3
+  CrossProduct3D:
+    args:
+    - type:
+        display: table|Vec3
+    - type:
+        display: table|Vec3
+  AngleBetweenVectors2D:
+    args:
+    - type:
+        display: table|Vec2
+    - type:
+        display: table|Vec2
+  PointInPolygon2D:
+    args:
+    - type: any
+    - type: any
+  CircleLineIntersection2D:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  PolygonArea2D:
+    args:
+    - type: any
+  PolygonCentroid2D:
+    args:
+    - type: any
+  ConvexHull2D:
+    args:
+    - type: any
+  EstimateCPAToPoint:
+    args:
+    - type: table
+    - type: table
+    - type: table
+  EstimateCPAToCircle:
+    args:
+    - type: table
+    - type: table
+    - type: table
+    - type: number
+  EstimateCPAToPolygon:
+    args:
+    - type: table
+    - type: table
+    - type: table
+  EstimateTwoBodyCPA:
+    args:
+    - type: table
+    - type: table
+    - type: table
+    - type: table
+  EstimateInterceptForSpeed:
+    args:
+    - type: table
+    - type: number
+    - type: table
+    - type: table
+  EstimateInterceptDeltaV:
+    args:
+    - type: table
+    - type: table
+    - type: table
+    - type: table
+    - type: number
+      required: false
+  GetGroup:
+    args:
+    - type: string
+  GroupExists:
+    args:
+    - type: string
+  GetGroupUnits:
+    args:
+    - type: string
+  GetGroupSize:
+    args:
+    - type: string
+  GetGroupInitialSize:
+    args:
+    - type: string
+  GetGroupCoalition:
+    args:
+    - type: string
+  GetGroupCategory:
+    args:
+    - type: string
+  GetGroupID:
+    args:
+    - type: string
+  GetGroupController:
+    args:
+    - type: string
+  MessageToGroup:
+    args:
+    - type: number
+    - type: string
+    - type: number
+      required: false
+  MessageToCoalition:
+    args:
+    - type: number
+    - type: string
+    - type: number
+      required: false
+  MessageToAll:
+    args:
+    - type: string
+    - type: number
+      required: false
+  ActivateGroup:
+    args:
+    - type: string
+  GetGroupName:
+    args:
+    - type: table
+  GetGroupUnit:
+    args:
+    - type: table
+    - type: number
+  GetGroupCategoryEx:
+    args:
+    - type: table
+  EnableGroupEmissions:
+    args:
+    - type: table
+    - type: bool
+  DestroyGroup:
+    args:
+    - type: table
+  IsGroupEmbarking:
+    args:
+    - type: table
+  MarkGroup:
+    args:
+    - type: table
+    - type: table
+    - type: string
+  NewUUIDv4:
+    args: []
+  NewUUIDv7:
+    args: []
+  NewULID:
+    args: []
+  HarnessLogger:
+    args:
+    - type: string
+      required: false
+  DeepCopy:
+    args:
+    - type: any
+  ShallowCopy:
+    args:
+    - type: any
+  Contains:
+    args:
+    - type: table
+    - type: any
+  ContainsKey:
+    args:
+    - type: table
+    - type: any
+  TableSize:
+    args:
+    - type: any
+  TableKeys:
+    args:
+    - type: any
+  TableValues:
+    args:
+    - type: any
+  MergeTables:
+    args:
+    - type: any
+    - type: any
+  FilterTable:
+    args:
+    - type: any
+    - type: function
+  MapTable:
+    args:
+    - type: any
+    - type: function
+  Clamp:
+    args:
+    - type: number
+    - type: number
+    - type: number
+  Lerp:
+    args:
+    - type: number
+    - type: number
+    - type: number
+  Round:
+    args:
+    - type: number
+    - type: number
+      required: false
+  RandomFloat:
+    args:
+    - type: number
+    - type: number
+  RandomInt:
+    args:
+    - type: number
+    - type: number
+  RandomChoice:
+    args:
+    - type: table
+      required: false
+  Shuffle:
+    args:
+    - type: any
+  ShuffledCopy:
+    args:
+    - type: any
+  SplitString:
+    args:
+    - type: any
+    - type: string
+      required: false
+    - type: bool
+      required: false
+  TrimString:
+    args:
+    - type: any
+  StringStartsWith:
+    args:
+    - type: any
+    - type: any
+  StringContains:
+    args:
+    - type: any
+    - type: any
+  StringEndsWith:
+    args:
+    - type: any
+    - type: any
+  StartsWith:
+    args:
+    - type: any
+    - type: any
+  EndsWith:
+    args:
+    - type: any
+    - type: any
+  NormalizeAngle:
+    args:
+    - type: number
+  AngleDiff:
+    args:
+    - type: number
+    - type: number
+  TableToString:
+    args:
+    - type: any
+    - type: number
+      required: false
+  ShallowEqual:
+    args:
+    - type: any
+    - type: any
+  EncodeJson:
+    args:
+    - type: any
+  DecodeJson:
+    args:
+    - type: string
+  Retry:
+    args:
+    - type: function
+    - type: table
+      required: false
+  CircuitBreaker:
+    args:
+    - type: function
+    - type: table
+      required: false
+  AddCommand:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  AddSubMenu:
+    args:
+    - type: any
+    - type: any
+  RemoveItem:
+    args:
+    - type: any
+  AddCommandForCoalition:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  AddSubMenuForCoalition:
+    args:
+    - type: any
+    - type: any
+    - type: any
+  RemoveItemForCoalition:
+    args:
+    - type: any
+    - type: any
+  AddCommandForGroup:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  AddSubMenuForGroup:
+    args:
+    - type: any
+    - type: any
+    - type: any
+  RemoveItemForGroup:
+    args:
+    - type: any
+    - type: any
+  CreateMenuItem:
+    args:
+    - type: any
+    - type: any
+    - type: any
+  CreateMenuPath:
+    args:
+    - type: any
+  SendChat:
+    args:
+    - type: string
+    - type: bool
+  SendChatTo:
+    args:
+    - type: string
+    - type: number
+    - type: number
+      required: false
+  GetPlayers:
+    args: []
+  GetPlayerInfo:
+    args:
+    - type: number
+  KickPlayer:
+    args:
+    - type: number
+    - type: string
+      required: false
+  GetPlayerStat:
+    args:
+    - type: number
+    - type: number
+  IsServer:
+    args: []
+  LoadMission:
+    args:
+    - type: string
+  LoadNextMission:
+    args: []
+  GetMissionName:
+    args: []
+  ForcePlayerSlot:
+    args:
+    - type: number
+    - type: number
+    - type: string
+  InitializeShapeCache:
+    args: []
+  GetAllShapes:
+    args: []
+  FindShapesByName:
+    args:
+    - type: string
+  GetShapeByName:
+    args:
+    - type: string
+  GetShapesAtPoint:
+    args:
+    - type: table
+    - type: string
+      required: false
+  GetAllCircularShapes:
+    args: []
+  GetAllPolygonShapes:
+    args: []
+  GetUnitsInShape:
+    args:
+    - type: string
+  GetShapeStatistics:
+    args: []
+  ClearShapeCache:
+    args: []
+  AutoInitializeShapeCache:
+    args: []
+  CreateTriangle:
+    args:
+    - type: any
+    - type: any
+    - type: any
+  CreateRectangle:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  CreateSquare:
+    args:
+    - type: any
+    - type: any
+    - type: any
+  CreateOval:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  CreateCircle:
+    args:
+    - type: any
+    - type: any
+    - type: any
+  CreateFan:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  CreateTrapezoid:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  CreatePill:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  CreateStar:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  CreatePolygon:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  CreateHexagon:
+    args:
+    - type: any
+    - type: any
+    - type: any
+  CreateOctagon:
+    args:
+    - type: any
+    - type: any
+    - type: any
+  CreateArc:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  CreateSpiral:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  CreateRing:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  CreateCross:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  ShapeToVec3:
+    args:
+    - type: any
+    - type: any
+  CreateLaserSpot:
+    args:
+    - type: table
+    - type: table
+    - type: table
+      required: false
+    - type: number
+  CreateIRSpot:
+    args:
+    - type: table
+    - type: table
+    - type: table
+      required: false
+  DestroySpot:
+    args:
+    - type: table
+  GetSpotPoint:
+    args:
+    - type: table
+  SetSpotPoint:
+    args:
+    - type: table
+    - type: table
+  GetLaserCode:
+    args:
+    - type: table
+  SetLaserCode:
+    args:
+    - type: table
+    - type: number
+  SpotExists:
+    args:
+    - type: table
+  GetSpotCategory:
+    args:
+    - type: table
+  GetStaticByName:
+    args:
+    - type: string
+  GetStaticID:
+    args:
+    - type: table
+  GetStaticLife:
+    args:
+    - type: table
+  GetStaticCargoDisplayName:
+    args:
+    - type: table
+  GetStaticCargoWeight:
+    args:
+    - type: table
+  DestroyStaticObject:
+    args:
+    - type: table
+  GetStaticCategory:
+    args:
+    - type: table
+  GetStaticTypeName:
+    args:
+    - type: table
+  GetStaticDesc:
+    args:
+    - type: table
+  IsStaticExist:
+    args:
+    - type: table
+  GetStaticCoalition:
+    args:
+    - type: table
+  GetStaticCountry:
+    args:
+    - type: table
+  GetStaticPoint:
+    args:
+    - type: table
+  GetStaticPosition:
+    args:
+    - type: table
+  GetStaticVelocity:
+    args:
+    - type: table
+  CreateStaticObject:
+    args:
+    - type: number
+    - type: table
+  GetTerrainHeight:
+    args:
+    - type: table
+  GetAGL:
+    args:
+    - type: table
+  SetAGL:
+    args:
+    - type: table
+    - type: number
+  HasLOS:
+    args:
+    - type: table
+    - type: table
+  GetTerrainGrade:
+    args:
+    - type: table
+    - type: number
+      required: false
+    - type: number
+      required: false
+  GetSurfaceType:
+    args:
+    - type: table
+  IsOverWater:
+    args:
+    - type: table
+  IsOverLand:
+    args:
+    - type: table
+  GetTerrainIntersection:
+    args:
+    - type: table
+    - type: table
+    - type: number
+  GetTerrainProfile:
+    args:
+    - type: table
+    - type: table
+  GetClosestRoadPoint:
+    args:
+    - type: table
+    - type: string
+      required: false
+  FindRoadPath:
+    args:
+    - type: table
+    - type: table
+    - type: string
+      required: false
+  GetTime:
+    args: []
+  GetAbsTime:
+    args: []
+  GetTime0:
+    args: []
+  FormatTime:
+    args:
+    - type: number
+  FormatTimeShort:
+    args:
+    - type: number
+  GetMissionTime:
+    args: []
+  IsNightTime:
+    args: []
+  ScheduleOnce:
+    args:
+    - type: function
+    - type: any
+      required: false
+    - type: number
+      required: false
+  CancelSchedule:
+    args:
+    - type: number
+      required: false
+  RescheduleFunction:
+    args:
+    - type: number
+    - type: number
+  SecondsToTime:
+    args:
+    - type: number
+  TimeToSeconds:
+    args:
+    - type: number
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+  GetElapsedTime:
+    args: []
+  GetElapsedRealTime:
+    args: []
+  BinarySearchTree:
+    args:
+    - type: function
+      required: false
+  RedBlackTree:
+    args:
+    - type: function
+      required: false
+  Trie:
+    args: []
+  AVLTree:
+    args:
+    - type: function
+      required: false
+  OutText:
+    args:
+    - type: string
+    - type: number
+      required: false
+    - type: bool
+      required: false
+  OutTextForCoalition:
+    args:
+    - type: number
+    - type: string
+    - type: number
+      required: false
+    - type: bool
+      required: false
+  OutTextForGroup:
+    args:
+    - type: number
+    - type: string
+    - type: number
+      required: false
+    - type: bool
+      required: false
+  OutTextForUnit:
+    args:
+    - type: number
+    - type: string
+    - type: number
+      required: false
+    - type: bool
+      required: false
+  OutSound:
+    args:
+    - type: string
+    - type: any
+      required: false
+  OutSoundForCoalition:
+    args:
+    - type: number
+    - type: string
+    - type: any
+      required: false
+  Explosion:
+    args:
+    - type: table
+    - type: number
+  Smoke:
+    args:
+    - type: table
+    - type: number
+    - type: number
+      required: false
+    - type: string
+      required: false
+  EffectSmokeBig:
+    args:
+    - type: table
+    - type: number
+    - type: number
+      required: false
+    - type: string
+      required: false
+  EffectSmokeStop:
+    args:
+    - type: string
+  IlluminationBomb:
+    args:
+    - type: table
+    - type: number
+      required: false
+  SignalFlare:
+    args:
+    - type: table
+    - type: number
+    - type: number
+      required: false
+  RadioTransmission:
+    args:
+    - type: string
+    - type: table
+    - type: number
+      required: false
+    - type: bool
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+    - type: string
+      required: false
+  StopRadioTransmission:
+    args:
+    - type: string
+  SetMarkupRadius:
+    args:
+    - type: number
+    - type: number
+  SetMarkupText:
+    args:
+    - type: number
+    - type: string
+  SetMarkupColor:
+    args:
+    - type: number
+    - type: table
+  SetMarkupColorFill:
+    args:
+    - type: number
+    - type: table
+  SetMarkupFontSize:
+    args:
+    - type: number
+    - type: number
+  RemoveMark:
+    args:
+    - type: number
+  MarkToAll:
+    args:
+    - type: number
+    - type: string
+      required: false
+    - type: table
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  MarkToCoalition:
+    args:
+    - type: number
+    - type: string
+      required: false
+    - type: table
+    - type: number
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  MarkToGroup:
+    args:
+    - type: number
+    - type: string
+      required: false
+    - type: table
+    - type: number
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  SetAITask:
+    args:
+    - type: table
+    - type: number
+  PushAITask:
+    args:
+    - type: table
+    - type: number
+  TriggerActivateGroup:
+    args:
+    - type: table
+  TriggerDeactivateGroup:
+    args:
+    - type: table
+  SetGroupAIOn:
+    args:
+    - type: table
+  SetGroupAIOff:
+    args:
+    - type: table
+  GroupStopMoving:
+    args:
+    - type: table
+  GroupContinueMoving:
+    args:
+    - type: table
+  MarkupToAll:
+    args:
+    - type: number
+    - type: number
+    - type: number
+    - type: table
+    - type: any
+  GetUnit:
+    args:
+    - type: string
+  UnitExists:
+    args:
+    - type: string
+  GetUnitPosition:
+    args:
+    - type:
+        display: string|table
+  GetUnitHeading:
+    args:
+    - type: string
+  GetUnitVelocity:
+    args:
+    - type: string
+  GetUnitSpeedMps:
+    args:
+    - type: string
+  GetUnitSpeedKnots:
+    args:
+    - type: string
+  GetUnitVerticalSpeedFeet:
+    args:
+    - type: string
+  GetUnitAltitudeMSLFeet:
+    args:
+    - type: string
+  GetUnitAltitudeAGLFeet:
+    args:
+    - type: string
+  GetUnitType:
+    args:
+    - type: string
+  GetUnitCoalition:
+    args:
+    - type:
+        display: string|table
+  GetUnitCountry:
+    args:
+    - type: string
+  GetUnitGroup:
+    args:
+    - type: string
+  GetUnitPlayerName:
+    args:
+    - type: string
+  GetUnitLife:
+    args:
+    - type: string
+  GetUnitLife0:
+    args:
+    - type: string
+  GetUnitFuel:
+    args:
+    - type: string
+  IsUnitInAir:
+    args:
+    - type: string
+  GetUnitAmmo:
+    args:
+    - type: string
+  GetUnitID:
+    args:
+    - type: table
+  GetUnitNumber:
+    args:
+    - type: table
+  GetUnitCallsign:
+    args:
+    - type: table
+  GetUnitObjectID:
+    args:
+    - type: table
+  GetUnitCategoryEx:
+    args:
+    - type: table
+  GetUnitDesc:
+    args:
+    - type: table
+  GetUnitForcesName:
+    args:
+    - type: table
+  IsUnitActive:
+    args:
+    - type: table
+  GetUnitController:
+    args:
+    - type: table
+  GetUnitSensors:
+    args:
+    - type: table
+  UnitHasSensors:
+    args:
+    - type: table
+    - type: number
+      required: false
+    - type: number
+      required: false
+  GetUnitRadar:
+    args:
+    - type: table
+  EnableUnitEmissions:
+    args:
+    - type: table
+    - type: bool
+  GetUnitNearestCargos:
+    args:
+    - type: table
+  GetUnitCargosOnBoard:
+    args:
+    - type: table
+  GetUnitDescentCapacity:
+    args:
+    - type: table
+  GetUnitDescentOnBoard:
+    args:
+    - type: table
+  LoadUnitCargo:
+    args:
+    - type: table
+    - type: table
+  UnloadUnitCargo:
+    args:
+    - type: table
+    - type: table
+      required: false
+  OpenUnitRamp:
+    args:
+    - type: table
+  CheckUnitRampOpen:
+    args:
+    - type: table
+  DisembarkUnit:
+    args:
+    - type: table
+  MarkUnitDisembarkingTask:
+    args:
+    - type: table
+  IsUnitEmbarking:
+    args:
+    - type: table
+  GetUnitAirbase:
+    args:
+    - type: table
+  UnitCanShipLanding:
+    args:
+    - type: table
+  UnitHasCarrier:
+    args:
+    - type: table
+  GetUnitNearestCargosForAircraft:
+    args:
+    - type: table
+  GetUnitFuelLowState:
+    args:
+    - type: table
+  ShowUnitCarrierMenu:
+    args:
+    - type: table
+  GetUnitDrawArgument:
+    args:
+    - type: table
+    - type: number
+  GetUnitCommunicator:
+    args:
+    - type: table
+  GetUnitSeats:
+    args:
+    - type: table
+  Vec2:
+    args:
+    - type:
+        display: number|table
+      required: false
+    - type: number
+      required: false
+  Vec3:
+    args:
+    - type:
+        display: number|table
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+  IsVec3:
+    args:
+    - type: any
+  IsVec2:
+    args:
+    - type: any
+  ToVec2:
+    args:
+    - type: any
+  ToVec3:
+    args:
+    - type: any
+    - type: number
+      required: false
+  VecAdd:
+    args:
+    - type: table
+    - type: table
+  VecSub:
+    args:
+    - type: table
+    - type: table
+  VecScale:
+    args:
+    - type: table
+    - type: number
+  VecDiv:
+    args:
+    - type: table
+    - type: number
+  VecLength:
+    args:
+    - type: table
+  VecLength2D:
+    args:
+    - type: table
+  VecNormalize:
+    args:
+    - type: table
+  VecNormalize2D:
+    args:
+    - type: table
+  VecDot:
+    args:
+    - type: table
+    - type: table
+  VecCross:
+    args:
+    - type: table
+    - type: table
+  Distance:
+    args:
+    - type: table
+    - type: table
+  DistanceSquared:
+    args:
+    - type: table
+    - type: table
+  Distance2DSquared:
+    args:
+    - type: table
+    - type: table
+  Bearing:
+    args:
+    - type: table
+    - type: table
+  FromBearingDistance:
+    args:
+    - type: table
+    - type: number
+    - type: number
+  AngleBetween:
+    args:
+    - type: table
+    - type: table
+  Midpoint:
+    args:
+    - type: table
+    - type: table
+  VecLerp:
+    args:
+    - type: table
+    - type: table
+    - type: number
+  Vec3ToString:
+    args:
+    - type: table
+    - type: number
+      required: false
+  Vec2ToString:
+    args:
+    - type: table
+    - type: number
+      required: false
+  LineSegmentIntersection2D:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  FindPolygonIntersections:
+    args:
+    - type: any
+    - type: any
+  MergePolygons:
+    args:
+    - type: any
+    - type: any
+    - type: any
+  UnionPolygons:
+    args:
+    - type: any
+    - type: any
+  IntersectPolygons:
+    args:
+    - type: any
+    - type: any
+  DifferencePolygons:
+    args:
+    - type: any
+    - type: any
+  SimplifyPolygon:
+    args:
+    - type: any
+    - type: any
+  PerpendicularDistance2D:
+    args:
+    - type: any
+    - type: any
+    - type: any
+  OffsetPolygon:
+    args:
+    - type: any
+    - type: any
+  ClipPolygonToPolygon:
+    args:
+    - type: any
+    - type: any
+  TriangulatePolygon:
+    args:
+    - type: any
+  PointInTriangle2D:
+    args:
+    - type: any
+    - type: any
+    - type: any
+    - type: any
+  GetWeaponTypeName:
+    args:
+    - type: table
+  GetWeaponDesc:
+    args:
+    - type: table
+  GetWeaponLauncher:
+    args:
+    - type: table
+  GetWeaponTarget:
+    args:
+    - type: table
+  GetWeaponCategory:
+    args:
+    - type: table
+  IsWeaponExist:
+    args:
+    - type: table
+  GetWeaponCoalition:
+    args:
+    - type: table
+  GetWeaponCountry:
+    args:
+    - type: table
+  GetWeaponPoint:
+    args:
+    - type: table
+  GetWeaponPosition:
+    args:
+    - type: table
+  GetWeaponVelocity:
+    args:
+    - type: table
+  GetWeaponName:
+    args:
+    - type: table
+  DestroyWeapon:
+    args:
+    - type: table
+  GetWeaponCategoryName:
+    args:
+    - type: table
+  IsWeaponActive:
+    args:
+    - type: table
+  AddWorldEventHandler:
+    args:
+    - type: table
+  RemoveWorldEventHandler:
+    args:
+    - type: table
+  GetWorldPlayer:
+    args: []
+  GetWorldAirbases:
+    args: []
+  SearchWorldObjects:
+    args:
+    - type: number
+      required: false
+    - type: table
+      required: false
+    - type: function
+      required: false
+  GetMarkPanels:
+    args: []
+  OnWorldEvent:
+    args:
+    - type: table
+  GetWorldWeather:
+    args: []
+  GetFogThickness:
+    args: []
+  SetFogThickness:
+    args:
+    - type: number
+  GetFogVisibilityDistance:
+    args: []
+  SetFogVisibilityDistance:
+    args:
+    - type: number
+  SetFogAnimation:
+    args:
+    - type: bool
+  RemoveWorldJunk:
+    args:
+    - type: table
+  CreateWorldEventHandler:
+    args:
+    - type: table
+  GetWorldEventTypes:
+    args: []
+  GetWorldVolumeTypes:
+    args: []
+  CreateWorldSearchVolume:
+    args:
+    - type: number
+    - type: table
+  CreateSphereVolume:
+    args:
+    - type: table
+    - type: number
+  CreateBoxVolume:
+    args:
+    - type: table
+    - type: table
+  CreatePyramidVolume:
+    args:
+    - type: table
+    - type: number
+    - type: number
+    - type: number
+  CreateSegmentVolume:
+    args:
+    - type: table
+    - type: table
+  GetZone:
+    args:
+    - type: string
+  GetZonePosition:
+    args:
+    - type: string
+  GetZoneRadius:
+    args:
+    - type: string
+  IsInZone:
+    args:
+    - type: table
+    - type: string
+  IsUnitInZone:
+    args:
+    - type: string
+    - type: string
+  IsGroupInZone:
+    args:
+    - type: string
+    - type: string
+  IsGroupCompletelyInZone:
+    args:
+    - type: string
+    - type: string
+  GetUnitsInZone:
+    args:
+    - type: string
+    - type: number
+      required: false
+  GetGroupsInZone:
+    args:
+    - type: string
+    - type: number
+      required: false
+  RandomPointInZone:
+    args:
+    - type: string
+    - type: number
+      required: false
+    - type: number
+      required: false
+  IsInPolygonZone:
+    args:
+    - type: table
+    - type: table
+  GetMissionZones:
+    args: []
+  ProcessZoneGeometry:
+    args:
+    - type: table
+  InitializeZoneCache:
+    args: []
+  GetAllZones:
+    args: []
+  GetCachedZoneByName:
+    args:
+    - type: string
+  GetCachedZoneById:
+    args:
+    - type: number
+  FindZonesByName:
+    args:
+    - type: string
+  GetZonesByType:
+    args:
+    - type: string
+  IsPointInZoneGeometry:
+    args:
+    - type: table
+    - type: table
+  ClearZoneCache:
+    args: []
+  HarnessWorldEventBus:
+    property: new-fields

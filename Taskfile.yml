@@ -1,0 +1,208 @@
+# https://taskfile.dev
+
+version: "3"
+
+vars:
+  PROJECT_NAME: Medusa
+  ARTIFACT_NAME: medusa-thin.lua
+  BUNDLED_ARTIFACT_NAME: medusa.lua
+  BUILD_DIR: ./dist
+  SCRIPT_DIR: ./scripts
+  SOURCE_DIR: ./src
+  STYLUA_BIN_CI: ./tools/stylua/stylua
+  STYLUA_BIN_WIN: ./tools/stylua/stylua.exe
+  SELENE_BIN: ./tools/selene/selene
+  SELENE_BIN_WIN: ./tools/selene/selene.exe
+  LUAUNIT_BIN: ./tools/luaunit/luaunit.lua
+  TEST_DIR: ./tests
+  PYTHON_BIN: python
+
+tasks:
+  default:
+    desc: "Show all available tasks"
+    cmds:
+      - task --list
+
+  format:
+    desc: "Format lua source code with Stylua"
+    cmds:
+      - cmd: "{{.STYLUA_BIN_CI}} src tests"
+        platforms: [linux, darwin]
+      - cmd: "{{.STYLUA_BIN_WIN}} src tests"
+        platforms: [windows]
+
+  format:ci:
+    desc: "Check lua source code for formatting errors"
+    cmds:
+      - cmd: "chmod +x {{.STYLUA_BIN_CI}}"
+        platforms: [linux, darwin]
+      - cmd: "{{.STYLUA_BIN_CI}} --check src tests"
+        platforms: [linux, darwin]
+      - cmd: "{{.STYLUA_BIN_WIN}} --check src tests"
+        platforms: [windows]
+
+  coverage:
+    desc: "Run coverage tests with luacov"
+    cmds:
+      - echo "Not implemented"
+
+  lint:
+    deps: [build]
+    desc: "Run Selene on build artifact"
+    cmds:
+      - cmd: "{{.SELENE_BIN}} --allow-warnings --config selene.toml {{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
+        platforms: [linux, darwin]
+      - cmd: "{{.SELENE_BIN_WIN}} --allow-warnings --config selene.toml {{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
+        platforms: [windows]
+
+  test:
+    desc: "Run tests with LuaUnit"
+    cmds:
+      - "lua {{.TEST_DIR}}/runner.lua"
+    sources:
+      - "{{.SOURCE_DIR}}/**/*.lua"
+      - "{{.TEST_DIR}}/**/*.lua"
+
+  build:
+    deps: [format, delete:artifact]
+    desc: "Build the {{.PROJECT_NAME}} artifact"
+    cmds:
+      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/build_single_lua_release.py"
+      - BUILD_DIR='{{.BUILD_DIR}}' ARTIFACT_NAME='{{.ARTIFACT_NAME}}' BUNDLED_ARTIFACT_NAME='{{.BUNDLED_ARTIFACT_NAME}}' '{{.PYTHON_BIN}}' '{{.SCRIPT_DIR}}/build/stamp-placeholders.py'
+    sources:
+      - "{{.SOURCE_DIR}}/**/*.lua"
+      - "{{.SCRIPT_DIR}}/build/**/*.py"
+      - ".buildrc"
+    generates:
+      - "{{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
+      - "{{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}"
+
+  delete:artifact:
+    desc: "Delete the build artifact"
+    internal: true
+    cmds:
+      - cmd: powershell -NoProfile -Command "if (Test-Path -LiteralPath '{{.BUILD_DIR}}/{{.ARTIFACT_NAME}}') { Remove-Item -LiteralPath '{{.BUILD_DIR}}/{{.ARTIFACT_NAME}}' -Force }; if (Test-Path -LiteralPath '{{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}') { Remove-Item -LiteralPath '{{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}' -Force }; exit 0"
+        platforms: [windows]
+        ignore_error: true
+      - cmd: rm -f "{{.BUILD_DIR}}/{{.ARTIFACT_NAME}}" "{{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}"
+        platforms: [linux, darwin]
+        ignore_error: true
+
+  ci:
+    deps: [format, test, build, lint]
+    desc: "Run all CI checks"
+
+  ci:watch:
+    deps: [ci]
+    desc: "Run CI checks on file changes"
+    watch: true
+    sources:
+      - "{{.SOURCE_DIR}}/**/*.lua"
+      - "{{.TEST_DIR}}/**/*.lua"
+
+  bump:major:
+    desc: "Bump the major version"
+    cmds:
+      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py major"
+    sources:
+      - "pyproject.toml"
+    generates:
+      - "pyproject.toml"
+
+  bump:minor:
+    desc: "Bump the minor version"
+    cmds:
+      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py minor"
+    sources:
+      - "pyproject.toml"
+    generates:
+      - "pyproject.toml"
+
+  bump:patch:
+    desc: "Bump the patch version"
+    cmds:
+      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py patch"
+    sources:
+      - "pyproject.toml"
+    generates:
+      - "pyproject.toml"
+
+  analyze:
+    desc: "Analyze a Medusa log file (usage: task analyze -- <logfile> <command> [--json])"
+    cmds:
+      - "{{.PYTHON_BIN}} tools/log-analyzer/analyze.py {{.CLI_ARGS}}"
+
+  prometheus:
+    desc: "Start local Prometheus + Grafana stack for Medusa metrics"
+    dir: tools/prometheus
+    cmds:
+      - docker compose up -d
+
+  prometheus:restart:
+    desc: "Restart Prometheus + Grafana stack"
+    deps: [prometheus:stop]
+    cmds:
+      - task: prometheus
+
+  tactical:restart:
+    desc: "Restart tactical display container"
+    dir: tools/prometheus
+    cmds:
+      - docker compose restart tactical
+
+  grafana:restart:
+    desc: "Restart Grafana container"
+    dir: tools/prometheus
+    cmds:
+      - docker compose restart grafana
+
+  prometheus:stop:
+    desc: "Stop Prometheus + Grafana stack"
+    dir: tools/prometheus
+    cmds:
+      - docker compose down
+
+  prometheus:reset:
+    desc: "Stop stack and blow out all Prometheus + Grafana volumes"
+    dir: tools/prometheus
+    cmds:
+      - docker compose down -v
+
+  tag:
+    desc: "Create and push git tag from pyproject version"
+    cmds:
+      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/tag_version.py"
+    silent: false
+
+  release:
+    desc: "Full release: bump version, commit, tag, and push"
+    vars:
+      PART: '{{.CLI_ARGS | default "minor"}}'
+    cmds:
+      - task: ci
+      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py {{.PART}}"
+      - cmd: "git add pyproject.toml CHANGELOG.md"
+      - cmd: 'git commit -m "Release v$({{.PYTHON_BIN}} -c "import re; from pathlib import Path; m=re.search(r''version\s*=\s*\"([\d.]+)\"'', Path(''pyproject.toml'').read_text()); print(m.group(1))")"'
+      - task: tag
+
+  release:dry-run:
+    desc: "Show what a release would do without executing (usage: task release:dry-run -- patch)"
+    vars:
+      PART: '{{.CLI_ARGS | default "minor"}}'
+    cmds:
+      - cmd: |
+          set -e
+          CURRENT=$({{.PYTHON_BIN}} -c "import re; from pathlib import Path; m=re.search(r'version\s*=\"([\d.]+)\"', Path('pyproject.toml').read_text()); print(m.group(1))")
+          NEXT=$({{.PYTHON_BIN}} -c "
+          v='$CURRENT'.split('.')
+          part='{{.PART}}'
+          if part=='major': v=[str(int(v[0])+1),'0','0']
+          elif part=='minor': v=[v[0],str(int(v[1])+1),'0']
+          else: v=[v[0],v[1],str(int(v[2])+1)]
+          print('.'.join(v))
+          ")
+          echo "Would bump {{.PART}}: $CURRENT -> $NEXT"
+          echo "Would commit: Release v$NEXT"
+          echo "Would tag: v$NEXT"
+          echo "Would push tag to origin"
+        platforms: [linux, darwin]

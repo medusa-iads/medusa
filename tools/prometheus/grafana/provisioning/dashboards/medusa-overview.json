@@ -1,0 +1,263 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Mission Time",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "expr": "medusa_mission_time_seconds and on() medusa:live", "legendFormat": "Mission Time" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Tracks",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 4, "y": 0 },
+      "targets": [{ "expr": "sum(medusa_tracks_active{network=~\"$network\"}) and on() medusa:live", "legendFormat": "Active" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "blue" } } }
+    },
+    {
+      "title": "Hostiles",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 7, "y": 0 },
+      "targets": [{ "expr": "sum(medusa_tracks_hostile{network=~\"$network\"}) and on() medusa:live", "legendFormat": "Hostile" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "red" } } }
+    },
+    {
+      "title": "Bogeys",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 10, "y": 0 },
+      "targets": [{ "expr": "(sum(medusa_tracks_bogey{network=~\"$network\"}) + sum(medusa_tracks_bandit{network=~\"$network\"})) and on() medusa:live", "legendFormat": "Bogey+Bandit" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "yellow" } } }
+    },
+    {
+      "title": "ARMs",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 13, "y": 0 },
+      "targets": [{ "expr": "sum(medusa_tracks_harm{network=~\"$network\"}) and on() medusa:live", "legendFormat": "HARMs" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "purple" } } }
+    },
+    {
+      "title": "Batteries",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 16, "y": 0 },
+      "targets": [{ "expr": "medusa_batteries_total{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}}" }]
+    },
+    {
+      "title": "Sensors",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 2, "x": 19, "y": 0 },
+      "targets": [{ "expr": "medusa_sensors_total{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}}" }]
+    },
+    {
+      "title": "Pk",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 0 },
+      "targets": [{
+        "expr": "increase(medusa_kills_total{network=~\"$network\"}[$__range]) / clamp_min(increase(medusa_shots_fired_total{network=~\"$network\"}[$__range]), 1)",
+        "legendFormat": "{{network}}",
+        "instant": true
+      }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+    },
+    {
+      "title": "Tracks by State",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "medusa_tracks_active{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} Active" },
+        { "expr": "medusa_tracks_unknown{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} UNKNOWN" },
+        { "expr": "medusa_tracks_bogey{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} BOGEY" },
+        { "expr": "medusa_tracks_bandit{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} BANDIT" },
+        { "expr": "medusa_tracks_hostile{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} HOSTILE" },
+        { "expr": "medusa_tracks_harm{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} HARM" }
+      ]
+    },
+    {
+      "title": "Batteries by State",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "medusa_batteries_hot{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} HOT" },
+        { "expr": "medusa_batteries_warm{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} WARM" },
+        { "expr": "medusa_batteries_cold{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} COLD" },
+        { "expr": "medusa_batteries_damaged{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} DAMAGED" },
+        { "expr": "medusa_batteries_shutdown{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} SHUTDOWN" },
+        { "expr": "medusa_batteries_rearming{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} OUT OF AMMO" }
+      ],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }] } } }
+    },
+    {
+      "title": "Engagements",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "medusa_engagements_active{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} Active" },
+        { "expr": "rate(medusa_engagements_assigned_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} Assigned/min" },
+        { "expr": "rate(medusa_shots_fired_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} Shots/min" },
+        { "expr": "rate(medusa_kills_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} Kills/min" },
+        { "expr": "rate(medusa_last_chance_activated_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} Last-Chance/min" },
+        { "expr": "rate(medusa_last_chance_fired_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} LCS Shots/min" }
+      ]
+    },
+    {
+      "title": "HARM Response",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "medusa_tracks_harm{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} Active HARM Tracks" },
+        { "expr": "medusa_batteries_suppressed{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} Suppressed" },
+        { "expr": "medusa_batteries_self_defending{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} Self-Defending" },
+        { "expr": "medusa_batteries_pd_protected{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} PD Protected" },
+        { "expr": "medusa_batteries_shutdown{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} In Shutdown" },
+        { "expr": "rate(medusa_harm_confirmed_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} Confirmations/min" }
+      ]
+    },
+    {
+      "title": "Rolling Pk",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "medusa_rolling_pk{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} Kill Rate" },
+        { "expr": "medusa_effective_pk_floor{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} Effective PkFloor" }
+      ],
+      "fieldConfig": { "defaults": { "min": 0, "max": 1, "unit": "percentunit" } }
+    },
+    {
+      "title": "Battery State Transitions",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "targets": [
+        { "expr": "rate(medusa_battery_go_hot_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} GoHot/min" },
+        { "expr": "rate(medusa_battery_go_warm_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} GoWarm/min" },
+        { "expr": "rate(medusa_battery_go_cold_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} GoCold/min" },
+        { "expr": "rate(medusa_goHot_blocked_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} GoHot Blocked/min" }
+      ]
+    },
+    {
+      "title": "Track Lifecycle",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "targets": [
+        { "expr": "rate(medusa_tracks_created_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} Created/min" },
+        { "expr": "rate(medusa_tracks_expired_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} Expired/min" },
+        { "expr": "rate(medusa_track_promotions_total{network=~\"$network\"}[1m]) and on() medusa:live", "legendFormat": "{{network}} Promotions/min" }
+      ]
+    },
+    {
+      "title": "Damaged Batteries",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 36 },
+      "targets": [
+        { "expr": "medusa_damaged_batteries_info and on() medusa:live", "legendFormat": "{{names}}", "instant": true }
+      ],
+      "options": { "textMode": "name", "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "orange" }, "noValue": "None" } }
+    },
+    {
+      "title": "Shutdown Batteries",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 36 },
+      "targets": [
+        { "expr": "medusa_shutdown_batteries_info and on() medusa:live", "legendFormat": "{{names}}", "instant": true }
+      ],
+      "options": { "textMode": "name", "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "red" }, "noValue": "None" } }
+    },
+    {
+      "title": "Mission Active",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 40 },
+      "targets": [{
+        "expr": "time() - medusa_heartbeat_epoch",
+        "legendFormat": "Heartbeat Age",
+        "instant": true
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 15 },
+              { "color": "red", "value": 30 }
+            ]
+          },
+          "mappings": [
+            { "type": "range", "options": { "from": 0, "to": 15, "result": { "text": "LIVE", "color": "green" } } },
+            { "type": "range", "options": { "from": 15, "to": 30, "result": { "text": "DELAYED", "color": "yellow" } } },
+            { "type": "range", "options": { "from": 30, "to": 999999, "result": { "text": "STALE", "color": "red" } } }
+          ]
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "title": "Missiles Fired",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 40 },
+      "targets": [{
+        "expr": "medusa_shots_fired_total{network=~\"$network\"}",
+        "legendFormat": "{{network}}"
+      }],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "orange" } } }
+    },
+    {
+      "title": "Kills",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 40 },
+      "targets": [{
+        "expr": "medusa_kills_total{network=~\"$network\"}",
+        "legendFormat": "{{network}}"
+      }],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "green" } } }
+    },
+    {
+      "title": "Ammo Remaining",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 40 },
+      "targets": [{
+        "expr": "medusa_ammo_remaining{network=~\"$network\"} and on() medusa:live",
+        "legendFormat": "{{network}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "green", "value": 50 }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["medusa", "iads"],
+  "templating": {
+    "list": [
+      {
+        "name": "network",
+        "type": "query",
+        "query": "label_values(medusa_batteries_total, network)",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "label": "IADS Network",
+        "refresh": 2
+      }
+    ]
+  },
+  "time": { "from": "now-15m", "to": "now" },
+  "title": "Medusa IADS Overview",
+  "uid": "medusa-overview"
+}
