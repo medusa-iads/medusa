@@ -1,5 +1,3 @@
 .*/
 !.github/
 dist/
-website/node_modules/
-website/dist/
