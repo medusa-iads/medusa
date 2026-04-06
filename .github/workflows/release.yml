@@ -8,6 +8,8 @@ on:
 env:
     ARTIFACT_NAME: medusa-thin.lua
     BUNDLED_ARTIFACT_NAME: medusa.lua
+    ARTIFACT_ZIP: medusa-thin.zip
+    BUNDLED_ARTIFACT_ZIP: medusa.zip
     BUILD_DIR: ./dist
 
 permissions: {}
@@ -159,11 +161,18 @@ jobs:
               id: build
               run: task build
 
+            - name: Zip artifacts
+              id: zip
+              run: |
+                  cd '${{ env.BUILD_DIR }}'
+                  zip '${{ env.ARTIFACT_ZIP }}' '${{ env.ARTIFACT_NAME }}'
+                  zip '${{ env.BUNDLED_ARTIFACT_ZIP }}' '${{ env.BUNDLED_ARTIFACT_NAME }}'
+
             - name: Generate checksums
               id: checksums
               run: |
                   cd '${{ env.BUILD_DIR }}'
-                  sha256sum '${{ env.ARTIFACT_NAME }}' '${{ env.BUNDLED_ARTIFACT_NAME }}' > SHA256SUMS.txt
+                  sha256sum '${{ env.ARTIFACT_ZIP }}' '${{ env.BUNDLED_ARTIFACT_ZIP }}' > SHA256SUMS.txt
 
             - name: Extract release notes
               id: notes
@@ -183,8 +192,8 @@ jobs:
                 body_path: RELEASE_NOTES.md
                 fail_on_unmatched_files: true
                 files: |
-                    ${{ env.BUILD_DIR }}/${{ env.ARTIFACT_NAME }}
-                    ${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}
+                    ${{ env.BUILD_DIR }}/${{ env.ARTIFACT_ZIP }}
+                    ${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }}
                     ${{ env.BUILD_DIR }}/SHA256SUMS.txt
                     LICENSE
 
@@ -194,8 +203,8 @@ jobs:
                 apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                 accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
                 command: |
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.ARTIFACT_NAME }} --file=${{ env.BUILD_DIR }}/${{ env.ARTIFACT_NAME }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.BUNDLED_ARTIFACT_NAME }} --file=${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.ARTIFACT_ZIP }}
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }}
                     r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/SHA256SUMS.txt --file=${{ env.BUILD_DIR }}/SHA256SUMS.txt
 
             - name: Upload to R2 (latest)
@@ -204,6 +213,6 @@ jobs:
                 apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                 accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
                 command: |
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.ARTIFACT_NAME }} --file=${{ env.BUILD_DIR }}/${{ env.ARTIFACT_NAME }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.BUNDLED_ARTIFACT_NAME }} --file=${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.ARTIFACT_ZIP }}
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }}
                     r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/SHA256SUMS.txt --file=${{ env.BUILD_DIR }}/SHA256SUMS.txt
