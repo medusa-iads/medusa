@@ -13,6 +13,8 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Emergency shutdown on unrecoverable failure now correctly releases batteries to autonomous AI
+
 ### Removed
 
 ### Deprecated

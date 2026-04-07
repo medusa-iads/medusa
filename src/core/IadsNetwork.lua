@@ -1432,7 +1432,7 @@ function Medusa.Core.IadsNetwork:_onTick()
 					1000 * self._tickIntervalSec
 				)
 			)
-			local batteries = self._assetIndex:batteries()
+			local batteries = self._assetIndex:batteries():getAll()
 			for i = 1, #batteries do
 				pcall(Medusa.Services.BatteryActivationService.erectGroup, batteries[i].GroupName)
 			end
