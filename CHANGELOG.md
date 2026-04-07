@@ -13,12 +13,16 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
-- Group names using underscores, hyphens, or other separators after the network prefix were not discovered (e.g., `RSAM_SA2` with prefix `RSAM`)
-
 ### Removed
 
 ### Deprecated
 
+
+## [1.0.2] - 2026-04-06
+
+### Fixed
+
+- Group names using underscores, hyphens, or other separators after the network prefix were not discovered (e.g., `RSAM_SA2` with prefix `RSAM`)
 
 ## [1.0.1] - 2026-04-06
 ### Added
@@ -39,6 +43,7 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Added
 	- Initial Release
 
-[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/medusa-iads/medusa/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/medusa-iads/medusa/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/medusa-iads/medusa/releases/tag/v1.0.0
