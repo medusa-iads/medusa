@@ -49,6 +49,12 @@ Medusa.API = {
 	getROE = Medusa.Services.ApiService.getROE,
 	setPosture = Medusa.Services.ApiService.setPosture,
 	getPosture = Medusa.Services.ApiService.getPosture,
+	setEMCON = Medusa.Services.ApiService.setEMCON,
+	getEMCON = Medusa.Services.ApiService.getEMCON,
+	setScanTiming = Medusa.Services.ApiService.setScanTiming,
+	getScanTiming = Medusa.Services.ApiService.getScanTiming,
+	setRotationGroups = Medusa.Services.ApiService.setRotationGroups,
+	getRotationGroups = Medusa.Services.ApiService.getRotationGroups,
 }
 
 -- Prometheus metrics file export (requires io desanitization + PrometheusEnabled config)
