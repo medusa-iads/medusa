@@ -1335,6 +1335,9 @@ function Medusa.Core.IadsNetwork:tick()
 		-- Defer doctrine state application until erect animations complete
 		local network = self
 		ScheduleOnce(function()
+			if not network._running then
+				return
+			end
 			network:_initializeBatteryStates()
 			Medusa.Services.PointDefenseService.autoAssignShorad(network._assetIndex:batteries(), network._geoGrid)
 			Medusa.Services.EmconService.applyPolicy(
