@@ -131,7 +131,7 @@ local function checkHostileIntent(track, geoGrid, batteryStore, now, sustainedSe
 				local dist = math.sqrt(dx * dx + dz * dz)
 				if dist > 1 then
 					local rangeRate = (dx * vel.x + dz * vel.z) / dist
-					if rangeRate < 0 then
+					if rangeRate > 0 then
 						if not track.HostileIntentStart then
 							track.HostileIntentStart = now
 							return false
