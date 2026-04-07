@@ -314,6 +314,84 @@ function TestUpdateIdentifications:test_bandit_without_identification_time_not_p
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 end
 
+-- Track closing on a battery in WARM_WAR should promote BANDIT->HOSTILE after 60s
+function TestUpdateIdentifications:test_bandit_promoted_to_hostile_via_hostile_intent()
+	local battery = makeBattery({ Position = { x = 50000, y = 0, z = 0 } })
+	self.batteryStore:add(battery)
+
+	-- Track at origin, flying east toward battery at 200 m/s
+	local track = makeTrack({
+		TrackIdentification = "BANDIT",
+		LastIdentificationTime = 900,
+		Position = { x = 0, y = 5000, z = 0 },
+		Velocity = { x = 200, y = 0, z = 0 },
+	})
+	self.trackStore:add(track)
+
+	local doctrine = { Posture = "WARM_WAR" }
+
+	-- First call: starts the clock, stays BANDIT
+	Medusa.Services.TrackClassifier.updateIdentifications(
+		self.trackStore,
+		self.batteryStore,
+		doctrine,
+		1000,
+		200000,
+		self.geoGrid
+	)
+	lu.assertEquals(track.TrackIdentification, "BANDIT")
+	lu.assertNotNil(track.HostileIntentStart)
+
+	-- Second call at +61s: sustained intent met, promotes to HOSTILE
+	Medusa.Services.TrackClassifier.updateIdentifications(
+		self.trackStore,
+		self.batteryStore,
+		doctrine,
+		1061,
+		200000,
+		self.geoGrid
+	)
+	lu.assertEquals(track.TrackIdentification, "HOSTILE")
+end
+
+-- Track diverging from battery should NOT trigger hostile intent
+function TestUpdateIdentifications:test_bandit_not_promoted_when_diverging()
+	local battery = makeBattery({ Position = { x = 50000, y = 0, z = 0 } })
+	self.batteryStore:add(battery)
+
+	-- Track flying AWAY from battery (west, battery is east)
+	local track = makeTrack({
+		TrackIdentification = "BANDIT",
+		LastIdentificationTime = 900,
+		Position = { x = 40000, y = 5000, z = 0 },
+		Velocity = { x = -200, y = 0, z = 0 },
+	})
+	self.trackStore:add(track)
+
+	local doctrine = { Posture = "WARM_WAR" }
+
+	Medusa.Services.TrackClassifier.updateIdentifications(
+		self.trackStore,
+		self.batteryStore,
+		doctrine,
+		1000,
+		200000,
+		self.geoGrid
+	)
+	lu.assertEquals(track.TrackIdentification, "BANDIT")
+	lu.assertNil(track.HostileIntentStart)
+
+	Medusa.Services.TrackClassifier.updateIdentifications(
+		self.trackStore,
+		self.batteryStore,
+		doctrine,
+		1061,
+		200000,
+		self.geoGrid
+	)
+	lu.assertEquals(track.TrackIdentification, "BANDIT")
+end
+
 -- == TestAssessAircraftTypes ==
 
 TestAssessAircraftTypes = {}
