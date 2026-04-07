@@ -13,6 +13,8 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Group names using underscores, hyphens, or other separators after the network prefix were not discovered (e.g., `RSAM_SA2` with prefix `RSAM`)
+
 ### Removed
 
 ### Deprecated

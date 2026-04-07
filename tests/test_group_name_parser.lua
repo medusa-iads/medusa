@@ -146,3 +146,49 @@ function TestGroupNameParser:test_flat_ewr_skynet_style()
 	lu.assertEquals(r.unitLabel, "EWR North")
 	lu.assertEquals(#r.echelonPath, 0)
 end
+
+-- Word boundary prefix matching: any non-alphanumeric separator should work
+function TestGroupNameParser:test_prefix_word_boundary_underscore()
+	local r = Medusa.Services.GroupNameParser:parse("RSAM_SA2", "RSAM")
+	lu.assertTrue(r.isManaged)
+end
+
+function TestGroupNameParser:test_prefix_word_boundary_asterisk()
+	local r = Medusa.Services.GroupNameParser:parse("RSAM*SA2", "RSAM")
+	lu.assertTrue(r.isManaged)
+end
+
+function TestGroupNameParser:test_prefix_word_boundary_hyphen()
+	local r = Medusa.Services.GroupNameParser:parse("RSAM-SA2", "RSAM")
+	lu.assertTrue(r.isManaged)
+end
+
+function TestGroupNameParser:test_prefix_word_boundary_dot()
+	local r = Medusa.Services.GroupNameParser:parse("RSAM.SA2", "RSAM")
+	lu.assertTrue(r.isManaged)
+end
+
+function TestGroupNameParser:test_prefix_word_boundary_bang()
+	local r = Medusa.Services.GroupNameParser:parse("RSAM!SA2", "RSAM")
+	lu.assertTrue(r.isManaged)
+end
+
+function TestGroupNameParser:test_prefix_word_boundary_space()
+	local r = Medusa.Services.GroupNameParser:parse("RSAM SA2", "RSAM")
+	lu.assertTrue(r.isManaged)
+end
+
+function TestGroupNameParser:test_prefix_word_boundary_dollar()
+	local r = Medusa.Services.GroupNameParser:parse("RSAM$SA2", "RSAM")
+	lu.assertTrue(r.isManaged)
+end
+
+function TestGroupNameParser:test_prefix_word_boundary_ampersand()
+	local r = Medusa.Services.GroupNameParser:parse("RSAM&SA2", "RSAM")
+	lu.assertTrue(r.isManaged)
+end
+
+function TestGroupNameParser:test_prefix_no_match_when_alphanumeric_follows()
+	local r = Medusa.Services.GroupNameParser:parse("RSAMBO", "RSAM")
+	lu.assertFalse(r.isManaged)
+end

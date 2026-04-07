@@ -166,7 +166,6 @@ function Medusa.Services.DiscoveryService:enableDynamicAdds()
 		return false
 	end
 	local prefix = self._prefix or ""
-	local prefixDot = prefix .. "."
 
 	-- Predicate filters only events for our coalition and managed prefix
 	local function predicate(event)
@@ -195,10 +194,15 @@ function Medusa.Services.DiscoveryService:enableDynamicAdds()
 			return false
 		end
 		if type(prefix) == "string" and #prefix > 0 then
-			if not StringStartsWith(groupName, prefixDot) then
+			if not StringStartsWith(groupName, prefix) then
 				self._logger:trace(
 					string.format("groupName: %s does not start with IADS prefix: %s", groupName, prefix)
 				)
+				return false
+			end
+			local nextChar = groupName:sub(#prefix + 1, #prefix + 1)
+			if nextChar ~= "" and nextChar:match("%w") then
+				self._logger:trace(string.format("groupName: %s prefix match is not at word boundary", groupName))
 				return false
 			end
 		end

@@ -131,27 +131,16 @@ function Medusa.Services.GroupNameParser:parse(groupName, managedPrefix)
 	local effectivePrefix = managedPrefix
 	if type(effectivePrefix) == "string" and #effectivePrefix > 0 then
 		local p = effectivePrefix
-		-- accept either exact prefix or prefix followed by a dot
-		if StartsWith(groupName, p .. ".") then
-			result.isManaged = true
-			nameAfterPrefix = string.sub(groupName, #p + 2)
-		elseif groupName == p then
-			result.isManaged = true
-			nameAfterPrefix = ""
-		elseif
-			StartsWith(groupName, p)
-			and not StartsWith(groupName, p .. "_")
-			and not StartsWith(groupName, p .. "-")
-		then
-			-- bare prefix match without trailing dot
-			result.isManaged = true
-			nameAfterPrefix = string.sub(groupName, #p + 1)
-			local first = string.sub(nameAfterPrefix, 1, 1)
-			if first == "." or first == " " then
-				nameAfterPrefix = string.sub(nameAfterPrefix, 2)
+		if StartsWith(groupName, p) then
+			local nextChar = string.sub(groupName, #p + 1, #p + 1)
+			if nextChar == "" or not nextChar:match("%w") then
+				result.isManaged = true
+				nameAfterPrefix = string.sub(groupName, #p + 1)
+				local first = string.sub(nameAfterPrefix, 1, 1)
+				if first ~= "" and not first:match("%w") then
+					nameAfterPrefix = string.sub(nameAfterPrefix, 2)
+				end
 			end
-		else
-			result.isManaged = false
 		end
 	end
 
