@@ -626,6 +626,9 @@ function Medusa.Services.TargetAssigner.evaluateSingleHandoff(
 	local reassessThreshold = (doctrine and doctrine.EngageTimeoutSec) or C.REASSIGNMENT_EVAL_SEC
 
 	local projPos = projectTrackPosition(track, _lookaheadSec)
+	if not projPos then
+		return nil
+	end
 	local projDist = nearestClusterDist(battery, projPos)
 	local pk = computePk(battery, track, projDist)
 

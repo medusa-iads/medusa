@@ -24,6 +24,7 @@ require("core.Constants")
 --]]
 
 Medusa.Services.MetricsSnapshotService = {}
+Medusa.Services.MetricsSnapshotService._prevSnapshotMemKb = 0
 
 function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	local MetricsService = Medusa.Services.MetricsService
@@ -130,6 +131,10 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.gauge("medusa_chunk_processed", "Items processed in last chunk invocation", phaseLabel)
 	MetricsService.gauge("medusa_chunk_queued", "Items remaining in chunk queue", phaseLabel)
 
+	-- Error tracking
+	MetricsService.gauge("medusa_tick_failures_consecutive", "Consecutive tick failures", netLabel)
+	MetricsService.gauge("medusa_phase_failures_consecutive", "Consecutive phase failures", { "network", "phase" })
+
 	-- Debug/diagnostic metrics
 	MetricsService.gauge("medusa_batteries_damaged", "Batteries with degraded operational status", netLabel)
 	MetricsService.gauge("medusa_batteries_shutdown", "Batteries in HARM shutdown", netLabel)
@@ -148,6 +153,12 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.counter("medusa_detections_total", "Total sensor detections", netLabel)
 	MetricsService.counter("medusa_goHot_blocked_total", "goHot calls blocked by holddown or state", netLabel)
 	MetricsService.counter("medusa_sensor_empty_polls_total", "Sensor polls returning zero detections", netLabel)
+
+	-- GC / memory metrics
+	MetricsService.gauge("medusa_lua_memory_kb", "Lua heap size in kilobytes")
+	MetricsService.gauge("medusa_lua_memory_delta_kb", "Lua heap growth since last snapshot in kilobytes")
+	MetricsService.gauge("medusa_tick_memory_before_kb", "Lua heap size at tick start in kilobytes")
+	MetricsService.gauge("medusa_tick_memory_after_kb", "Lua heap size at tick end in kilobytes")
 
 	MetricsService.info("medusa_damaged_batteries_info", "Names of batteries with degraded status", "names")
 	MetricsService.info("medusa_shutdown_batteries_info", "Names of batteries in HARM shutdown", "names")
@@ -182,6 +193,13 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 		end
 		ms.set("medusa_mission_time_seconds", GetTime())
 		ms.set("medusa_mission_info", 1, missionLabels)
+
+		local memNow = collectgarbage("count")
+		local MSS = Medusa.Services.MetricsSnapshotService
+		ms.set("medusa_lua_memory_kb", memNow)
+		ms.set("medusa_lua_memory_delta_kb", memNow - MSS._prevSnapshotMemKb)
+		MSS._prevSnapshotMemKb = memNow
+
 		local AS = Medusa.Constants.ActivationState
 		local BOS = Medusa.Constants.BatteryOperationalStatus
 		local TI = Medusa.Constants.TrackIdentification

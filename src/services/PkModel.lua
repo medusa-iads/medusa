@@ -46,7 +46,7 @@ function Medusa.Services.PkModel.computePkRange(dist, rOptimal, sigma, rMin)
 	end
 	local effSigma = sigma
 	if dist < rOptimal and rMin and rOptimal > rMin then
-		effSigma = (rOptimal - rMin) / Medusa.Constants.PK_INNER_SIGMA_FACTOR
+		effSigma = math.max(1, (rOptimal - rMin) / Medusa.Constants.PK_INNER_SIGMA_FACTOR)
 	end
 	local delta = (dist - rOptimal) / effSigma
 	return math.exp(-0.5 * delta * delta)
@@ -165,5 +165,9 @@ function Medusa.Services.PkModel.computePk(battery, track, dist)
 	if pkAlt < 0.01 then
 		return 0
 	end
-	return Medusa.Constants.PK_MAX_DEFAULT * pkRange * pkAspect * pkAlt
+	local pk = Medusa.Constants.PK_MAX_DEFAULT * pkRange * pkAspect * pkAlt
+	if pk ~= pk then
+		return 0
+	end
+	return pk
 end

@@ -56,6 +56,8 @@ jobs:
 
             - name: Setup Task
               uses: arduino/setup-task@e26d8975574116b0097a1161e0fe16ba75d84c1c # v1.0.3
+              env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Set up Lua ${{ env.LUA_VERSION }}
               uses: leafo/gh-actions-lua@35bcb06abec04ec87df82e08caa84d545348536e # v10
@@ -156,6 +158,8 @@ jobs:
             - name: Setup Task
               id: setup-task
               uses: arduino/setup-task@e26d8975574116b0097a1161e0fe16ba75d84c1c # v1.0.3
+              env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Build
               id: build

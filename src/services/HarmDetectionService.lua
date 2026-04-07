@@ -372,14 +372,13 @@ end
 --- @return string label Current SPRT label for this track
 --- @return table|nil state The SPRT state table, or nil if track has insufficient data
 local function evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, ballisticMaxT)
-	local history = track.PositionHistory:toArray()
-	local n = #history
+	local n = track.PositionHistory:size()
 	if n < 2 then
 		return "EVALUATING", nil
 	end
 
-	local curr = history[n]
-	local prev = history[n - 1]
+	local curr = track.PositionHistory:get(n)
+	local prev = track.PositionHistory:get(n - 1)
 	local dt = curr.timestamp - prev.timestamp
 	if dt < C.HARM_SPRT_MIN_DT_SEC then
 		local s = states[track.TrackId]
