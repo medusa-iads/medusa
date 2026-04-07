@@ -332,14 +332,24 @@ function TestUpdateIdentifications:test_bandit_promoted_to_hostile_via_hostile_i
 
 	-- First call: starts the clock, stays BANDIT
 	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore, self.batteryStore, doctrine, 1000, 200000, self.geoGrid
+		self.trackStore,
+		self.batteryStore,
+		doctrine,
+		1000,
+		200000,
+		self.geoGrid
 	)
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 	lu.assertNotNil(track.HostileIntentStart)
 
 	-- Second call at +61s: sustained intent met, promotes to HOSTILE
 	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore, self.batteryStore, doctrine, 1061, 200000, self.geoGrid
+		self.trackStore,
+		self.batteryStore,
+		doctrine,
+		1061,
+		200000,
+		self.geoGrid
 	)
 	lu.assertEquals(track.TrackIdentification, "HOSTILE")
 end
@@ -361,13 +371,23 @@ function TestUpdateIdentifications:test_bandit_not_promoted_when_diverging()
 	local doctrine = { Posture = "WARM_WAR" }
 
 	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore, self.batteryStore, doctrine, 1000, 200000, self.geoGrid
+		self.trackStore,
+		self.batteryStore,
+		doctrine,
+		1000,
+		200000,
+		self.geoGrid
 	)
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 	lu.assertNil(track.HostileIntentStart)
 
 	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore, self.batteryStore, doctrine, 1061, 200000, self.geoGrid
+		self.trackStore,
+		self.batteryStore,
+		doctrine,
+		1061,
+		200000,
+		self.geoGrid
 	)
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 end
