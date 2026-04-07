@@ -9,6 +9,18 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+### Deprecated
+
+
+## [1.0.1] - 2026-04-06
+### Added
+
 - Medusa shuts itself down after prolonged unrecoverable failure and releases all batteries to autonomous DCS AI
 
 ### Changed
@@ -25,5 +37,6 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Added
 	- Initial Release
 
-[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/medusa-iads/medusa/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/medusa-iads/medusa/releases/tag/v1.0.0
