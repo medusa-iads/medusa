@@ -165,6 +165,8 @@ function Medusa.Core.IadsNetwork:new(opts)
 		_borderPolygons = {},
 		_borderPolygonsLL = {},
 		_adizPolygon = nil,
+		_tickFailures = 0,
+		_phaseFailures = {},
 	}
 	o._logger = Medusa.Logger:ns(string.format("%s | Core.IadsNetwork", tostring(o._id)))
 	o._discovery = Medusa.Services.DiscoveryService:new(nil, {
@@ -1073,8 +1075,17 @@ function Medusa.Core.IadsNetwork:_runPhase()
 	end
 
 	if not ok then
-		self._logger:error(string.format("phase %s failed: %s", _phaseNames[phase] or phase, tostring(err)))
+		self._phaseFailures[phase] = (self._phaseFailures[phase] or 0) + 1
+		local count = self._phaseFailures[phase]
+		if count == 1 or count % 100 == 0 then
+			self._logger:error(
+				string.format("phase %s failed (%dx): %s", _phaseNames[phase] or phase, count, tostring(err))
+			)
+		end
+	else
+		self._phaseFailures[phase] = 0
 	end
+	MS.set("medusa_phase_failures_consecutive", self._phaseFailures[phase] or 0, { phase = _phaseNames[phase] })
 
 	self._assignmentPhase = (phase + 1) % 5
 end
@@ -1408,8 +1419,30 @@ function Medusa.Core.IadsNetwork:_onTick()
 	end
 	local ok, err = pcall(self.tick, self)
 	if not ok then
-		self._logger:error(string.format("tick %d failed: %s", self._tickCounter, tostring(err)))
+		self._tickFailures = self._tickFailures + 1
+		if self._tickFailures == 1 or self._tickFailures % 100 == 0 then
+			self._logger:error(
+				string.format("tick %d failed (%dx): %s", self._tickCounter, self._tickFailures, tostring(err))
+			)
+		end
+		if self._tickFailures >= 1000 then
+			self._logger:error(
+				string.format(
+					"Medusa has experienced an unrecoverable failure for the last %.0f seconds. Attempting to release all batteries to autonomous DCS AI control and shutting down.",
+					1000 * self._tickIntervalSec
+				)
+			)
+			local batteries = self._assetIndex:batteries()
+			for i = 1, #batteries do
+				pcall(Medusa.Services.BatteryActivationService.erectGroup, batteries[i].GroupName)
+			end
+			self._running = false
+			return
+		end
+	else
+		self._tickFailures = 0
 	end
+	Medusa.Services.MetricsService.set("medusa_tick_failures_consecutive", self._tickFailures)
 	self:_scheduleNext()
 end
 

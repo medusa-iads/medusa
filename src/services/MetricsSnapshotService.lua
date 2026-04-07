@@ -131,6 +131,10 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.gauge("medusa_chunk_processed", "Items processed in last chunk invocation", phaseLabel)
 	MetricsService.gauge("medusa_chunk_queued", "Items remaining in chunk queue", phaseLabel)
 
+	-- Error tracking
+	MetricsService.gauge("medusa_tick_failures_consecutive", "Consecutive tick failures", netLabel)
+	MetricsService.gauge("medusa_phase_failures_consecutive", "Consecutive phase failures", { "network", "phase" })
+
 	-- Debug/diagnostic metrics
 	MetricsService.gauge("medusa_batteries_damaged", "Batteries with degraded operational status", netLabel)
 	MetricsService.gauge("medusa_batteries_shutdown", "Batteries in HARM shutdown", netLabel)

@@ -166,6 +166,22 @@
         { "expr": "medusa_tick_memory_after_kb", "legendFormat": "After Tick (KB)" }
       ],
       "fieldConfig": { "defaults": { "unit": "deckbytes" } }
+    },
+    {
+      "title": "Tick Failures (consecutive)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 66 },
+      "targets": [
+        { "expr": "medusa_tick_failures_consecutive", "legendFormat": "{{network}}" }
+      ]
+    },
+    {
+      "title": "Phase Failures (consecutive)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 66 },
+      "targets": [
+        { "expr": "medusa_phase_failures_consecutive", "legendFormat": "{{network}} {{phase}}" }
+      ]
     }
   ],
   "refresh": "10s",
