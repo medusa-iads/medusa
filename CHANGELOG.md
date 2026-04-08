@@ -19,6 +19,12 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 
 ## [1.1.1] - 2026-04-07
+### Fixed
+
+- Emergency shutdown on unrecoverable failure now correctly releases batteries to autonomous AI
+- Destroyed or despawned sensor units (EWR, AWACS) are now removed from the sensor store instead of being polled indefinitely
+- Batteries with no remaining ammo are now deactivated instead of staying HOT indefinitely
+- Doctrine range cap (MaxEngageRangePct) now applied consistently in handoff evaluation and EMCON self-assign, preventing handoffs to out-of-range batteries
 
 ## [1.1.0] - 2026-04-07
 ### Added
