@@ -150,13 +150,13 @@ local G = Medusa.Constants.GRAVITY_MPS2
 --- @param ey number Emitter position Y
 --- @param ez number Emitter position Z
 --- @param dt number Simulation time step in seconds
---- @param maxT number Maximum simulation steps
+--- @param maxT number Maximum simulation time in seconds
 --- @return number bestDist Closest approach distance in meters along the ballistic arc
 local function computeBallisticCPA(px, py, pz, vx, vy, vz, ex, ey, ez, dt, maxT)
 	local bestDist = math.huge
 	local x, y, z = px, py, pz
 	local bvx, bvy, bvz = vx, vy, vz
-	for _ = 1, maxT do
+	for _ = 1, math.ceil(maxT / dt) do
 		bvy = bvy - G * dt
 		x = x + bvx * dt
 		y = y + bvy * dt

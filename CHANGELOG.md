@@ -17,6 +17,7 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 - Dynamically added batteries and probing results now update the maximum engagement range used for spatial queries
 - Dynamically added batteries now receive detection range data from the probe cache, correcting engagement range calculations for late-spawned SAMs
+- HARM ballistic CPA simulation now runs for the configured duration regardless of time step size
 
 ### Removed
 
