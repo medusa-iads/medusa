@@ -13,15 +13,12 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
-- Emergency shutdown on unrecoverable failure now correctly releases batteries to autonomous AI
-- Destroyed or despawned sensor units (EWR, AWACS) are now removed from the sensor store instead of being polled indefinitely
-- Batteries with no remaining ammo are now deactivated instead of staying HOT indefinitely
-- Doctrine range cap (MaxEngageRangePct) now applied consistently in handoff evaluation and EMCON self-assign, preventing handoffs to out-of-range batteries
-
 ### Removed
 
 ### Deprecated
 
+
+## [1.1.1] - 2026-04-07
 
 ## [1.1.0] - 2026-04-07
 ### Added
@@ -57,7 +54,8 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Added
 	- Initial Release
 
-[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/medusa-iads/medusa/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/medusa-iads/medusa/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/medusa-iads/medusa/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/medusa-iads/medusa/compare/v1.0.0...v1.0.1
