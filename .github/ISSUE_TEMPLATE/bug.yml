@@ -18,6 +18,14 @@ body:
       validations:
           required: true
 
+    - type: textarea
+      id: medusa-config
+      attributes:
+          label: Configuration
+          description: Copy and paste your Medusa configuration here.
+      validations:
+          required: true
+
     - type: input
       id: dcs-version
       attributes:
@@ -29,9 +37,3 @@ body:
       attributes:
           label: Log file
           description: Attach your dcs.log or relevant Medusa logs as a plaintext file. Please remove all personal information like usernames in directory paths before doing so.
-
-    - type: textarea
-      id: medusa-config
-      attributes:
-          label: Configuration
-          description: Copy and paste your Medusa configuration here.
