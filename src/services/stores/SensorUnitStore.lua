@@ -138,6 +138,21 @@ function Medusa.Services.SensorUnitStore:remove(sensorUnitId)
 	return sensor
 end
 
+function Medusa.Services.SensorUnitStore:removeByGroupName(groupName)
+	local groupIndex = self._byGroupName[groupName]
+	if not groupIndex then
+		return 0
+	end
+	local ids = {}
+	for id in pairs(groupIndex) do
+		ids[#ids + 1] = id
+	end
+	for i = 1, #ids do
+		self:remove(ids[i])
+	end
+	return #ids
+end
+
 function Medusa.Services.SensorUnitStore:getByGroupName(groupName, outputTable)
 	local groupIndex = self._byGroupName[groupName]
 	if not groupIndex then

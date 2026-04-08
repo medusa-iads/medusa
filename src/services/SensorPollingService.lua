@@ -88,7 +88,7 @@ function Medusa.Services.SensorPollingService:pollSensor(groupName, now)
 
 	local controller = GetGroupController(groupName)
 	if not controller then
-		return {}
+		return nil
 	end
 
 	local detections = GetControllerDetectedTargets(controller)
