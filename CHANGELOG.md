@@ -9,11 +9,14 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `AllowDynamicProbing` configuration option (default: off) enables spawning sensor probe groups at runtime to extract detection ranges for unit types not encountered at mission start
+
 ### Changed
 
 ### Fixed
 
 - Dynamically added batteries and probing results now update the maximum engagement range used for spatial queries
+- Dynamically added batteries now receive detection range data from the probe cache, correcting engagement range calculations for late-spawned SAMs
 
 ### Removed
 

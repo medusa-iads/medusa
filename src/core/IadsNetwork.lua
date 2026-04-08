@@ -367,6 +367,7 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 						logger:info(
 							string.format("initialized dynamic battery %s as %s", battery.GroupName, defaultState)
 						)
+						iads:_applyDynamicBatteryRanges(battery)
 					end
 				end
 			end
@@ -1326,6 +1327,64 @@ function Medusa.Core.IadsNetwork:_phaseEmcon(batteryStore, now, hpt, MS)
 	Medusa.Services.EmconService.applyPolicy(batteryStore, self._assetIndex:sensors(), self._doctrine, now, self)
 	self:_decayEffectivePkFloor(now)
 	MS.observe("medusa_emcon_duration_seconds", hpt() - t1)
+end
+
+function Medusa.Core.IadsNetwork:_applyDynamicBatteryRanges(battery)
+	local probing = self._probingService
+	local iads = self
+	local maxDetRange = nil
+	local uncachedTypes = nil
+	local uncachedCount = 0
+	for i = 1, #battery.Units do
+		local typeName = battery.Units[i].UnitTypeName
+		if typeName then
+			local caps = probing:getCapabilities(typeName)
+			if caps and caps.detectionRangeMax then
+				if not maxDetRange or caps.detectionRangeMax > maxDetRange then
+					maxDetRange = caps.detectionRangeMax
+				end
+			elseif caps == nil then
+				uncachedCount = uncachedCount + 1
+				if not uncachedTypes then
+					uncachedTypes = {}
+				end
+				uncachedTypes[typeName] = true
+			end
+		end
+	end
+
+	if maxDetRange then
+		battery.DetectionRangeMax = maxDetRange
+		Medusa.Entities.Battery.computeEngagementRange(battery)
+		self:_updateMaxEngagementRange(battery)
+		self._logger:info(
+			string.format("dynamic battery %s: applied cached detection range %.0fm", battery.GroupName, maxDetRange)
+		)
+	end
+
+	if uncachedCount == 0 then
+		return
+	end
+
+	if not Medusa.Config:get().AllowDynamicProbing then
+		self._logger:info(
+			string.format(
+				"dynamic battery %s: %d unit types not in probe cache (AllowDynamicProbing=false)",
+				battery.GroupName,
+				uncachedCount
+			)
+		)
+		return
+	end
+
+	local typePositions = {}
+	for typeName in pairs(uncachedTypes) do
+		typePositions[typeName] = battery.Position
+	end
+
+	probing:probeAll(typePositions, function()
+		iads:_onProbingComplete()
+	end)
 end
 
 function Medusa.Core.IadsNetwork:_onProbingComplete()
