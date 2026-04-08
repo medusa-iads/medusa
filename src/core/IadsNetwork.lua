@@ -987,6 +987,13 @@ function Medusa.Core.IadsNetwork:_buildPollList()
 	return list
 end
 
+function Medusa.Core.IadsNetwork:_removeSensorGroup(groupName)
+	local count = self._assetIndex:sensors():removeByGroupName(groupName)
+	if count > 0 then
+		self._logger:info(string.format("sensor group %s despawned, removed %d sensors", groupName, count))
+	end
+end
+
 function Medusa.Core.IadsNetwork:_updateAirborneSensors()
 	local sensors = self._assetIndex:sensors():getAll()
 	for i = 1, #sensors do
@@ -1019,13 +1026,17 @@ function Medusa.Core.IadsNetwork:_pollSensors()
 		end
 		local name = pollList[idx]
 		local reports = self._sensorPollingService:pollSensor(name, now)
-		accum[name] = (accum[name] or 0) + #reports
-		if #reports == 0 then
-			Medusa.Services.MetricsService.inc("medusa_sensor_empty_polls_total")
-		end
-		totalDetections = totalDetections + #reports
-		for i = 1, #reports do
-			self._trackManager:processReport(reports[i], now)
+		if not reports then
+			self:_removeSensorGroup(name)
+		else
+			accum[name] = (accum[name] or 0) + #reports
+			if #reports == 0 then
+				Medusa.Services.MetricsService.inc("medusa_sensor_empty_polls_total")
+			end
+			totalDetections = totalDetections + #reports
+			for i = 1, #reports do
+				self._trackManager:processReport(reports[i], now)
+			end
 		end
 		idx = idx + 1
 		polled = polled + 1
@@ -1432,7 +1443,7 @@ function Medusa.Core.IadsNetwork:_onTick()
 					1000 * self._tickIntervalSec
 				)
 			)
-			local batteries = self._assetIndex:batteries()
+			local batteries = self._assetIndex:batteries():getAll()
 			for i = 1, #batteries do
 				pcall(Medusa.Services.BatteryActivationService.erectGroup, batteries[i].GroupName)
 			end
