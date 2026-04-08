@@ -97,6 +97,17 @@ local function meetsMinIdentification(trackId, minId)
 	return false
 end
 
+local function cappedRange(battery)
+	local maxRange = battery.EngagementRangeMax
+	if _maxEngageRangePct then
+		local pct = _maxEngageRangePct[battery.Role]
+		if pct then
+			maxRange = maxRange * pct / 100
+		end
+	end
+	return maxRange
+end
+
 --- Returns the 2D distance from pos to the nearest launcher cluster centroid,
 --- or to battery.Position if the battery has no clusters (the common case).
 local function nearestClusterDist(battery, pos)
@@ -149,13 +160,7 @@ local function tryAddPair(battery, track, threatValue, n)
 		return n
 	end
 	local projDist = nearestClusterDist(battery, projPos)
-	local maxRange = battery.EngagementRangeMax
-	if _maxEngageRangePct then
-		local pct = _maxEngageRangePct[battery.Role]
-		if pct then
-			maxRange = maxRange * pct / 100
-		end
-	end
+	local maxRange = cappedRange(battery)
 	local alreadyEngaged = battery.CurrentTargetTrackId == track.TrackId
 	local effectiveRange = alreadyEngaged and maxRange * (1 + _stickyRangePct / 100) or maxRange
 	if projDist > effectiveRange then
@@ -581,7 +586,7 @@ local function findBetterBattery(track, projPos, currentPk, currentBatteryId, ge
 		local alt = batteries[i]
 		if alt.BatteryId ~= currentBatteryId and isBatteryEligible(alt) then
 			local projDist = nearestClusterDist(alt, projPos)
-			if projDist and projDist <= alt.EngagementRangeMax then
+			if projDist and projDist <= cappedRange(alt) then
 				local altPk = computePk(alt, track, projDist)
 				if altPk > bestPk then
 					bestId, bestPk = alt.BatteryId, altPk
