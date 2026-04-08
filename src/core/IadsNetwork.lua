@@ -351,6 +351,7 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 							unitIdIndex[battery.Units[j].UnitId] = { battery = battery, unitIdx = j }
 						end
 					end
+					iads:_updateMaxEngagementRange(battery)
 					if iads._erectComplete then
 						local BatteryActivationService = Medusa.Services.BatteryActivationService
 						BatteryActivationService.erectGroup(battery.GroupName)
@@ -934,6 +935,16 @@ function Medusa.Core.IadsNetwork:_populateGeoGrid()
 	)
 end
 
+function Medusa.Core.IadsNetwork:_updateMaxEngagementRange(battery)
+	local r = battery.EngagementRangeMax or 0
+	local s = battery.ClusterSpreadRadius or 0
+	local effective = math.max(math.ceil((r + s) / 10000) * 10000, 10000)
+	if effective > self._maxEngagementRange then
+		self._maxEngagementRange = effective
+		self._logger:info(string.format("maxEngagementRange updated to %dm", effective))
+	end
+end
+
 function Medusa.Core.IadsNetwork:_runScanAndLog()
 	local added = self._discovery:scanOnce()
 	if (added or 0) > 0 then
@@ -1324,6 +1335,10 @@ function Medusa.Core.IadsNetwork:_onProbingComplete()
 	self._logger:info(
 		string.format("probing complete: applied ranges to %d sensors, %d batteries", sensorCount, batteryCount)
 	)
+	local batteries = self._assetIndex:batteries():getAll()
+	for i = 1, #batteries do
+		self:_updateMaxEngagementRange(batteries[i])
+	end
 end
 
 function Medusa.Core.IadsNetwork:tick()

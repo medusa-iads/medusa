@@ -13,6 +13,8 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Dynamically added batteries and probing results now update the maximum engagement range used for spatial queries
+
 ### Removed
 
 ### Deprecated
