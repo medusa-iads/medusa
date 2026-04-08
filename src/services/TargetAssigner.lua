@@ -771,6 +771,10 @@ function Medusa.Services.TargetAssigner.checkSingleDeactivation(battery, trackSt
 		return nil
 	end
 
+	if battery.TotalAmmoStatus == 0 then
+		return { battery = battery, reason = "ammo depleted" }
+	end
+
 	local track = trackStore:get(battery.CurrentTargetTrackId)
 	if not track or track.LifecycleState == LS.EXPIRED then
 		return { battery = battery, reason = "track expired" }
