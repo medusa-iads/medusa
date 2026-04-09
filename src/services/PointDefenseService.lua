@@ -38,7 +38,6 @@ local BR = Medusa.Constants.BatteryRole
 local LS = Medusa.Constants.TrackLifecycleState
 local BatteryActivationService = Medusa.Services.BatteryActivationService
 local C = Medusa.Constants
-local computeCPA3D = Medusa.Services.HarmDetectionService.computeCPA3D
 
 local function clearTable(t)
 	for k in pairs(t) do
