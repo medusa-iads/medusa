@@ -351,6 +351,7 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 							unitIdIndex[battery.Units[j].UnitId] = { battery = battery, unitIdx = j }
 						end
 					end
+					iads:_updateMaxEngagementRange(battery)
 					if iads._erectComplete then
 						local BatteryActivationService = Medusa.Services.BatteryActivationService
 						BatteryActivationService.erectGroup(battery.GroupName)
@@ -366,6 +367,7 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 						logger:info(
 							string.format("initialized dynamic battery %s as %s", battery.GroupName, defaultState)
 						)
+						iads:_applyDynamicBatteryRanges(battery)
 					end
 				end
 			end
@@ -934,6 +936,16 @@ function Medusa.Core.IadsNetwork:_populateGeoGrid()
 	)
 end
 
+function Medusa.Core.IadsNetwork:_updateMaxEngagementRange(battery)
+	local r = battery.EngagementRangeMax or 0
+	local s = battery.ClusterSpreadRadius or 0
+	local effective = math.max(math.ceil((r + s) / 10000) * 10000, 10000)
+	if effective > self._maxEngagementRange then
+		self._maxEngagementRange = effective
+		self._logger:info(string.format("maxEngagementRange updated to %dm", effective))
+	end
+end
+
 function Medusa.Core.IadsNetwork:_runScanAndLog()
 	local added = self._discovery:scanOnce()
 	if (added or 0) > 0 then
@@ -1317,6 +1329,64 @@ function Medusa.Core.IadsNetwork:_phaseEmcon(batteryStore, now, hpt, MS)
 	MS.observe("medusa_emcon_duration_seconds", hpt() - t1)
 end
 
+function Medusa.Core.IadsNetwork:_applyDynamicBatteryRanges(battery)
+	local probing = self._probingService
+	local iads = self
+	local maxDetRange = nil
+	local uncachedTypes = nil
+	local uncachedCount = 0
+	for i = 1, #battery.Units do
+		local typeName = battery.Units[i].UnitTypeName
+		if typeName then
+			local caps = probing:getCapabilities(typeName)
+			if caps and caps.detectionRangeMax then
+				if not maxDetRange or caps.detectionRangeMax > maxDetRange then
+					maxDetRange = caps.detectionRangeMax
+				end
+			elseif caps == nil then
+				uncachedCount = uncachedCount + 1
+				if not uncachedTypes then
+					uncachedTypes = {}
+				end
+				uncachedTypes[typeName] = true
+			end
+		end
+	end
+
+	if maxDetRange then
+		battery.DetectionRangeMax = maxDetRange
+		Medusa.Entities.Battery.computeEngagementRange(battery)
+		self:_updateMaxEngagementRange(battery)
+		self._logger:info(
+			string.format("dynamic battery %s: applied cached detection range %.0fm", battery.GroupName, maxDetRange)
+		)
+	end
+
+	if uncachedCount == 0 then
+		return
+	end
+
+	if not Medusa.Config:get().AllowDynamicProbing then
+		self._logger:info(
+			string.format(
+				"dynamic battery %s: %d unit types not in probe cache (AllowDynamicProbing=false)",
+				battery.GroupName,
+				uncachedCount
+			)
+		)
+		return
+	end
+
+	local typePositions = {}
+	for typeName in pairs(uncachedTypes) do
+		typePositions[typeName] = battery.Position
+	end
+
+	probing:probeAll(typePositions, function()
+		iads:_onProbingComplete()
+	end)
+end
+
 function Medusa.Core.IadsNetwork:_onProbingComplete()
 	local probing = self._probingService
 	local sensorCount = probing:applySensorRanges(self._assetIndex:sensors())
@@ -1324,6 +1394,10 @@ function Medusa.Core.IadsNetwork:_onProbingComplete()
 	self._logger:info(
 		string.format("probing complete: applied ranges to %d sensors, %d batteries", sensorCount, batteryCount)
 	)
+	local batteries = self._assetIndex:batteries():getAll()
+	for i = 1, #batteries do
+		self:_updateMaxEngagementRange(batteries[i])
+	end
 end
 
 function Medusa.Core.IadsNetwork:tick()

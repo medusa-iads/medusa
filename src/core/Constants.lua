@@ -175,7 +175,6 @@ Medusa.Constants.AssessedAircraftType = {
 	ROTARY_WING = "ROTARY_WING",
 	MISSILE = "MISSILE",
 	FIGHTER = "FIGHTER",
-	HEAVY = "HEAVY",
 	SEAD_AIRCRAFT = "SEAD_AIRCRAFT",
 	HARM = "HARM",
 }
@@ -195,7 +194,6 @@ Medusa.Constants.AircraftTypeThreatScore = {
 	ROTARY_WING = 40,
 	MISSILE = 90,
 	FIGHTER = 60,
-	HEAVY = 70,
 	SEAD_AIRCRAFT = 95,
 	HARM = 95,
 }
@@ -213,7 +211,7 @@ Medusa.Constants.TRACK_UPDATE_EXPIRY_BUCKETS = { 1, 2, 3, 5, 10, 20, 50 }
 Medusa.Constants.TRACK_TURN_THRESHOLD_RAD = 0.15
 Medusa.Constants.TRACK_ORBIT_THRESHOLD_RAD = 2.5
 Medusa.Constants.BANDIT_DWELL_SEC = 30
-Medusa.Constants.HEAVY_DWELL_SEC = 180
+
 Medusa.Constants.ROTARY_WING_SPEED_THRESHOLD = 100
 Medusa.Constants.MISSILE_SPEED_THRESHOLD = 1000
 Medusa.Constants.FIGHTER_MANEUVER_SPEED_THRESHOLD = 200

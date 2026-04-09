@@ -244,18 +244,16 @@ local function buildCandidatePairs(tracks, geoGrid, batteryStore, maxEngagementR
 			-- HARMs are handled by HarmResponseService + PointDefenseService, not WTA
 		elseif track.LifecycleState == LS.ACTIVE and meetsMinIdentification(track.TrackIdentification, minId) then
 			local hasRoom = _tactics ~= CET.SHOOT_LOOK_SHOOT or track.AssignedBatteryIds:isEmpty()
-			if hasRoom then
-				local threatValue = computeThreatValue(track)
-				local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(
-					geoGrid,
-					batteryStore,
-					track.Position,
-					maxEngagementRange
-				)
-				for j = 1, #batteries do
-					if trackAcceptsBattery(track, batteries[j].Role) then
-						n = tryAddPair(batteries[j], track, threatValue, n)
-					end
+			local threatValue = computeThreatValue(track)
+			local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(
+				geoGrid,
+				batteryStore,
+				track.Position,
+				maxEngagementRange
+			)
+			for j = 1, #batteries do
+				if (hasRoom or batteries[j].Role == BR.VLR_SAM) and trackAcceptsBattery(track, batteries[j].Role) then
+					n = tryAddPair(batteries[j], track, threatValue, n)
 				end
 			end
 		end
@@ -381,18 +379,16 @@ end
 
 local function _buildRoleTierMap(batteryStore)
 	clearTable(_trackRoleTiers)
-	if _tactics == CET.SHOOT_IN_DEPTH then
-		local allBatts = batteryStore:getAll(_batteryBuffer)
-		for i = 1, #allBatts do
-			local b = allBatts[i]
-			if b.CurrentTargetTrackId then
-				local tiers = _trackRoleTiers[b.CurrentTargetTrackId]
-				if not tiers then
-					tiers = {}
-					_trackRoleTiers[b.CurrentTargetTrackId] = tiers
-				end
-				tiers[b.Role] = true
+	local allBatts = batteryStore:getAll(_batteryBuffer)
+	for i = 1, #allBatts do
+		local b = allBatts[i]
+		if b.CurrentTargetTrackId then
+			local tiers = _trackRoleTiers[b.CurrentTargetTrackId]
+			if not tiers then
+				tiers = {}
+				_trackRoleTiers[b.CurrentTargetTrackId] = tiers
 			end
+			tiers[b.Role] = true
 		end
 	end
 end

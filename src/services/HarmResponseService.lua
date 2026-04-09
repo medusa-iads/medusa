@@ -366,10 +366,6 @@ function Medusa.Services.HarmResponseService.executeResponse(trackStore, battery
 			break
 		end
 	end
-	if not hasHarms then
-		return 0
-	end
-
 	-- Clear previous cycle's defense state. nil means "not yet evaluated this tick";
 	-- do NOT replace with a default enum. Metrics check for specific states and nil means unevaluated.
 	local allBatts = batteryStore:getAll(_batteryResetBuffer)
@@ -379,6 +375,10 @@ function Medusa.Services.HarmResponseService.executeResponse(trackStore, battery
 		b.HarmDefenseDefenders = 0
 		b.HarmDefenseThreats = 0
 		b.HarmDefenseRatio = 0
+	end
+
+	if not hasHarms then
+		return 0
 	end
 
 	local PDS = Medusa.Services.PointDefenseService

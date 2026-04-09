@@ -39,7 +39,8 @@ local _trackBuffer = Medusa.Services.HarmDetectionService._trackBuffer
 Medusa.Services.HarmDetectionService._networkStates = {}
 local _networkStates = Medusa.Services.HarmDetectionService._networkStates
 --- @type number[] Pre-allocated 8-element feature vector reused each extraction call
-local _feat = { 0, 0, 0, 0, 0, 0, 0, 0 }
+Medusa.Services.HarmDetectionService._feat = { 0, 0, 0, 0, 0, 0, 0, 0 }
+local _feat = Medusa.Services.HarmDetectionService._feat
 
 --- Feature vector indices for SPRT kinematic classifier.
 --- Each maps to a slot in the _feat array extracted per scan.
@@ -150,13 +151,13 @@ local G = Medusa.Constants.GRAVITY_MPS2
 --- @param ey number Emitter position Y
 --- @param ez number Emitter position Z
 --- @param dt number Simulation time step in seconds
---- @param maxT number Maximum simulation steps
+--- @param maxT number Maximum simulation time in seconds
 --- @return number bestDist Closest approach distance in meters along the ballistic arc
 local function computeBallisticCPA(px, py, pz, vx, vy, vz, ex, ey, ez, dt, maxT)
 	local bestDist = math.huge
 	local x, y, z = px, py, pz
 	local bvx, bvy, bvz = vx, vy, vz
-	for _ = 1, maxT do
+	for _ = 1, math.ceil(maxT / dt) do
 		bvy = bvy - G * dt
 		x = x + bvx * dt
 		y = y + bvy * dt
@@ -342,7 +343,7 @@ local function updateLabel(state, maxScans)
 		return state.label
 	end
 	if state.scanCount >= maxScans then
-		state.label = (state.llr >= C.HARM_SPRT_THRESH_SUSPECT) and "CONFIRMED" or "CLEARED"
+		state.label = (state.llr >= C.HARM_SPRT_THRESH_PROBABLE) and "CONFIRMED" or "CLEARED"
 		return state.label
 	end
 	if state.llr >= C.HARM_SPRT_THRESH_PROBABLE then

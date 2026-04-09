@@ -41,7 +41,6 @@ local TYPE_RANK = {
 	[AAT.ROTARY_WING] = 1,
 	[AAT.MISSILE] = 1,
 	[AAT.FIGHTER] = 2,
-	[AAT.HEAVY] = 2,
 	[AAT.SEAD_AIRCRAFT] = 2,
 	[AAT.HARM] = 3,
 }
@@ -160,17 +159,19 @@ local function updateZoneContainment(track, borderPolygons, adizPolygon)
 
 	-- Skip expensive polygon test if track hasn't moved significantly
 	-- Cache is module-local to keep Track entity clean
+	local now = GetTime()
 	local cached = _zoneCheckCache[track.TrackId]
 	if cached then
 		local dx = pos.x - cached.x
 		local dz = pos.z - cached.z
-		if (dx * dx + dz * dz) < ZONE_RECHECK_DIST_SQ then
+		if (dx * dx + dz * dz) < ZONE_RECHECK_DIST_SQ and (now - cached.t) < 60 then
 			return
 		end
 		cached.x = pos.x
 		cached.z = pos.z
+		cached.t = now
 	else
-		_zoneCheckCache[track.TrackId] = { x = pos.x, z = pos.z }
+		_zoneCheckCache[track.TrackId] = { x = pos.x, z = pos.z, t = now }
 	end
 
 	local wasBorder = track.InsideBorder

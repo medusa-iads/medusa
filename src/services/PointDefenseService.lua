@@ -38,7 +38,6 @@ local BR = Medusa.Constants.BatteryRole
 local LS = Medusa.Constants.TrackLifecycleState
 local BatteryActivationService = Medusa.Services.BatteryActivationService
 local C = Medusa.Constants
-local computeCPA3D = Medusa.Services.HarmDetectionService.computeCPA3D
 
 local function clearTable(t)
 	for k in pairs(t) do
@@ -285,7 +284,7 @@ function Medusa.Services.PointDefenseService.engageThreats(trackStore, batterySt
 				and not provider.CurrentTargetTrackId
 				and provider.EngagementRangeMax
 			then
-				local results = geoGrid:queryRadius(protected.Position, provider.EngagementRangeMax, { "Track" })
+				local results = geoGrid:queryRadius(provider.Position, provider.EngagementRangeMax, { "Track" })
 				local trackIds = results.TrackIds
 				if trackIds then
 					local bestDist = math.huge

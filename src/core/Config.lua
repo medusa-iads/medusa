@@ -31,6 +31,7 @@ local CONFIG_SCHEMA = {
 	{ name = "ChunkBudgetBatteries", type = "number", default = 20, min = 1, max = 200 },
 	{ name = "PrometheusEnabled", type = "boolean", default = false },
 	{ name = "PrometheusExtendEnabled", type = "boolean", default = false },
+	{ name = "AllowDynamicProbing", type = "boolean", default = false },
 }
 
 local function validateConfigField(s, raw, logger)
