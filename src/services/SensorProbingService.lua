@@ -236,20 +236,26 @@ function Medusa.Services.SensorProbingService:_queryProbe(typeName)
 		return
 	end
 
-	local units = GetGroupUnits(entry.groupName)
-	if units and #units > 0 then
-		local sensorsTable = GetUnitSensors(units[1])
-		local caps = self:_parseSensors(sensorsTable)
-		self._cache[typeName] = caps or false
-		if caps then
-			local m = caps.detectionRangeMax
-			self._logger:debug(string.format("[%s] detection: %dm (%.1fnm)", typeName, m, m / 1852))
+	local ok, caps = pcall(function()
+		local units = GetGroupUnits(entry.groupName)
+		if units and #units > 0 then
+			local sensorsTable = GetUnitSensors(units[1])
+			local result = self:_parseSensors(sensorsTable)
+			if result then
+				local m = result.detectionRangeMax
+				self._logger:debug(string.format("[%s] detection: %dm (%.1fnm)", typeName, m, m / 1852))
+			else
+				self._logger:debug(string.format("[%s] no detection", typeName))
+			end
+			return result
 		else
-			self._logger:debug(string.format("[%s] no detection", typeName))
+			self._logger:error(string.format("probe units gone for type '%s'", typeName))
+			return nil
 		end
-	else
-		self._logger:error(string.format("probe units gone for type '%s'", typeName))
-		self._cache[typeName] = false
+	end)
+	self._cache[typeName] = (ok and caps) or false
+	if not ok then
+		self._logger:error(string.format("probe query failed for '%s': %s", typeName, tostring(caps)))
 	end
 
 	local probeGroup = GetGroup(entry.groupName)

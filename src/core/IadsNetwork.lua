@@ -117,7 +117,9 @@ local function _isTrackAlive(track)
 end
 
 local function logChunk(logger, MS, phaseName, processed, remaining)
-	logger:debug(string.format("phase %s: processed %d, queued %d", phaseName, processed, remaining))
+	if Medusa.Logger._level == "DEBUG" or Medusa.Logger._level == "TRACE" then
+		logger:debug(string.format("phase %s: processed %d, queued %d", phaseName, processed, remaining))
+	end
 	local labels = _chunkLabels[phaseName]
 	MS.set("medusa_chunk_processed", processed, labels)
 	MS.set("medusa_chunk_queued", remaining, labels)
