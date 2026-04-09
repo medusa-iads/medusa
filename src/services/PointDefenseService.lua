@@ -284,7 +284,7 @@ function Medusa.Services.PointDefenseService.engageThreats(trackStore, batterySt
 				and not provider.CurrentTargetTrackId
 				and provider.EngagementRangeMax
 			then
-				local results = geoGrid:queryRadius(protected.Position, provider.EngagementRangeMax, { "Track" })
+				local results = geoGrid:queryRadius(provider.Position, provider.EngagementRangeMax, { "Track" })
 				local trackIds = results.TrackIds
 				if trackIds then
 					local bestDist = math.huge
