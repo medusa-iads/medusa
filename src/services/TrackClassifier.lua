@@ -41,7 +41,6 @@ local TYPE_RANK = {
 	[AAT.ROTARY_WING] = 1,
 	[AAT.MISSILE] = 1,
 	[AAT.FIGHTER] = 2,
-	[AAT.HEAVY] = 2,
 	[AAT.SEAD_AIRCRAFT] = 2,
 	[AAT.HARM] = 3,
 }

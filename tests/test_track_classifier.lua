@@ -461,21 +461,6 @@ function TestAssessAircraftTypes:test_turning_fast_track_classified_as_fighter()
 	lu.assertEquals(track.AssessedAircraftType, "FIGHTER")
 end
 
-function TestAssessAircraftTypes:test_long_dwell_straight_track_classified_as_bomber()
-	mockTime = 1000
-	local track = makeTrack({
-		Velocity = { x = 200, y = 0, z = 100 },
-		ManeuverState = "STRAIGHT",
-		FirstDetectionTime = 100,
-		LastDetectionTime = 500,
-	})
-	self.trackStore:add(track)
-
-	Medusa.Services.TrackClassifier.assessAircraftTypes(self.trackStore)
-
-	lu.assertEquals(track.AssessedAircraftType, "HEAVY")
-end
-
 function TestAssessAircraftTypes:test_short_dwell_straight_stays_fixed_wing()
 	local track = makeTrack({
 		Velocity = { x = 200, y = 0, z = 100 },
@@ -568,34 +553,6 @@ function TestAssessAircraftTypes:test_fighter_not_demoted_to_fixed_wing()
 	local track = makeTrack({
 		Velocity = { x = 250, y = 0, z = 100 },
 		ManeuverState = "STRAIGHT",
-		AssessedAircraftType = "FIGHTER",
-	})
-	self.trackStore:add(track)
-
-	Medusa.Services.TrackClassifier.assessAircraftTypes(self.trackStore)
-
-	lu.assertEquals(track.AssessedAircraftType, "FIGHTER")
-end
-
-function TestAssessAircraftTypes:test_bomber_not_demoted_to_fixed_wing()
-	local track = makeTrack({
-		Velocity = { x = 200, y = 0, z = 100 },
-		ManeuverState = "MANEUVERING",
-		AssessedAircraftType = "HEAVY",
-	})
-	self.trackStore:add(track)
-
-	Medusa.Services.TrackClassifier.assessAircraftTypes(self.trackStore)
-
-	lu.assertEquals(track.AssessedAircraftType, "HEAVY")
-end
-
-function TestAssessAircraftTypes:test_fighter_not_reclassified_as_bomber()
-	local track = makeTrack({
-		Velocity = { x = 200, y = 0, z = 100 },
-		ManeuverState = "STRAIGHT",
-		FirstDetectionTime = 100,
-		LastDetectionTime = 500,
 		AssessedAircraftType = "FIGHTER",
 	})
 	self.trackStore:add(track)

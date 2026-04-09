@@ -11,6 +11,10 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 - `AllowDynamicProbing` configuration option (default: off) enables spawning sensor probe groups at runtime to extract detection ranges for unit types not encountered at mission start
 
+### Removed
+
+- HEAVY aircraft type classification; unreliable heuristic based on sustained straight flight that misidentified transiting fighters as bombers
+
 ### Fixed
 
 - Dynamically added batteries and probing results now update the maximum engagement range used for spatial queries
