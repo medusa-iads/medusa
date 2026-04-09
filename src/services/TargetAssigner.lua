@@ -379,18 +379,16 @@ end
 
 local function _buildRoleTierMap(batteryStore)
 	clearTable(_trackRoleTiers)
-	if _tactics == CET.SHOOT_IN_DEPTH then
-		local allBatts = batteryStore:getAll(_batteryBuffer)
-		for i = 1, #allBatts do
-			local b = allBatts[i]
-			if b.CurrentTargetTrackId then
-				local tiers = _trackRoleTiers[b.CurrentTargetTrackId]
-				if not tiers then
-					tiers = {}
-					_trackRoleTiers[b.CurrentTargetTrackId] = tiers
-				end
-				tiers[b.Role] = true
+	local allBatts = batteryStore:getAll(_batteryBuffer)
+	for i = 1, #allBatts do
+		local b = allBatts[i]
+		if b.CurrentTargetTrackId then
+			local tiers = _trackRoleTiers[b.CurrentTargetTrackId]
+			if not tiers then
+				tiers = {}
+				_trackRoleTiers[b.CurrentTargetTrackId] = tiers
 			end
+			tiers[b.Role] = true
 		end
 	end
 end
