@@ -39,7 +39,8 @@ local _trackBuffer = Medusa.Services.HarmDetectionService._trackBuffer
 Medusa.Services.HarmDetectionService._networkStates = {}
 local _networkStates = Medusa.Services.HarmDetectionService._networkStates
 --- @type number[] Pre-allocated 8-element feature vector reused each extraction call
-local _feat = { 0, 0, 0, 0, 0, 0, 0, 0 }
+Medusa.Services.HarmDetectionService._feat = { 0, 0, 0, 0, 0, 0, 0, 0 }
+local _feat = Medusa.Services.HarmDetectionService._feat
 
 --- Feature vector indices for SPRT kinematic classifier.
 --- Each maps to a slot in the _feat array extracted per scan.
