@@ -463,12 +463,13 @@ end
 
 --- Returns the SPRT context needed by assessSingleTrack: per-network state map
 --- and ballistic simulation parameters from doctrine.
---- @param trackStore table TrackStore for this IADS network
---- @param doctrine table|nil Doctrine table (optional, provides ballistic sim params)
+--- @param ctx table Pipeline context with trackStore and doctrine
 --- @return table states Per-trackId SPRT state map
 --- @return number ballisticDt Ballistic sim time step
 --- @return number ballisticMaxT Ballistic sim max steps
-function Medusa.Services.HarmDetectionService.getAssessContext(trackStore, doctrine)
+function Medusa.Services.HarmDetectionService.getAssessContext(ctx)
+	local trackStore = ctx.trackStore
+	local doctrine = ctx.doctrine
 	local states = _networkStates[trackStore]
 	if not states then
 		states = {}
@@ -541,17 +542,16 @@ end
 --- tick to decide whether batteries should shut down or defend.
 --- Also garbage-collects SPRT state for tracks that have been dropped from
 --- the track store (e.g. the aircraft left detection range or was destroyed).
---- @param trackStore table TrackStore for this IADS network
---- @param batteryStore table BatteryStore for emitter proximity lookups
---- @param geoGrid table GeoGrid spatial index
---- @param doctrine table|nil Doctrine table (optional, provides ballistic sim params)
+--- @param ctx table Pipeline context with trackStore, batteryStore, geoGrid, doctrine
 --- @return number reclassified Count of tracks newly classified as HARM this tick
-function Medusa.Services.HarmDetectionService.assessHarmThreats(trackStore, batteryStore, geoGrid, doctrine)
+function Medusa.Services.HarmDetectionService.assessHarmThreats(ctx)
+	local trackStore = ctx.trackStore
+	local batteryStore = ctx.batteryStore
+	local geoGrid = ctx.geoGrid
 	local tracks = trackStore:getAll(_trackBuffer)
 	local reclassified = 0
 
-	local states, ballisticDt, ballisticMaxT =
-		Medusa.Services.HarmDetectionService.getAssessContext(trackStore, doctrine)
+	local states, ballisticDt, ballisticMaxT = Medusa.Services.HarmDetectionService.getAssessContext(ctx)
 
 	for trackId in pairs(states) do
 		if not trackStore:get(trackId) then

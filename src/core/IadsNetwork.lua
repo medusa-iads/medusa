@@ -1087,6 +1087,7 @@ function Medusa.Core.IadsNetwork:_runPhase()
 	ctx.trackStore = self._trackManager:getStore()
 	ctx.batteryStore = self._assetIndex:batteries()
 	ctx.geoGrid = self._assetIndex:geoGrid()
+	ctx.sensorStore = self._assetIndex:sensors()
 	ctx.now = GetTime()
 	ctx.maxRange = self._maxEngagementRange
 	ctx.doctrine = self._doctrine
@@ -1155,7 +1156,7 @@ function Medusa.Core.IadsNetwork:_phaseClassify(ctx)
 	end
 
 	if step:isEmpty() and guiltEnabled then
-		TC.flushGuiltByAssociation(allTracks, ctx.trackStore, ctx.now)
+		TC.flushGuiltByAssociation(allTracks, ctx)
 	end
 
 	logChunk(self._logger, ctx.MS, "classify", processed, step:remaining())
@@ -1170,7 +1171,7 @@ function Medusa.Core.IadsNetwork:_phaseHarmAndPD(ctx)
 
 	local allTracks = ctx.trackStore:getAll(_assignBatteryBuffer)
 	local trackCount = #allTracks
-	local states, ballisticDt, ballisticMaxT = HDS.getAssessContext(ctx.trackStore, ctx.doctrine)
+	local states, ballisticDt, ballisticMaxT = HDS.getAssessContext(ctx)
 
 	-- Adaptive min-scans: reduce when track count exceeds budget
 	local totalBudget = math.max(step.budget, math.ceil(trackCount * 0.25))
@@ -1267,19 +1268,13 @@ function Medusa.Core.IadsNetwork:_phaseHarmAndPD(ctx)
 	logChunk(self._logger, ctx.MS, "harm_detect", priorityProcessed + normalProcessed, step:remaining())
 
 	-- Full-pass: HARM response + PD (usually few HARMs, not worth chunking)
-	Medusa.Services.HarmResponseService.executeResponse(
-		ctx.trackStore,
-		ctx.batteryStore,
-		ctx.doctrine,
-		ctx.now,
-		ctx.geoGrid
-	)
-	local pdReleased = Medusa.Services.PointDefenseService.releaseOrphanedDefenders(ctx.batteryStore)
+	Medusa.Services.HarmResponseService.executeResponse(ctx)
+	local pdReleased = Medusa.Services.PointDefenseService.releaseOrphanedDefenders(ctx)
 	if pdReleased > 0 or self._pdReassignNeeded then
-		Medusa.Services.PointDefenseService.autoAssignShorad(ctx.batteryStore, ctx.geoGrid)
+		Medusa.Services.PointDefenseService.autoAssignShorad(ctx)
 		self._pdReassignNeeded = false
 	end
-	Medusa.Services.PointDefenseService.engageThreats(ctx.trackStore, ctx.batteryStore, ctx.geoGrid, ctx.now)
+	Medusa.Services.PointDefenseService.engageThreats(ctx)
 
 	ctx.MS.observe("medusa_harm_eval_duration_seconds", ctx.hpt() - t1)
 end
@@ -1399,7 +1394,7 @@ end
 -- Phase 4: EMCON policy (full pass, index-dependent rotation math prevents chunking)
 function Medusa.Core.IadsNetwork:_phaseEmcon(ctx)
 	local t1 = ctx.hpt()
-	Medusa.Services.EmconService.applyPolicy(ctx.batteryStore, self._assetIndex:sensors(), ctx.doctrine, ctx.now, self)
+	Medusa.Services.EmconService.applyPolicy(ctx, self)
 	self:_decayEffectivePkFloor(ctx.now)
 	ctx.MS.observe("medusa_emcon_duration_seconds", ctx.hpt() - t1)
 end
@@ -1510,19 +1505,16 @@ function Medusa.Core.IadsNetwork:tick()
 				return
 			end
 			network:_initializeBatteryStates()
-			Medusa.Services.PointDefenseService.autoAssignShorad(network._assetIndex:batteries(), network._geoGrid)
-			Medusa.Services.EmconService.applyPolicy(
-				network._assetIndex:batteries(),
-				network._assetIndex:sensors(),
-				network._doctrine,
-				GetTime(),
-				network
-			)
-			Medusa.Services.EmconService.logSchedule(
-				network._assetIndex:batteries(),
-				network._assetIndex:sensors(),
-				network._doctrine
-			)
+			local initCtx = {
+				batteryStore = network._assetIndex:batteries(),
+				sensorStore = network._assetIndex:sensors(),
+				geoGrid = network._geoGrid,
+				doctrine = network._doctrine,
+				now = GetTime(),
+			}
+			Medusa.Services.PointDefenseService.autoAssignShorad(initCtx)
+			Medusa.Services.EmconService.applyPolicy(initCtx, network)
+			Medusa.Services.EmconService.logSchedule(initCtx)
 			network._erectComplete = true
 			network._logger:info("erect complete: doctrine states applied")
 		end, nil, 60)

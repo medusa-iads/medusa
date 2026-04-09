@@ -126,6 +126,16 @@ local function populateNonArmHistory(track, count, startTime)
 	end
 end
 
+local function makeCtx(fields)
+	return {
+		trackStore = fields.trackStore,
+		batteryStore = fields.batteryStore,
+		geoGrid = fields.geoGrid,
+		doctrine = fields.doctrine,
+		now = fields.now or 1000,
+	}
+end
+
 -- == computeScanLLR tests ==
 
 TestComputeScanLLR = {}
@@ -319,7 +329,9 @@ function TestAssessHarmThreats:test_reclassifies_confirmed_arm()
 	local count = 0
 	for j = 1, 30 do
 		populateArmHistory(track, 2, mockTime + j * 100, emitterPos)
-		count = Medusa.Services.HarmDetectionService.assessHarmThreats(self.trackStore, self.batteryStore, self.geoGrid)
+		count = Medusa.Services.HarmDetectionService.assessHarmThreats(
+			makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+		)
 		if count > 0 then
 			break
 		end
@@ -339,7 +351,9 @@ function TestAssessHarmThreats:test_does_not_reclassify_non_arm()
 
 	for j = 1, 15 do
 		populateNonArmHistory(track, 2, mockTime + j * 100)
-		Medusa.Services.HarmDetectionService.assessHarmThreats(self.trackStore, self.batteryStore, self.geoGrid)
+		Medusa.Services.HarmDetectionService.assessHarmThreats(
+			makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+		)
 	end
 
 	lu.assertEquals(track.AssessedAircraftType, "MISSILE")
@@ -354,8 +368,9 @@ function TestAssessHarmThreats:test_skips_stale_tracks()
 	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = { x = 10000, y = 0, z = 6000 } })
 	self.batteryStore:add(battery)
 
-	local count =
-		Medusa.Services.HarmDetectionService.assessHarmThreats(self.trackStore, self.batteryStore, self.geoGrid)
+	local count = Medusa.Services.HarmDetectionService.assessHarmThreats(
+		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+	)
 	lu.assertEquals(count, 0)
 end
 
@@ -366,8 +381,9 @@ function TestAssessHarmThreats:test_skips_slow_tracks()
 	local battery = makeBattery({ ActivationState = "STATE_WARM" })
 	self.batteryStore:add(battery)
 
-	local count =
-		Medusa.Services.HarmDetectionService.assessHarmThreats(self.trackStore, self.batteryStore, self.geoGrid)
+	local count = Medusa.Services.HarmDetectionService.assessHarmThreats(
+		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+	)
 	lu.assertEquals(count, 0)
 end
 
@@ -377,8 +393,9 @@ function TestAssessHarmThreats:test_skips_young_tracks()
 	local battery = makeBattery({ ActivationState = "STATE_WARM" })
 	self.batteryStore:add(battery)
 
-	local count =
-		Medusa.Services.HarmDetectionService.assessHarmThreats(self.trackStore, self.batteryStore, self.geoGrid)
+	local count = Medusa.Services.HarmDetectionService.assessHarmThreats(
+		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+	)
 	lu.assertEquals(count, 0)
 	local states = Medusa.Services.HarmDetectionService._networkStates[self.trackStore]
 	lu.assertNil(states and states[track.TrackId])
@@ -388,8 +405,9 @@ function TestAssessHarmThreats:test_returns_zero_with_no_tracks()
 	local battery = makeBattery({ ActivationState = "STATE_WARM" })
 	self.batteryStore:add(battery)
 
-	local count =
-		Medusa.Services.HarmDetectionService.assessHarmThreats(self.trackStore, self.batteryStore, self.geoGrid)
+	local count = Medusa.Services.HarmDetectionService.assessHarmThreats(
+		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+	)
 	lu.assertEquals(count, 0)
 end
 
@@ -401,13 +419,17 @@ function TestAssessHarmThreats:test_prunes_sprt_state_for_removed_tracks()
 	self.batteryStore:add(battery)
 
 	populateArmHistory(track, 3, mockTime, emitterPos)
-	Medusa.Services.HarmDetectionService.assessHarmThreats(self.trackStore, self.batteryStore, self.geoGrid)
+	Medusa.Services.HarmDetectionService.assessHarmThreats(
+		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+	)
 
 	local states = Medusa.Services.HarmDetectionService._networkStates[self.trackStore]
 	lu.assertNotNil(states[track.TrackId])
 
 	self.trackStore:remove(track.TrackId)
-	Medusa.Services.HarmDetectionService.assessHarmThreats(self.trackStore, self.batteryStore, self.geoGrid)
+	Medusa.Services.HarmDetectionService.assessHarmThreats(
+		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+	)
 	lu.assertNil(states[track.TrackId])
 end
 
@@ -420,7 +442,9 @@ function TestAssessHarmThreats:test_cleared_track_gets_zero_score()
 
 	for j = 1, 20 do
 		populateNonArmHistory(track, 2, mockTime + j * 100)
-		Medusa.Services.HarmDetectionService.assessHarmThreats(self.trackStore, self.batteryStore, self.geoGrid)
+		Medusa.Services.HarmDetectionService.assessHarmThreats(
+			makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+		)
 	end
 
 	local states = Medusa.Services.HarmDetectionService._networkStates[self.trackStore]

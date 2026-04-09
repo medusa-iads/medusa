@@ -99,6 +99,16 @@ local function makeStores(batteries, tracks)
 	return batteryStore, trackStore, geoGrid
 end
 
+local function makeCtx(fields)
+	return {
+		trackStore = fields.trackStore,
+		batteryStore = fields.batteryStore,
+		geoGrid = fields.geoGrid,
+		doctrine = fields.doctrine or {},
+		now = fields.now or 100,
+	}
+end
+
 -- == TestIgnoreStrategy ==
 
 TestIgnoreStrategy = {}
@@ -117,7 +127,9 @@ function TestIgnoreStrategy:test_ignoreReturnsZero()
 	local t = makeTrack()
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "IGNORE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 0)
 	lu.assertNil(b.HarmShutdownUntil)
 end
@@ -127,7 +139,9 @@ function TestIgnoreStrategy:test_activeDefensePriorityWithoutPDShutsBatteryDown(
 	local t = makeTrack()
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "SHUTDOWN_UNLESS_PD" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 1)
 end
 
@@ -144,7 +158,9 @@ function TestIgnoreStrategy:test_activeDefensePriorityWithPDSkipsShutdown()
 	local t = makeTrack()
 	local batteryStore, trackStore, geoGrid = makeStores({ hvaBattery, pdBattery }, { t })
 	local doctrine = { HARMResponse = "SHUTDOWN_UNLESS_PD" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 0)
 	lu.assertNil(hvaBattery.HarmShutdownUntil)
 end
@@ -160,7 +176,9 @@ function TestIgnoreStrategy:test_pdProviderDestroyedFallsBackToShutdown()
 	local t = makeTrack()
 	local batteryStore, trackStore, geoGrid = makeStores({ hvaBattery, pdBattery }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 1)
 	lu.assertNotNil(hvaBattery.HarmShutdownUntil)
 end
@@ -178,7 +196,9 @@ function TestIgnoreStrategy:test_pdProviderAmmoDepletedFallsBackToShutdown()
 	local t = makeTrack()
 	local batteryStore, trackStore, geoGrid = makeStores({ hvaBattery, pdBattery }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 1)
 	lu.assertNotNil(hvaBattery.HarmShutdownUntil)
 end
@@ -204,7 +224,9 @@ function TestLocalizedShutdown:test_shutsDownClosestBatteryInPath()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 1)
 	lu.assertEquals(b.ActivationState, AS.STATE_COLD)
 	lu.assertNotNil(b.HarmShutdownUntil)
@@ -218,7 +240,9 @@ function TestLocalizedShutdown:test_skipsDestroyedBattery()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 0)
 end
 
@@ -230,7 +254,9 @@ function TestLocalizedShutdown:test_skipsInoperativeBattery()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 0)
 end
 
@@ -243,7 +269,9 @@ function TestLocalizedShutdown:test_skipsBatteryAlreadyInShutdown()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 0)
 end
 
@@ -255,7 +283,9 @@ function TestLocalizedShutdown:test_skipsBatteryBehindArm()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 0)
 end
 
@@ -267,7 +297,9 @@ function TestLocalizedShutdown:test_skipsBatteryOutsideThreatRadius()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE", HARMShutdownM = 5000 }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 0)
 end
 
@@ -282,7 +314,9 @@ function TestLocalizedShutdown:test_picksSmallestCpaBatteryWhenTwoInPath()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ bOffset, bOnTrack }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 1)
 	lu.assertNotNil(bOnTrack.HarmShutdownUntil)
 	lu.assertNil(bOffset.HarmShutdownUntil)
@@ -293,7 +327,9 @@ function TestLocalizedShutdown:test_skipsNonHarmTrack()
 	local t = makeTrack({ AssessedAircraftType = "FIGHTER" })
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 0)
 end
 
@@ -302,7 +338,9 @@ function TestLocalizedShutdown:test_skipsStaleTrack()
 	local t = makeTrack({ LifecycleState = LS.STALE })
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 0)
 end
 
@@ -317,7 +355,9 @@ function TestLocalizedShutdown:test_alreadyColdBatterySetsFlag()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 1)
 	lu.assertEquals(b.ActivationState, AS.STATE_COLD)
 	lu.assertNotNil(b.HarmShutdownUntil)
@@ -331,7 +371,9 @@ function TestLocalizedShutdown:test_defaultStrategyIsLocalizedShutdown()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = {}
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 1)
 end
 
@@ -344,7 +386,9 @@ function TestLocalizedShutdown:test_noVelocityFallbackTTI()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 1)
 end
 
@@ -357,7 +401,9 @@ function TestLocalizedShutdown:test_skipsBatteryWithNoPosition()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 0)
 end
 
@@ -383,7 +429,13 @@ function TestShutdownTiming:test_shutdownUntilIncludesSafetyMargin()
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local now = 100
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	HRS.executeResponse(trackStore, batteryStore, doctrine, now, geoGrid)
+	HRS.executeResponse(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+		geoGrid = geoGrid,
+	}))
 	lu.assertNotNil(b.HarmShutdownUntil)
 	lu.assertTrue(b.HarmShutdownUntil > now + C.HARM_SHUTDOWN_SAFETY_MARGIN_SEC)
 end
@@ -398,7 +450,13 @@ function TestShutdownTiming:test_shutdownUntilUsesSmoothedVelocity()
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
 	local now = 100
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	HRS.executeResponse(trackStore, batteryStore, doctrine, now, geoGrid)
+	HRS.executeResponse(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+		geoGrid = geoGrid,
+	}))
 	lu.assertNotNil(b.HarmShutdownUntil)
 	lu.assertTrue(b.HarmShutdownUntil < now + 30)
 end
@@ -431,7 +489,9 @@ function TestMultipleHarmTracks:test_twoTracksShutDownTwoBatteries()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b1, b2 }, { t1, t2 })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 2)
 end
 
@@ -449,7 +509,9 @@ function TestMultipleHarmTracks:test_secondTrackSkipsAlreadyShutdownBattery()
 	})
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t1, t2 })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid)
+	local shutdowns = HRS.executeResponse(
+		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+	)
 	lu.assertEquals(shutdowns, 1)
 end
 
@@ -470,12 +532,22 @@ function TestEmptyInputs:test_noTracksReturnsZero()
 	local b = makeBattery()
 	local batteryStore, trackStore, geoGrid = makeStores({ b }, {})
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	lu.assertEquals(HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid), 0)
+	lu.assertEquals(
+		HRS.executeResponse(
+			makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+		),
+		0
+	)
 end
 
 function TestEmptyInputs:test_noBatteriesReturnsZero()
 	local t = makeTrack()
 	local batteryStore, trackStore, geoGrid = makeStores({}, { t })
 	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	lu.assertEquals(HRS.executeResponse(trackStore, batteryStore, doctrine, 100, geoGrid), 0)
+	lu.assertEquals(
+		HRS.executeResponse(
+			makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
+		),
+		0
+	)
 end

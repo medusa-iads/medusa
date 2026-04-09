@@ -569,10 +569,9 @@ end
 --- Applies guilt-by-association using the current promoted buffer, then clears it.
 --- Called by the chunked pipeline when a classification cycle completes.
 --- @param tracks table Array of track entities
---- @param trackStore table TrackStore
---- @param now number Current simulation time
-function Medusa.Services.TrackClassifier.flushGuiltByAssociation(tracks, trackStore, now)
-	applyGuiltByAssociation(tracks, trackStore, now)
+--- @param ctx table Pipeline context with trackStore and now
+function Medusa.Services.TrackClassifier.flushGuiltByAssociation(tracks, ctx)
+	applyGuiltByAssociation(tracks, ctx.trackStore, ctx.now)
 	for k = #_promotedBuffer, 1, -1 do
 		_promotedBuffer[k] = nil
 	end

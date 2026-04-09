@@ -93,7 +93,8 @@ function Medusa.Services.PointDefenseService.isProviderViable(provider)
 	return true
 end
 
-function Medusa.Services.PointDefenseService.releaseOrphanedDefenders(batteryStore)
+function Medusa.Services.PointDefenseService.releaseOrphanedDefenders(ctx)
+	local batteryStore = ctx.batteryStore
 	local batteries = batteryStore:getAll(_pdBatteryBuffer)
 	local released = 0
 	for i = 1, #batteries do
@@ -116,7 +117,9 @@ function Medusa.Services.PointDefenseService.releaseOrphanedDefenders(batterySto
 	return released
 end
 
-function Medusa.Services.PointDefenseService.autoAssignShorad(batteryStore, geoGrid)
+function Medusa.Services.PointDefenseService.autoAssignShorad(ctx)
+	local batteryStore = ctx.batteryStore
+	local geoGrid = ctx.geoGrid
 	local batteries = batteryStore:getAll(_pdBatteryBuffer)
 	local assignCount = 0
 	for i = 1, #batteries do
@@ -272,7 +275,11 @@ function Medusa.Services.PointDefenseService.activateForHarm(harmTrack, geoGrid,
 	return activated
 end
 
-function Medusa.Services.PointDefenseService.engageThreats(trackStore, batteryStore, geoGrid, now)
+function Medusa.Services.PointDefenseService.engageThreats(ctx)
+	local trackStore = ctx.trackStore
+	local batteryStore = ctx.batteryStore
+	local geoGrid = ctx.geoGrid
+	local now = ctx.now
 	local batteries = batteryStore:getAll(_pdBatteryBuffer)
 	local engageCount = 0
 	for i = 1, #batteries do
