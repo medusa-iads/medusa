@@ -9,6 +9,18 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+### Deprecated
+
+
+## [1.1.2] - 2026-04-08
+### Added
+
 - `AllowDynamicProbing` configuration option (default: off) enables spawning sensor probe groups at runtime to extract detection ranges for unit types not encountered at mission start
 
 ### Removed
@@ -23,7 +35,6 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 - Point defense threat search centers on the SHORAD provider's position instead of the protected battery
 - VLR_SAM batteries now receive target assignments under SHOOT_LOOK_SHOOT doctrine
 - HARM detection no longer force-confirms tracks at the SUSPECT confidence level when scans are exhausted; requires PROBABLE or higher
-
 
 ## [1.1.1] - 2026-04-07
 ### Fixed
@@ -67,7 +78,8 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Added
 	- Initial Release
 
-[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/medusa-iads/medusa/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/medusa-iads/medusa/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/medusa-iads/medusa/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/medusa-iads/medusa/compare/v1.0.1...v1.0.2
