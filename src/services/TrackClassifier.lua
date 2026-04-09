@@ -202,7 +202,7 @@ local function checkHostileAction(track, trackStore, posture, now)
 	return true
 end
 
-local function evaluateUnknown(track, trackStore, posture, hasBorders, _iadsCoalitionId, now)
+local function evaluateUnknown(track, trackStore, posture, hasBorders, now)
 	if checkHostileAction(track, trackStore, posture, now) then
 		return
 	end
@@ -419,32 +419,16 @@ end
 --- Classifies a single track through the ROE ladder. Returns promotion info if
 --- guilt-by-association is enabled and the track was promoted, nil otherwise.
 --- @param track table Track entity
---- @param trackStore table TrackStore
---- @param posture string Doctrine posture (HOT_WAR/WARM_WAR/COLD_WAR)
---- @param hasBorders boolean Whether border polygons are defined
---- @param guiltEnabled boolean Whether guilt-by-association is active
---- @param borderPolygons table|nil Border polygon array
---- @param adizPolygon table|nil ADIZ polygon
---- @param iadsCoalitionId number IADS coalition ID
---- @param now number Current simulation time
---- @param geoGrid table GeoGrid spatial index
---- @param batteryStore table BatteryStore
---- @param maxEngagementRange number Maximum engagement range in meters
+--- @param ctx table Pipeline context: trackStore, batteryStore, geoGrid, now, maxRange, doctrine, borderPolygons, adizPolygon
 --- @return table|nil promotion {track=track, newId=newId} if promoted, nil otherwise
-function Medusa.Services.TrackClassifier.classifyTrack(
-	track,
-	trackStore,
-	posture,
-	hasBorders,
-	guiltEnabled,
-	borderPolygons,
-	adizPolygon,
-	iadsCoalitionId,
-	now,
-	geoGrid,
-	batteryStore,
-	maxEngagementRange
-)
+function Medusa.Services.TrackClassifier.classifyTrack(track, ctx)
+	local trackStore = ctx.trackStore
+	local now = ctx.now
+	local doctrine = ctx.doctrine
+	local posture = doctrine and doctrine.Posture or P.HOT_WAR
+	local hasBorders = ctx.borderPolygons and #ctx.borderPolygons > 0
+	local guiltEnabled = not doctrine or doctrine.GuiltByAssociation ~= false
+
 	local prevId = track.TrackIdentification
 
 	if prevId == TI.ARM or prevId == TI.FRIENDLY or prevId == TI.WHITEAIR then
@@ -452,7 +436,7 @@ function Medusa.Services.TrackClassifier.classifyTrack(
 	end
 
 	if hasBorders then
-		updateZoneContainment(track, borderPolygons, adizPolygon)
+		updateZoneContainment(track, ctx.borderPolygons, ctx.adizPolygon)
 	end
 
 	if not track.IntelIdentifyTime then
@@ -463,11 +447,11 @@ function Medusa.Services.TrackClassifier.classifyTrack(
 	end
 
 	if prevId == TI.UNKNOWN then
-		evaluateUnknown(track, trackStore, posture, hasBorders, iadsCoalitionId, now)
+		evaluateUnknown(track, trackStore, posture, hasBorders, now)
 	elseif prevId == TI.BOGEY then
 		evaluateBogey(track, trackStore, posture, hasBorders, now)
 	elseif prevId == TI.BANDIT then
-		evaluateBandit(track, trackStore, posture, hasBorders, now, geoGrid, batteryStore, maxEngagementRange)
+		evaluateBandit(track, trackStore, posture, hasBorders, now, ctx.geoGrid, ctx.batteryStore, ctx.maxRange)
 	end
 
 	local newId = track.TrackIdentification
@@ -477,41 +461,20 @@ function Medusa.Services.TrackClassifier.classifyTrack(
 	return nil
 end
 
-function Medusa.Services.TrackClassifier.updateIdentifications(
-	trackStore,
-	batteryStore,
-	doctrine,
-	now,
-	maxEngagementRange,
-	geoGrid,
-	borderPolygons,
-	adizPolygon,
-	iadsCoalitionId
-)
-	local tracks = trackStore:getAll(_trackBuffer)
-	local posture = doctrine and doctrine.Posture or P.HOT_WAR
-	local hasBorders = borderPolygons and #borderPolygons > 0
+function Medusa.Services.TrackClassifier.updateIdentifications(ctx)
+	local trackStore = ctx.trackStore
+	local now = ctx.now
+	local doctrine = ctx.doctrine
 	local guiltEnabled = not doctrine or doctrine.GuiltByAssociation ~= false
+
+	local tracks = trackStore:getAll(_trackBuffer)
 
 	for k = #_promotedBuffer, 1, -1 do
 		_promotedBuffer[k] = nil
 	end
 
 	for i = 1, #tracks do
-		local result = Medusa.Services.TrackClassifier.classifyTrack(
-			tracks[i],
-			trackStore,
-			posture,
-			hasBorders,
-			guiltEnabled,
-			borderPolygons,
-			adizPolygon,
-			iadsCoalitionId,
-			now,
-			geoGrid,
-			batteryStore,
-			maxEngagementRange
-		)
+		local result = Medusa.Services.TrackClassifier.classifyTrack(tracks[i], ctx)
 		if result then
 			_promotedBuffer[#_promotedBuffer + 1] = result
 		end
@@ -522,6 +485,7 @@ function Medusa.Services.TrackClassifier.updateIdentifications(
 	end
 
 	-- Prune stale zone check cache entries for removed tracks
+	local hasBorders = ctx.borderPolygons and #ctx.borderPolygons > 0
 	if hasBorders then
 		for id in pairs(_zoneCheckCache) do
 			if not trackStore:get(id) then

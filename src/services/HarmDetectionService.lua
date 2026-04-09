@@ -370,9 +370,10 @@ end
 --- @param states table<string, table> Per-trackId SPRT state map for this network
 --- @param ballisticDt number|nil Ballistic sim step size
 --- @param ballisticMaxT number|nil Ballistic sim max steps
+--- @param effectiveMinScans number|nil Minimum scans before SPRT accumulation (defaults to HARM_SPRT_MIN_SCANS)
 --- @return string label Current SPRT label for this track
 --- @return table|nil state The SPRT state table, or nil if track has insufficient data
-local function evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, ballisticMaxT)
+local function evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, ballisticMaxT, effectiveMinScans)
 	local n = track.PositionHistory:size()
 	if n < 2 then
 		return "EVALUATING", nil
@@ -406,7 +407,7 @@ local function evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, 
 	if not state then
 		state = { llr = 0, scanCount = 0, label = "EVALUATING", prevCpa = nil, prevTime = nil }
 		states[track.TrackId] = state
-		_logger:info(string.format("track %s entered SPRT evaluation", track.TrackId))
+		_logger:info(string.format("track %s entered ARM evaluation", track.TrackId))
 	end
 
 	if state.label == "CONFIRMED" then
@@ -433,7 +434,8 @@ local function evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, 
 	state.prevTime = curr.timestamp
 	state.lastFeat = { feat[1], feat[2], feat[3], feat[4], feat[5], feat[6], feat[7], feat[8] }
 
-	if state.scanCount < C.HARM_SPRT_MIN_SCANS then
+	local minScans = effectiveMinScans or C.HARM_SPRT_MIN_SCANS
+	if state.scanCount < minScans then
 		return "EVALUATING", state
 	end
 
@@ -445,7 +447,7 @@ local function evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, 
 	if state.label ~= prevLabel then
 		_logger:info(
 			string.format(
-				"track %s SPRT %s -> %s (LLR=%.2f, scans=%d) [%s]",
+				"track %s ARM %s -> %s (LLR=%.2f, scans=%d) [%s]",
 				track.TrackId,
 				prevLabel,
 				state.label,
@@ -493,7 +495,8 @@ function Medusa.Services.HarmDetectionService.assessSingleTrack(
 	batteryStore,
 	states,
 	ballisticDt,
-	ballisticMaxT
+	ballisticMaxT,
+	effectiveMinScans
 )
 	local LS = Medusa.Constants.TrackLifecycleState
 	local vel = track.Velocity
@@ -508,7 +511,8 @@ function Medusa.Services.HarmDetectionService.assessSingleTrack(
 		return false
 	end
 
-	local label, state = evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, ballisticMaxT)
+	local label, state =
+		evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, ballisticMaxT, effectiveMinScans)
 
 	if state then
 		track.HarmLikelihoodScore = math.max(0, math.min(1, state.llr / math.max(0.001, C.HARM_SPRT_THRESH_CONFIRM)))
@@ -518,7 +522,7 @@ function Medusa.Services.HarmDetectionService.assessSingleTrack(
 		Medusa.Services.MetricsService.inc("medusa_harm_confirmed_total")
 		track.AssessedAircraftType = AAT.HARM
 		track.IsSeadThreat = true
-		_logger:info(string.format("track %s classified as HARM (SPRT CONFIRMED, LLR=%.2f)", track.TrackId, state.llr))
+		_logger:info(string.format("track %s classified as HARM (ARM CONFIRMED, LLR=%.2f)", track.TrackId, state.llr))
 		Medusa.Services.HarmDetectionService._backtrackLauncher(track, tracks)
 		return true
 	elseif label == "CLEARED" then
@@ -564,7 +568,8 @@ function Medusa.Services.HarmDetectionService.assessHarmThreats(trackStore, batt
 				batteryStore,
 				states,
 				ballisticDt,
-				ballisticMaxT
+				ballisticMaxT,
+				C.HARM_SPRT_MIN_SCANS
 			)
 		then
 			reclassified = reclassified + 1

@@ -91,6 +91,17 @@ local function makeFreeDoctrine(overrides)
 	return d
 end
 
+local function makeCtx(fields)
+	return {
+		trackStore = fields.trackStore,
+		batteryStore = fields.batteryStore,
+		geoGrid = fields.geoGrid,
+		doctrine = fields.doctrine,
+		now = fields.now or 1000,
+		maxRange = fields.maxRange or 50000,
+	}
+end
+
 -- == TestComputeThreatValue ==
 
 TestComputeThreatValue = {}
@@ -175,14 +186,12 @@ function TestAssignTargets:test_assigns_best_pk_battery_first()
 	self.batteryStore:add(farBat)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	-- WTA may assign multiple batteries; first assignment should be best Pk (B1)
 	lu.assertTrue(#assignments >= 1)
@@ -198,14 +207,12 @@ function TestAssignTargets:test_sets_battery_target_and_track_assignment()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(battery.CurrentTargetTrackId, "T1")
 	lu.assertTrue(track.AssignedBatteryIds:contains("B1"))
@@ -219,14 +226,12 @@ function TestAssignTargets:test_sets_assignment_time()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(track.AssignmentTime, 1000)
 end
@@ -240,14 +245,12 @@ function TestAssignTargets:test_skips_track_with_existing_assignment()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -263,14 +266,12 @@ function TestAssignTargets:test_skips_stale_tracks()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -288,14 +289,12 @@ function TestAssignTargets:test_skips_hot_batteries()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -313,14 +312,12 @@ function TestAssignTargets:test_skips_destroyed_batteries()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -340,14 +337,12 @@ function TestAssignTargets:test_skips_battery_without_position()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -367,14 +362,12 @@ function TestAssignTargets:test_respects_battery_engagement_range()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -395,14 +388,12 @@ function TestAssignTargets:test_skips_battery_with_nil_engagement_range()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -412,14 +403,12 @@ function TestAssignTargets:test_returns_empty_with_no_tracks()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -429,14 +418,12 @@ function TestAssignTargets:test_returns_empty_with_no_batteries()
 	self.trackStore:add(track)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -475,14 +462,12 @@ function TestPkFloor:test_high_pkfloor_rejects_marginal_track()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine({ PkFloor = 0.50 })
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -508,14 +493,12 @@ function TestPkFloor:test_low_pkfloor_accepts_marginal_track()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine({ PkFloor = 0.10 })
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 1)
 end
@@ -541,14 +524,12 @@ function TestPkFloor:test_default_pkfloor_used_when_not_specified()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 1)
 end
@@ -575,14 +556,12 @@ function TestPkFloor:test_projected_beyond_hardware_range_rejected()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -606,14 +585,12 @@ function TestROE:test_hold_returns_empty()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine({ ROE = "HOLD" })
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -626,14 +603,12 @@ function TestROE:test_tight_rejects_bandit()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine({ ROE = "TIGHT" })
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -646,14 +621,12 @@ function TestROE:test_tight_accepts_hostile()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine({ ROE = "TIGHT" })
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 1)
 end
@@ -666,14 +639,12 @@ function TestROE:test_free_accepts_bandit()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine({ ROE = "FREE" })
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 1)
 end
@@ -686,14 +657,12 @@ function TestROE:test_free_rejects_bogey()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine({ ROE = "FREE" })
-	local assignments = Medusa.Services.TargetAssigner.assignTargets(
-		self.trackStore,
-		self.batteryStore,
-		50000,
-		doctrine,
-		1000,
-		self.geoGrid
-	)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#assignments, 0)
 end
@@ -705,8 +674,12 @@ function TestROE:test_nil_doctrine_defaults_to_free()
 	local battery = makeBattery({ BatteryId = "B1", GroupId = 1, GroupName = "SAM-1" })
 	self.batteryStore:add(battery)
 
-	local assignments =
-		Medusa.Services.TargetAssigner.assignTargets(self.trackStore, self.batteryStore, 50000, nil, 1000, self.geoGrid)
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = {},
+	}))
 
 	lu.assertEquals(#assignments, 1)
 end
@@ -732,7 +705,11 @@ function TestCheckDeactivations:test_returns_hot_battery_with_nil_target()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local result = Medusa.Services.TargetAssigner.checkDeactivations(self.trackStore, self.batteryStore, doctrine, 1000)
+	local result = Medusa.Services.TargetAssigner.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#result, 1)
 	lu.assertIs(result[1], battery)
@@ -749,7 +726,11 @@ function TestCheckDeactivations:test_returns_hot_battery_when_track_removed()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local result = Medusa.Services.TargetAssigner.checkDeactivations(self.trackStore, self.batteryStore, doctrine, 1000)
+	local result = Medusa.Services.TargetAssigner.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#result, 1)
 	lu.assertIs(result[1], battery)
@@ -772,7 +753,11 @@ function TestCheckDeactivations:test_returns_hot_battery_when_track_stale_no_hol
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine({ HoldDownSec = 0 })
-	local result = Medusa.Services.TargetAssigner.checkDeactivations(self.trackStore, self.batteryStore, doctrine, 1000)
+	local result = Medusa.Services.TargetAssigner.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#result, 1)
 	lu.assertIs(result[1], battery)
@@ -797,7 +782,11 @@ function TestCheckDeactivations:test_holddown_protects_stale_track()
 
 	-- Hold-down is 10s, assignment was 5s ago -> protected
 	local doctrine = makeFreeDoctrine({ HoldDownSec = 10 })
-	local result = Medusa.Services.TargetAssigner.checkDeactivations(self.trackStore, self.batteryStore, doctrine, 1000)
+	local result = Medusa.Services.TargetAssigner.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#result, 0)
 end
@@ -821,7 +810,11 @@ function TestCheckDeactivations:test_holddown_expired_allows_deactivation()
 
 	-- Hold-down is 10s, assignment was 20s ago -> expired
 	local doctrine = makeFreeDoctrine({ HoldDownSec = 10 })
-	local result = Medusa.Services.TargetAssigner.checkDeactivations(self.trackStore, self.batteryStore, doctrine, 1000)
+	local result = Medusa.Services.TargetAssigner.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#result, 1)
 end
@@ -845,7 +838,11 @@ function TestCheckDeactivations:test_expired_track_always_deactivates()
 
 	-- Even with long hold-down, EXPIRED always deactivates
 	local doctrine = makeFreeDoctrine({ HoldDownSec = 9999 })
-	local result = Medusa.Services.TargetAssigner.checkDeactivations(self.trackStore, self.batteryStore, doctrine, 1000)
+	local result = Medusa.Services.TargetAssigner.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#result, 1)
 end
@@ -867,7 +864,11 @@ function TestCheckDeactivations:test_keeps_hot_battery_with_active_track()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local result = Medusa.Services.TargetAssigner.checkDeactivations(self.trackStore, self.batteryStore, doctrine, 1000)
+	local result = Medusa.Services.TargetAssigner.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#result, 0)
 end
@@ -883,14 +884,22 @@ function TestCheckDeactivations:test_ignores_cold_batteries()
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
-	local result = Medusa.Services.TargetAssigner.checkDeactivations(self.trackStore, self.batteryStore, doctrine, 1000)
+	local result = Medusa.Services.TargetAssigner.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#result, 0)
 end
 
 function TestCheckDeactivations:test_returns_empty_with_no_batteries()
 	local doctrine = makeFreeDoctrine()
-	local result = Medusa.Services.TargetAssigner.checkDeactivations(self.trackStore, self.batteryStore, doctrine, 1000)
+	local result = Medusa.Services.TargetAssigner.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = doctrine,
+	}))
 
 	lu.assertEquals(#result, 0)
 end
@@ -912,7 +921,11 @@ function TestCheckDeactivations:test_nil_doctrine_defaults_holddown_zero()
 	})
 	self.batteryStore:add(battery)
 
-	local result = Medusa.Services.TargetAssigner.checkDeactivations(self.trackStore, self.batteryStore, nil, 1000)
+	local result = Medusa.Services.TargetAssigner.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = {},
+	}))
 
 	lu.assertEquals(#result, 1)
 end

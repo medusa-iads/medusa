@@ -11,14 +11,15 @@ require("services.Services")
 require("services.stores.TrackStore")
 require("services.stores.BatteryStore")
 require("services.SpatialQuery")
+require("services.MetricsService")
 require("services.TrackClassifier")
 
 -- == Helpers ==
 
-local mockTime = 1000
+local mockTime = 100
 
 local function setupMocks()
-	mockTime = 1000
+	mockTime = 100
 	GetTime = function()
 		return mockTime
 	end
@@ -82,35 +83,39 @@ function TestUpdateIdentifications:setUp()
 	self.geoGrid = makeMockGeoGrid(self.batteryStore)
 end
 
+function TestUpdateIdentifications:makeCtx(overrides)
+	local ctx = {
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		now = 1000,
+		maxRange = 50000,
+		doctrine = nil,
+	}
+	if overrides then
+		for k, v in pairs(overrides) do
+			ctx[k] = v
+		end
+	end
+	return ctx
+end
+
 function TestUpdateIdentifications:test_unknown_promoted_to_bogey_at_min_updates()
 	local track = makeTrack({ TrackIdentification = "UNKNOWN", UpdateCount = 3 })
 	self.trackStore:add(track)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		nil,
-		1000,
-		50000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx())
 
 	lu.assertEquals(track.TrackIdentification, "BOGEY")
 	lu.assertEquals(track.LastIdentificationTime, 1000)
 end
 
-function TestUpdateIdentifications:test_unknown_not_promoted_below_min_updates()
-	local track = makeTrack({ TrackIdentification = "UNKNOWN", UpdateCount = 2 })
+function TestUpdateIdentifications:test_unknown_not_promoted_before_iff_timer()
+	local track = makeTrack({ TrackIdentification = "UNKNOWN" })
 	self.trackStore:add(track)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		nil,
-		1000,
-		50000,
-		self.geoGrid
-	)
+	-- IFF timer is FirstDetectionTime + random(3..8); call before it expires
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ now = track.FirstDetectionTime + 1 }))
 
 	lu.assertEquals(track.TrackIdentification, "UNKNOWN")
 end
@@ -120,6 +125,8 @@ function TestUpdateIdentifications:test_bogey_promoted_to_bandit_in_envelope()
 		TrackIdentification = "BOGEY",
 		Position = { x = 1000, y = 500, z = 2000 },
 	})
+	track.IntelIdentifyTime = 500
+	track.VIDIdentifyTime = 500
 	self.trackStore:add(track)
 
 	local battery = makeBattery({
@@ -128,14 +135,7 @@ function TestUpdateIdentifications:test_bogey_promoted_to_bandit_in_envelope()
 	})
 	self.batteryStore:add(battery)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		nil,
-		1000,
-		50000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx())
 
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 	lu.assertEquals(track.LastIdentificationTime, 1000)
@@ -154,14 +154,7 @@ function TestUpdateIdentifications:test_bogey_not_promoted_outside_envelope()
 	})
 	self.batteryStore:add(battery)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		nil,
-		1000,
-		1000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ maxRange = 1000 }))
 
 	lu.assertEquals(track.TrackIdentification, "BOGEY")
 end
@@ -171,6 +164,8 @@ function TestUpdateIdentifications:test_bogey_uses_default_range_when_battery_ha
 		TrackIdentification = "BOGEY",
 		Position = { x = 1000, y = 500, z = 2000 },
 	})
+	track.IntelIdentifyTime = 500
+	track.VIDIdentifyTime = 500
 	self.trackStore:add(track)
 
 	local battery = makeBattery({
@@ -179,14 +174,7 @@ function TestUpdateIdentifications:test_bogey_uses_default_range_when_battery_ha
 	})
 	self.batteryStore:add(battery)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		nil,
-		1000,
-		50000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx())
 
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 end
@@ -198,14 +186,7 @@ function TestUpdateIdentifications:test_bandit_promoted_to_hostile_after_dwell()
 	})
 	self.trackStore:add(track)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		nil,
-		1000,
-		50000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx())
 
 	lu.assertEquals(track.TrackIdentification, "HOSTILE")
 	lu.assertEquals(track.LastIdentificationTime, 1000)
@@ -218,14 +199,7 @@ function TestUpdateIdentifications:test_bandit_not_promoted_before_dwell()
 	})
 	self.trackStore:add(track)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		nil,
-		1000,
-		50000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx())
 
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 end
@@ -234,14 +208,7 @@ function TestUpdateIdentifications:test_hostile_not_demoted()
 	local track = makeTrack({ TrackIdentification = "HOSTILE", UpdateCount = 0 })
 	self.trackStore:add(track)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		nil,
-		1000,
-		50000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx())
 
 	lu.assertEquals(track.TrackIdentification, "HOSTILE")
 end
@@ -260,14 +227,7 @@ function TestUpdateIdentifications:test_bogey_skips_inactive_batteries()
 	})
 	self.batteryStore:add(battery)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		nil,
-		1000,
-		50000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx())
 
 	lu.assertEquals(track.TrackIdentification, "BOGEY")
 end
@@ -283,14 +243,7 @@ function TestUpdateIdentifications:test_no_double_promotion_in_one_tick()
 	})
 	self.batteryStore:add(battery)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		nil,
-		1000,
-		50000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx())
 
 	lu.assertEquals(track.TrackIdentification, "BOGEY")
 end
@@ -302,14 +255,7 @@ function TestUpdateIdentifications:test_bandit_without_identification_time_not_p
 	})
 	self.trackStore:add(track)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		nil,
-		1000,
-		50000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx())
 
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 end
@@ -331,25 +277,13 @@ function TestUpdateIdentifications:test_bandit_promoted_to_hostile_via_hostile_i
 	local doctrine = { Posture = "WARM_WAR" }
 
 	-- First call: starts the clock, stays BANDIT
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		doctrine,
-		1000,
-		200000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ doctrine = doctrine, maxRange = 200000 }))
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 	lu.assertNotNil(track.HostileIntentStart)
 
 	-- Second call at +61s: sustained intent met, promotes to HOSTILE
 	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		doctrine,
-		1061,
-		200000,
-		self.geoGrid
+		self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 })
 	)
 	lu.assertEquals(track.TrackIdentification, "HOSTILE")
 end
@@ -370,24 +304,12 @@ function TestUpdateIdentifications:test_bandit_not_promoted_when_diverging()
 
 	local doctrine = { Posture = "WARM_WAR" }
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		doctrine,
-		1000,
-		200000,
-		self.geoGrid
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ doctrine = doctrine, maxRange = 200000 }))
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 	lu.assertNil(track.HostileIntentStart)
 
 	Medusa.Services.TrackClassifier.updateIdentifications(
-		self.trackStore,
-		self.batteryStore,
-		doctrine,
-		1061,
-		200000,
-		self.geoGrid
+		self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 })
 	)
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 end

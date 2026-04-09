@@ -169,6 +169,9 @@ function Medusa.Core.IadsNetwork:new(opts)
 		_adizPolygon = nil,
 		_tickFailures = 0,
 		_phaseFailures = {},
+		_harmSortBuffer = {},
+		_harmPriorityKeys = {},
+		_harmNormalBuffer = {},
 		_ctx = {},
 	}
 	o._logger = Medusa.Logger:ns(string.format("%s | Core.IadsNetwork", tostring(o._id)))
@@ -1017,6 +1020,8 @@ function Medusa.Core.IadsNetwork:_updateAirborneSensors()
 			local pos = GetUnitPosition(s.UnitName)
 			if pos then
 				s.Position = pos
+			else
+				self:_removeSensorGroup(s.GroupName)
 			end
 		end
 	end
@@ -1127,8 +1132,6 @@ function Medusa.Core.IadsNetwork:_phaseClassify(ctx)
 	local step = self._classifyStep
 	local t1 = ctx.hpt()
 
-	local posture = ctx.doctrine and ctx.doctrine.Posture or Medusa.Constants.Posture.HOT_WAR
-	local hasBorders = ctx.borderPolygons and #ctx.borderPolygons > 0
 	local guiltEnabled = not ctx.doctrine or ctx.doctrine.GuiltByAssociation ~= false
 
 	local allTracks = ctx.trackStore:getAll(_assignBatteryBuffer)
@@ -1143,20 +1146,7 @@ function Medusa.Core.IadsNetwork:_phaseClassify(ctx)
 		if not track then
 			break
 		end
-		local promotion = TC.classifyTrack(
-			track,
-			ctx.trackStore,
-			posture,
-			hasBorders,
-			guiltEnabled,
-			ctx.borderPolygons,
-			ctx.adizPolygon,
-			ctx.coalitionId,
-			ctx.now,
-			ctx.geoGrid,
-			ctx.batteryStore,
-			ctx.maxRange
-		)
+		local promotion = TC.classifyTrack(track, ctx)
 		if promotion then
 			TC._promotedBuffer[#TC._promotedBuffer + 1] = promotion
 		end
@@ -1172,27 +1162,109 @@ function Medusa.Core.IadsNetwork:_phaseClassify(ctx)
 	ctx.MS.observe("medusa_classification_duration_seconds", ctx.hpt() - t1)
 end
 
--- Phase 1: HARM detection (chunked) + response + point defense (full pass)
+-- Phase 1: HARM detection (priority-sorted dual-pass) + response + point defense (full pass)
 function Medusa.Core.IadsNetwork:_phaseHarmAndPD(ctx)
 	local HDS = Medusa.Services.HarmDetectionService
 	local step = self._harmDetectStep
 	local t1 = ctx.hpt()
 
 	local allTracks = ctx.trackStore:getAll(_assignBatteryBuffer)
-	step:fill(allTracks)
-
+	local trackCount = #allTracks
 	local states, ballisticDt, ballisticMaxT = HDS.getAssessContext(ctx.trackStore, ctx.doctrine)
-	local processed = 0
-	for _ = 1, step.budget do
+
+	-- Adaptive min-scans: reduce when track count exceeds budget
+	local totalBudget = math.max(step.budget, math.ceil(trackCount * 0.25))
+	local HARM_MIN_SCANS = Medusa.Constants.HARM_SPRT_MIN_SCANS
+	local effectiveMinScans =
+		math.min(HARM_MIN_SCANS, math.max(5, math.floor(HARM_MIN_SCANS * totalBudget / math.max(1, trackCount))))
+
+	-- Build priority keys: alt*vel for unclassified, 0 for confirmed HARMs
+	local AAT = Medusa.Constants.AssessedAircraftType
+	local keys = self._harmPriorityKeys
+	local sortBuf = self._harmSortBuffer
+	for i = 1, trackCount do
+		local track = allTracks[i]
+		if track.AssessedAircraftType == AAT.HARM then
+			keys[i] = 0
+		else
+			local vel = track.Velocity
+			local alt = track.Position and track.Position.y or 0
+			local speed = vel and VecLength2D(vel) or 0
+			keys[i] = alt * speed
+		end
+		sortBuf[i] = i
+	end
+	-- Clear excess entries from previous tick
+	for i = trackCount + 1, #sortBuf do
+		sortBuf[i] = nil
+	end
+	for i = trackCount + 1, #keys do
+		keys[i] = nil
+	end
+
+	-- Sort indices descending by priority key
+	table.sort(sortBuf, function(a, b)
+		return keys[a] > keys[b]
+	end)
+
+	-- Pass 1: Priority tier -- top 1/3, evaluated every tick
+	local priorityCount = math.ceil(trackCount / 3)
+	local priorityProcessed = 0
+	for i = 1, priorityCount do
+		local track = allTracks[sortBuf[i]]
+		if track and track.LifecycleState == _LS.ACTIVE then
+			HDS.assessSingleTrack(
+				track,
+				allTracks,
+				ctx.geoGrid,
+				ctx.batteryStore,
+				states,
+				ballisticDt,
+				ballisticMaxT,
+				effectiveMinScans
+			)
+			priorityProcessed = priorityProcessed + 1
+		end
+	end
+
+	-- Pass 2: Normal tier -- remaining tracks, chunked
+	local normalBuf = self._harmNormalBuffer
+	local normalCount = 0
+	for i = priorityCount + 1, trackCount do
+		local track = allTracks[sortBuf[i]]
+		if track then
+			normalCount = normalCount + 1
+			normalBuf[normalCount] = track
+		end
+	end
+	for i = normalCount + 1, #normalBuf do
+		normalBuf[i] = nil
+	end
+	step:fill(normalBuf)
+
+	local minNormalBudget = math.floor(step.budget / 3)
+	local remainingBudget = totalBudget - priorityProcessed
+	local normalBudget = math.max(minNormalBudget, remainingBudget)
+	local normalProcessed = 0
+	for _ = 1, normalBudget do
 		local track = step:next()
 		if not track then
 			break
 		end
-		HDS.assessSingleTrack(track, allTracks, ctx.geoGrid, ctx.batteryStore, states, ballisticDt, ballisticMaxT)
-		processed = processed + 1
+		HDS.assessSingleTrack(
+			track,
+			allTracks,
+			ctx.geoGrid,
+			ctx.batteryStore,
+			states,
+			ballisticDt,
+			ballisticMaxT,
+			effectiveMinScans
+		)
+		normalProcessed = normalProcessed + 1
 	end
 
-	logChunk(self._logger, ctx.MS, "harm_detect", processed, step:remaining())
+	logChunk(self._logger, ctx.MS, "harm_detect", priorityProcessed + normalProcessed, step:remaining())
 
 	-- Full-pass: HARM response + PD (usually few HARMs, not worth chunking)
 	Medusa.Services.HarmResponseService.executeResponse(
@@ -1218,14 +1290,7 @@ function Medusa.Core.IadsNetwork:_phaseAssign(ctx)
 	local BAS = Medusa.Services.BatteryActivationService
 	local t1 = ctx.hpt()
 
-	local autoAssignments = TargetAssigner.emconSelfAssign(
-		ctx.trackStore,
-		ctx.batteryStore,
-		ctx.doctrine,
-		ctx.now,
-		ctx.geoGrid,
-		ctx.maxRange
-	)
+	local autoAssignments = TargetAssigner.emconSelfAssign(ctx)
 	for i = 1, #autoAssignments do
 		local a = autoAssignments[i]
 		local battery = ctx.batteryStore:get(a.batteryId)
@@ -1236,8 +1301,7 @@ function Medusa.Core.IadsNetwork:_phaseAssign(ctx)
 		end
 	end
 
-	local assignments =
-		TargetAssigner.assignTargets(ctx.trackStore, ctx.batteryStore, ctx.maxRange, ctx.doctrine, ctx.now, ctx.geoGrid)
+	local assignments = TargetAssigner.assignTargets(ctx)
 	for i = 1, #assignments do
 		local a = assignments[i]
 		local battery = ctx.batteryStore:get(a.batteryId)
@@ -1284,15 +1348,7 @@ function Medusa.Core.IadsNetwork:_phaseMaintain(ctx)
 		if not battery then
 			break
 		end
-		local result = TargetAssigner.evaluateSingleHandoff(
-			battery,
-			ctx.trackStore,
-			ctx.batteryStore,
-			ctx.doctrine,
-			ctx.now,
-			ctx.geoGrid,
-			ctx.maxRange
-		)
+		local result = TargetAssigner.evaluateSingleHandoff(battery, ctx)
 		if result then
 			local bat = ctx.batteryStore:get(result.batteryId)
 			if bat then
@@ -1318,7 +1374,7 @@ function Medusa.Core.IadsNetwork:_phaseMaintain(ctx)
 		if not battery then
 			break
 		end
-		local result = TargetAssigner.checkSingleDeactivation(battery, ctx.trackStore, ctx.doctrine, ctx.now)
+		local result = TargetAssigner.checkSingleDeactivation(battery, ctx)
 		if result then
 			Medusa.Entities.Battery.releaseTrack(result.battery, ctx.trackStore)
 			if BAS.goCold(result.battery, ctx.now, ctx.trackStore) then
