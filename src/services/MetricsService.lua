@@ -23,6 +23,8 @@ Medusa.Services.MetricsService._registry = {}
 Medusa.Services.MetricsService._snapshotCallbacks = {}
 Medusa.Services.MetricsService._context = nil
 Medusa.Services.MetricsService._extendedBlock = ""
+Medusa.Services.MetricsService._ctxKeyCache = {}
+Medusa.Services.MetricsService._ctxKeyCacheOwner = nil
 
 function Medusa.Services.MetricsService.setExtended(text)
 	Medusa.Services.MetricsService._extendedBlock = text or ""
@@ -32,13 +34,34 @@ function Medusa.Services.MetricsService.setContext(labels)
 	Medusa.Services.MetricsService._context = labels
 end
 
-local function makeLabelKey(labelKeys, labels)
+local function buildLabelKey(labelKeys, labels)
 	local parts = {}
 	for i = 1, #labelKeys do
 		local k = labelKeys[i]
 		parts[i] = string.format('%s="%s"', k, tostring(labels[k] or ""))
 	end
 	return table.concat(parts, ",")
+end
+
+local MS = Medusa.Services.MetricsService
+local _ctxKeyCache = Medusa.Services.MetricsService._ctxKeyCache
+
+local function makeLabelKey(labelKeys, labels)
+	if labels ~= MS._context then
+		return buildLabelKey(labelKeys, labels)
+	end
+	if labels ~= MS._ctxKeyCacheOwner then
+		MS._ctxKeyCache = {}
+		_ctxKeyCache = MS._ctxKeyCache
+		MS._ctxKeyCacheOwner = labels
+	end
+	local cached = _ctxKeyCache[labelKeys]
+	if cached then
+		return cached
+	end
+	local key = buildLabelKey(labelKeys, labels)
+	_ctxKeyCache[labelKeys] = key
+	return key
 end
 
 function Medusa.Services.MetricsService.onSnapshot(fn)
@@ -478,4 +501,7 @@ function Medusa.Services.MetricsService.reset()
 	Medusa.Services.MetricsService._snapshotCallbacks = {}
 	Medusa.Services.MetricsService._context = nil
 	Medusa.Services.MetricsService._extendedBlock = ""
+	Medusa.Services.MetricsService._ctxKeyCache = {}
+	Medusa.Services.MetricsService._ctxKeyCacheOwner = nil
+	_ctxKeyCache = Medusa.Services.MetricsService._ctxKeyCache
 end
