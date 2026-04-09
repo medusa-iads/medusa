@@ -11,17 +11,14 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 - `AllowDynamicProbing` configuration option (default: off) enables spawning sensor probe groups at runtime to extract detection ranges for unit types not encountered at mission start
 
-### Changed
-
 ### Fixed
 
 - Dynamically added batteries and probing results now update the maximum engagement range used for spatial queries
-- Dynamically added batteries now receive detection range data from the probe cache, correcting engagement range calculations for late-spawned SAMs
-- HARM ballistic CPA simulation now runs for the configured duration regardless of time step size
-
-### Removed
-
-### Deprecated
+- Dynamically spawned batteries now receive detection range data from the probe cache, correcting engagement range calculations for late-spawned SAMs
+- HARM ballistic CPA simulation now covers the configured duration regardless of time step size
+- Point defense threat search centers on the SHORAD provider's position instead of the protected battery
+- VLR_SAM batteries now receive target assignments under SHOOT_LOOK_SHOOT doctrine
+- HARM detection no longer force-confirms tracks at the SUSPECT confidence level when scans are exhausted; requires PROBABLE or higher
 
 
 ## [1.1.1] - 2026-04-07

@@ -343,7 +343,7 @@ local function updateLabel(state, maxScans)
 		return state.label
 	end
 	if state.scanCount >= maxScans then
-		state.label = (state.llr >= C.HARM_SPRT_THRESH_SUSPECT) and "CONFIRMED" or "CLEARED"
+		state.label = (state.llr >= C.HARM_SPRT_THRESH_PROBABLE) and "CONFIRMED" or "CLEARED"
 		return state.label
 	end
 	if state.llr >= C.HARM_SPRT_THRESH_PROBABLE then
