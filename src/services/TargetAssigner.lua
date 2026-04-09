@@ -244,18 +244,16 @@ local function buildCandidatePairs(tracks, geoGrid, batteryStore, maxEngagementR
 			-- HARMs are handled by HarmResponseService + PointDefenseService, not WTA
 		elseif track.LifecycleState == LS.ACTIVE and meetsMinIdentification(track.TrackIdentification, minId) then
 			local hasRoom = _tactics ~= CET.SHOOT_LOOK_SHOOT or track.AssignedBatteryIds:isEmpty()
-			if hasRoom then
-				local threatValue = computeThreatValue(track)
-				local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(
-					geoGrid,
-					batteryStore,
-					track.Position,
-					maxEngagementRange
-				)
-				for j = 1, #batteries do
-					if trackAcceptsBattery(track, batteries[j].Role) then
-						n = tryAddPair(batteries[j], track, threatValue, n)
-					end
+			local threatValue = computeThreatValue(track)
+			local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(
+				geoGrid,
+				batteryStore,
+				track.Position,
+				maxEngagementRange
+			)
+			for j = 1, #batteries do
+				if (hasRoom or batteries[j].Role == BR.VLR_SAM) and trackAcceptsBattery(track, batteries[j].Role) then
+					n = tryAddPair(batteries[j], track, threatValue, n)
 				end
 			end
 		end
