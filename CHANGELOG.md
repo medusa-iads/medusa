@@ -20,6 +20,17 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ## [1.1.3] - 2026-04-09
 
+### Changed
+
+- Add priority-sorted HARM evaluation: tracks ordered by altitude * velocity hash, confirmed HARMs are deprioritized. The top 1/3rd of tracks are now guaranteed to be evaluated, with budget remainder (minimum 1/3rd of the total budget) being used to evaluate remaining tracks.
+- Add adaptive SPRT min-scans that reduces the 15-scan floor proportionally to back pressure, so HARMs will be confirmed in fewer steps under high back pressure.
+- Fix despawned airborne sensors not removed from store during position update
+- Rename "SPRT" to "ARM" in HARM detection log messages
+
+### Fixed
+
+- Despawned airborne sensors (AWACS, EWR) no longer spam "Unit not found" log messages indefinitely
+
 ## [1.1.2] - 2026-04-08
 ### Added
 
