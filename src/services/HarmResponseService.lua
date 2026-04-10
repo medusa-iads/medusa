@@ -341,13 +341,14 @@ end
 --- aggressively batteries protect themselves versus staying on the air.
 --- Before processing, resets every battery's HarmDefenseState to nil so stale
 --- defense decisions from the previous tick do not carry over.
---- @param trackStore table TrackStore for this IADS network
---- @param batteryStore table BatteryStore for proximity lookups
---- @param doctrine table Doctrine table with HARMResponse strategy and HARMShutdownM radius
---- @param now number Current mission time from GetTime()
---- @param geoGrid table GeoGrid spatial index
+--- @param ctx table Pipeline context with trackStore, batteryStore, doctrine, now, geoGrid
 --- @return number shutdowns Count of batteries shut down this tick
-function Medusa.Services.HarmResponseService.executeResponse(trackStore, batteryStore, doctrine, now, geoGrid)
+function Medusa.Services.HarmResponseService.executeResponse(ctx)
+	local trackStore = ctx.trackStore
+	local batteryStore = ctx.batteryStore
+	local doctrine = ctx.doctrine
+	local now = ctx.now
+	local geoGrid = ctx.geoGrid
 	local strategy = doctrine.HARMResponse or HRS.AUTO_DEFENSE
 	if strategy == HRS.IGNORE then
 		return 0

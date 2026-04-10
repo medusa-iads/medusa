@@ -150,7 +150,10 @@ local function _isSamAsEwrActive(doctrine, sensorStore)
 end
 
 --- Logs the EMCON rotation schedule so operators can verify group assignments.
-function Medusa.Services.EmconService.logSchedule(batteryStore, sensorStore, doctrine)
+function Medusa.Services.EmconService.logSchedule(ctx)
+	local batteryStore = ctx.batteryStore
+	local sensorStore = ctx.sensorStore
+	local doctrine = ctx.doctrine
 	local numGroups = doctrine.EmconRotateGroups or C.EMCON_DEFAULT_ROTATION_GROUPS
 	local interval = doctrine.ScanSec or C.EMCON_DEFAULT_SCAN_DURATION_SEC
 	local quietDur = doctrine.QuietPeriodSec or 0
@@ -210,7 +213,11 @@ function Medusa.Services.EmconService.logSchedule(batteryStore, sensorStore, doc
 	)
 end
 
-function Medusa.Services.EmconService.applyPolicy(batteryStore, sensorStore, doctrine, now, network)
+function Medusa.Services.EmconService.applyPolicy(ctx, network)
+	local batteryStore = ctx.batteryStore
+	local sensorStore = ctx.sensorStore
+	local doctrine = ctx.doctrine
+	local now = ctx.now
 	local batteries = batteryStore:getAll(_batteryBuffer)
 	local count = #batteries
 	local transitions = 0
@@ -231,7 +238,7 @@ function Medusa.Services.EmconService.applyPolicy(batteryStore, sensorStore, doc
 			_logger:info(
 				string.format("sensor pool changed (%d -> %d), rebuilding rotation groups", lastCount, totalSensorCount)
 			)
-			Medusa.Services.EmconService.logSchedule(batteryStore, sensorStore, doctrine)
+			Medusa.Services.EmconService.logSchedule(ctx)
 		end
 		network._emconLastSensorCount = totalSensorCount
 	end

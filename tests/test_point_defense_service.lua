@@ -84,6 +84,15 @@ local function makeTrack(overrides)
 	return Medusa.Entities.Track.new(data)
 end
 
+local function makeCtx(fields)
+	return {
+		trackStore = fields.trackStore,
+		batteryStore = fields.batteryStore,
+		geoGrid = fields.geoGrid,
+		now = fields.now or 1000,
+	}
+end
+
 -- == TestSetAssignment ==
 
 TestSetAssignment = {}
@@ -183,7 +192,7 @@ function TestAutoAssignShorad:test_assigns_sr_sam_to_nearby_lr_sam()
 	self.geoGrid:add("Battery", sr.BatteryId, sr.Position)
 	self.geoGrid:add("Battery", lr.BatteryId, lr.Position)
 
-	local count = PDS.autoAssignShorad(self.batteryStore, self.geoGrid)
+	local count = PDS.autoAssignShorad(makeCtx({ batteryStore = self.batteryStore, geoGrid = self.geoGrid }))
 	lu.assertEquals(count, 1)
 	lu.assertTrue(sr.IsPointDefense)
 	lu.assertEquals(sr.PointDefenseTargetId, "LR-1")
@@ -206,7 +215,7 @@ function TestAutoAssignShorad:test_ignores_distant_shorad()
 	self.geoGrid:add("Battery", sr.BatteryId, sr.Position)
 	self.geoGrid:add("Battery", lr.BatteryId, lr.Position)
 
-	local count = PDS.autoAssignShorad(self.batteryStore, self.geoGrid)
+	local count = PDS.autoAssignShorad(makeCtx({ batteryStore = self.batteryStore, geoGrid = self.geoGrid }))
 	lu.assertEquals(count, 0)
 end
 
@@ -228,7 +237,7 @@ function TestAutoAssignShorad:test_skips_already_assigned_shorad()
 	self.geoGrid:add("Battery", sr.BatteryId, sr.Position)
 	self.geoGrid:add("Battery", lr.BatteryId, lr.Position)
 
-	local count = PDS.autoAssignShorad(self.batteryStore, self.geoGrid)
+	local count = PDS.autoAssignShorad(makeCtx({ batteryStore = self.batteryStore, geoGrid = self.geoGrid }))
 	lu.assertEquals(count, 0)
 end
 
@@ -256,7 +265,7 @@ function TestAutoAssignShorad:test_skips_hva_with_existing_provider()
 	self.geoGrid:add("Battery", sr2.BatteryId, sr2.Position)
 	self.geoGrid:add("Battery", lr.BatteryId, lr.Position)
 
-	local count = PDS.autoAssignShorad(self.batteryStore, self.geoGrid)
+	local count = PDS.autoAssignShorad(makeCtx({ batteryStore = self.batteryStore, geoGrid = self.geoGrid }))
 	lu.assertEquals(count, 0)
 end
 
@@ -303,7 +312,9 @@ function TestEngageThreats:test_pd_goes_hot_for_harm_near_protected_battery()
 	self.trackStore:add(harm)
 	self.geoGrid:add("Track", harm.TrackId, harm.Position)
 
-	local count = PDS.engageThreats(self.trackStore, self.batteryStore, self.geoGrid, 1000)
+	local count = PDS.engageThreats(
+		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+	)
 	lu.assertEquals(count, 1)
 	lu.assertEquals(sr.CurrentTargetTrackId, "HARM-1")
 	lu.assertEquals(sr.ActivationState, AS.STATE_HOT)
@@ -338,7 +349,9 @@ function TestEngageThreats:test_skips_non_harm_tracks()
 	self.trackStore:add(track)
 	self.geoGrid:add("Track", track.TrackId, track.Position)
 
-	local count = PDS.engageThreats(self.trackStore, self.batteryStore, self.geoGrid, 1000)
+	local count = PDS.engageThreats(
+		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+	)
 	lu.assertEquals(count, 0)
 	lu.assertNil(sr.CurrentTargetTrackId)
 end
@@ -376,7 +389,9 @@ function TestEngageThreats:test_skips_destroyed_pd_battery()
 	self.trackStore:add(harm)
 	self.geoGrid:add("Track", harm.TrackId, harm.Position)
 
-	local count = PDS.engageThreats(self.trackStore, self.batteryStore, self.geoGrid, 1000)
+	local count = PDS.engageThreats(
+		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+	)
 	lu.assertEquals(count, 0)
 end
 
@@ -410,7 +425,9 @@ function TestEngageThreats:test_skips_already_engaged_pd()
 	self.trackStore:add(harm)
 	self.geoGrid:add("Track", harm.TrackId, harm.Position)
 
-	local count = PDS.engageThreats(self.trackStore, self.batteryStore, self.geoGrid, 1000)
+	local count = PDS.engageThreats(
+		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+	)
 	lu.assertEquals(count, 0)
 	lu.assertEquals(sr.CurrentTargetTrackId, "EXISTING-TARGET")
 end
@@ -427,6 +444,8 @@ function TestEngageThreats:test_returns_zero_with_no_protected_batteries()
 	self.batteryStore:add(sr)
 	self.geoGrid:add("Battery", sr.BatteryId, sr.Position)
 
-	local count = PDS.engageThreats(self.trackStore, self.batteryStore, self.geoGrid, 1000)
+	local count = PDS.engageThreats(
+		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+	)
 	lu.assertEquals(count, 0)
 end

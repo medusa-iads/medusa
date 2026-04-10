@@ -113,6 +113,17 @@ local function makeFreeDoctrine(overrides)
 	return d
 end
 
+local function makeCtx(fields)
+	return {
+		trackStore = fields.trackStore,
+		batteryStore = fields.batteryStore,
+		geoGrid = fields.geoGrid,
+		doctrine = fields.doctrine or {},
+		now = fields.now or 1000,
+		maxRange = fields.maxRange or 50000,
+	}
+end
+
 -- Minimal mock store factories so we can drive checkDeactivations directly
 -- without relying on the full store implementations for these lower-level tests.
 
@@ -207,7 +218,12 @@ function TestBatteryDetectsTrack:test_detectsTrack_whenIdMatches()
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine({ HoldDownSec = 15 })
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	-- Battery detected the track: hold-down should extend, not deactivate
 	lu.assertEquals(#result, 0, "detected track: battery must NOT be deactivated")
@@ -231,7 +247,12 @@ function TestBatteryDetectsTrack:test_detectsTrack_nilTrack_deactivates()
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "nil track: battery must be deactivated")
 end
@@ -257,7 +278,12 @@ function TestBatteryDetectsTrack:test_detectsTrack_nilController_deactivates()
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "nil controller: battery must be deactivated")
 end
@@ -286,7 +312,12 @@ function TestBatteryDetectsTrack:test_detectsTrack_nilDetections_deactivates()
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "nil detections: battery must be deactivated")
 end
@@ -315,7 +346,12 @@ function TestBatteryDetectsTrack:test_detectsTrack_emptyDetections_deactivates()
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "empty detections: battery must be deactivated")
 end
@@ -344,7 +380,12 @@ function TestBatteryDetectsTrack:test_detectsTrack_wrongId_deactivates()
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "wrong id_: battery must be deactivated")
 end
@@ -376,7 +417,12 @@ function TestBatteryDetectsTrack:test_detectsTrack_nilNetworkId_deactivates()
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "nil NetworkId: battery must be deactivated")
 end
@@ -412,7 +458,12 @@ function TestBatteryDetectsTrack:test_detectsTrack_matchInMiddleOfList()
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine({ HoldDownSec = 15 })
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 0, "match in middle of list: must NOT deactivate")
 	lu.assertTrue(battery.LastChanceExpiresAt > expiresAt, "must extend expiry on match")
@@ -446,7 +497,12 @@ function TestCheckDeactivationsLastChance:test_shotsExhausted_noMissile_deactiva
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "shots exhausted, no missile: must deactivate")
 	lu.assertNil(battery.LastChanceTrackId, "LastChanceTrackId must be cleared")
@@ -471,7 +527,12 @@ function TestCheckDeactivationsLastChance:test_shotsExhausted_missileFlying_stay
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 0, "shots exhausted but missile flying: must stay HOT")
 end
@@ -494,7 +555,12 @@ function TestCheckDeactivationsLastChance:test_shotsExhausted_missileExpiredAtNo
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	-- now < MissileInFlightUntil is false when equal, so missile is NOT flying
 	lu.assertEquals(#result, 1, "missile expired exactly at now: must deactivate")
@@ -518,7 +584,12 @@ function TestCheckDeactivationsLastChance:test_holdDownActive_staysHot()
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 0, "hold-down active: must stay HOT")
 end
@@ -549,7 +620,12 @@ function TestCheckDeactivationsLastChance:test_holdDownExpiredExactlyAtNow_check
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	-- Hold-down expired, no detection -> deactivate
 	lu.assertEquals(#result, 1, "hold-down exactly expired, no detection: must deactivate")
@@ -583,7 +659,12 @@ function TestCheckDeactivationsLastChance:test_holdDownExpired_detected_extendsE
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine({ HoldDownSec = holdDownSec })
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 0, "detected: must stay HOT")
 	lu.assertEquals(battery.LastChanceExpiresAt, now + holdDownSec, "must extend LastChanceExpiresAt by HoldDownSec")
@@ -614,7 +695,12 @@ function TestCheckDeactivationsLastChance:test_holdDownExpired_notDetected_deact
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "expired hold-down, no detection: must deactivate")
 	lu.assertNil(battery.LastChanceTrackId, "LastChanceTrackId must be cleared on deactivation")
@@ -640,7 +726,12 @@ function TestCheckDeactivationsLastChance:test_noLastChance_fallsBackToStandardL
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine({ HoldDownSec = 0 })
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "no last-chance fields: standard logic must deactivate")
 end
@@ -664,7 +755,12 @@ function TestCheckDeactivationsLastChance:test_coldBattery_ignoredEvenWithLastCh
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 0, "COLD battery: must be ignored entirely")
 end
@@ -710,7 +806,12 @@ function TestCheckDeactivationsLastChance:test_mixedBatteries_onlyExhaustedOneDe
 	local batteryStore = makeBatteryStoreMock({ b1, b2 })
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "only exhausted battery must be deactivated")
 	lu.assertIs(result[1].battery, b1, "the deactivated battery must be B1")
@@ -741,7 +842,11 @@ function TestCheckDeactivationsLastChance:test_nilDoctrine_doesNotError()
 	local batteryStore = makeBatteryStoreMock({ battery })
 
 	local ok, err = pcall(function()
-		TA.checkDeactivations(trackStore, batteryStore, nil, now)
+		TA.checkDeactivations(makeCtx({
+			trackStore = trackStore,
+			batteryStore = batteryStore,
+			now = now,
+		}))
 	end)
 
 	lu.assertTrue(ok, string.format("nil doctrine must not raise an error: %s", tostring(err)))
@@ -754,7 +859,12 @@ function TestCheckDeactivationsLastChance:test_emptyBatteryStore_returnsEmpty()
 	local batteryStore = makeBatteryStoreMock({})
 	local doctrine = makeFreeDoctrine()
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 0, "empty store: must return empty result")
 end
@@ -791,7 +901,12 @@ function TestCheckDeactivationsLastChance:test_secondHoldDownExpired_deactivates
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine({ HoldDownSec = 15 })
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "second expiry with detection: battery must be deactivated unconditionally")
 	lu.assertNil(battery.LastChanceTrackId, "LastChanceTrackId must be cleared")
@@ -828,7 +943,12 @@ function TestCheckDeactivationsLastChance:test_secondHoldDownExpired_noDetection
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine({ HoldDownSec = 15 })
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "second expiry, no detection: battery must be deactivated")
 	lu.assertNil(battery.LastChanceTrackId, "LastChanceTrackId must be cleared")
@@ -867,7 +987,12 @@ function TestCheckDeactivationsLastChance:test_firstExtension_setsExtendedFlag()
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine({ HoldDownSec = 15 })
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 0, "first extension: battery must stay HOT")
 	lu.assertEquals(battery.LastChanceExtended, true, "first extension: LastChanceExtended must be set to true")
@@ -894,7 +1019,12 @@ function TestCheckDeactivationsLastChance:test_holdDownActive_afterExtension_sta
 	local batteryStore = makeBatteryStoreMock({ battery })
 	local doctrine = makeFreeDoctrine({ HoldDownSec = 15 })
 
-	local result = TA.checkDeactivations(trackStore, batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 0, "extended flag set but timer active: battery must stay HOT")
 	lu.assertEquals(battery.LastChanceExtended, true, "LastChanceExtended must remain true while timer runs")
@@ -930,7 +1060,12 @@ function TestCheckDeactivationsRealStores:test_realStores_shotsExhausted_deactiv
 	self.trackStore:add(track)
 
 	local doctrine = makeFreeDoctrine()
-	local result = TA.checkDeactivations(self.trackStore, self.batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 1, "real stores: exhausted battery must be deactivated")
 end
@@ -953,7 +1088,12 @@ function TestCheckDeactivationsRealStores:test_realStores_holdDownActive_staysHo
 	self.trackStore:add(track)
 
 	local doctrine = makeFreeDoctrine()
-	local result = TA.checkDeactivations(self.trackStore, self.batteryStore, doctrine, now)
+	local result = TA.checkDeactivations(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		doctrine = doctrine,
+		now = now,
+	}))
 
 	lu.assertEquals(#result, 0, "real stores: active hold-down must keep battery HOT")
 end
