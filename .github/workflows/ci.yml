@@ -13,6 +13,7 @@ on:
       - "**/*.toml"
       - "**/.python-version"
       - "**/Taskfile.yml"
+      - "tools/prometheus/**"
   workflow_dispatch:
 
 permissions: {}
@@ -72,6 +73,10 @@ jobs:
       - name: Test
         id: test
         run: task test
+
+      - name: Observability static checks
+        id: observability-static
+        run: task observability:static
 
       - name: Build
         id: build
