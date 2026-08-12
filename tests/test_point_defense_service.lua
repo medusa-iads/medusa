@@ -269,6 +269,79 @@ function TestAutoAssignShorad:test_skips_hva_with_existing_provider()
 	lu.assertEquals(count, 0)
 end
 
+TestActivateForHarm = {}
+
+function TestActivateForHarm:setUp()
+	setupMocks()
+	self.batteryStore = Medusa.Services.BatteryStore:new()
+	self.geoGrid = GeoGrid(10000, { "Battery", "Track" })
+	self.doctrine = {
+		DefendPk = 0,
+		MaxEngageRangePct = { [BR.SR_SAM] = 25 },
+	}
+end
+
+function TestActivateForHarm:test_assigned_provider_uses_full_engagement_range()
+	local protected = makeBattery({
+		BatteryId = "LR-1",
+		Role = BR.LR_SAM,
+		Position = { x = 0, y = 0, z = 0 },
+	})
+	local provider = makeBattery({
+		BatteryId = "SR-1",
+		Role = BR.SR_SAM,
+		Position = { x = 0, y = 0, z = 10000 },
+		EngagementRangeMax = 20000,
+		TotalAmmoStatus = 8,
+		ActivationState = AS.STATE_WARM,
+	})
+	self.batteryStore:add(protected)
+	self.batteryStore:add(provider)
+	PDS.setAssignment(provider.BatteryId, protected.BatteryId, self.batteryStore)
+	self.geoGrid:add("Battery", protected.BatteryId, protected.Position)
+	self.geoGrid:add("Battery", provider.BatteryId, provider.Position)
+
+	local harm = makeTrack({
+		TrackId = "HARM-1",
+		AssessedAircraftType = "HARM",
+		Position = { x = 10000, y = 0, z = 0 },
+		Velocity = { x = -300, y = 0, z = 0 },
+	})
+
+	local count = PDS.activateForHarm(harm, self.geoGrid, self.batteryStore, 1000, self.doctrine)
+
+	lu.assertEquals(count, 1)
+	lu.assertEquals(provider.CurrentTargetTrackId, harm.TrackId)
+	lu.assertEquals(provider.ActivationState, AS.STATE_HOT)
+end
+
+function TestActivateForHarm:test_opportunistic_provider_uses_full_engagement_range()
+	local provider = makeBattery({
+		BatteryId = "SR-1",
+		Role = BR.SR_SAM,
+		Position = { x = 0, y = 0, z = 0 },
+		EngagementRangeMax = 20000,
+		TotalAmmoStatus = 8,
+		ActivationState = AS.STATE_WARM,
+		IsPointDefense = true,
+	})
+	self.batteryStore:add(provider)
+	self.geoGrid:add("Battery", provider.BatteryId, provider.Position)
+
+	local harm = makeTrack({
+		TrackId = "HARM-1",
+		AssessedAircraftType = "HARM",
+		Position = { x = 10000, y = 0, z = 10000 },
+		Velocity = { x = -300, y = 0, z = 0 },
+	})
+
+	local count = PDS.activateForHarm(harm, self.geoGrid, self.batteryStore, 1000, self.doctrine)
+
+	lu.assertEquals(count, 1)
+	lu.assertEquals(provider.CurrentTargetTrackId, harm.TrackId)
+	lu.assertEquals(provider.ActivationState, AS.STATE_HOT)
+end
+
 -- == TestEngageThreats ==
 
 TestEngageThreats = {}

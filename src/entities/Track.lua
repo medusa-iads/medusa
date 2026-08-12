@@ -70,7 +70,7 @@ function Medusa.Entities.Track.new(data)
 		IsSeadThreat = data.IsSeadThreat,
 		AssignmentTime = data.AssignmentTime,
 
-		-- ROE identification ladder fields (ADR-0018)
+		-- ROE identification ladder fields
 		InsideBorder = false,
 		InsideADIZ = false,
 		BorderCrossingTime = nil,

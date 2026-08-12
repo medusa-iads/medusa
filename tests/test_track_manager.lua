@@ -54,12 +54,17 @@ function TestTrackManagerProcessReport:setUp()
 	self.mgr = Medusa.Services.TrackManager:new()
 end
 
-function TestTrackManagerProcessReport:test_processReport_createsNewTrack()
-	local track = self.mgr:processReport(makeReport())
+function TestTrackManagerProcessReport:test_processReport_doesNotPersistDcsObjectMetadata()
+	local track = self.mgr:processReport(makeReport({
+		ObjectCategory = Object.Category.UNIT,
+		UnitCategory = Unit.Category.AIRPLANE,
+	}))
 
 	lu.assertNotNil(track)
 	lu.assertNotNil(track.TrackId)
 	lu.assertEquals(track.NetworkId, "net-1")
+	lu.assertIsNil(track.ObjectCategory)
+	lu.assertIsNil(track.UnitCategory)
 	lu.assertEquals(self.mgr:getStore():count(), 1)
 end
 

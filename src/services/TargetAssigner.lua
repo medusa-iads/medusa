@@ -329,7 +329,7 @@ local function findBestTrackForBattery(battery, ctx)
 			local projPos = projectTrackPosition(track, lookaheadSec)
 			if projPos then
 				local projDist = nearestClusterDist(battery, projPos)
-				if projDist and projDist <= battery.EngagementRangeMax then
+				if projDist and projDist <= cappedRange(battery, ctx) then
 					local pk = computePk(battery, track, projDist)
 					if pk > bestPk then
 						bestPk = pk
@@ -428,10 +428,12 @@ local function _assignSeadPriority(tracks, ctx, minId, assignments)
 					local projPos = projectTrackPosition(track, lookaheadSec)
 					if projPos then
 						local d = nearestClusterDist(nearby[j], projPos)
-						local pk = computePk(nearby[j], track, d)
-						if pk > bestPk then
-							bestPk = pk
-							bestBat = nearby[j]
+						if d <= cappedRange(nearby[j], ctx) then
+							local pk = computePk(nearby[j], track, d)
+							if pk > bestPk then
+								bestPk = pk
+								bestBat = nearby[j]
+							end
 						end
 					end
 				end

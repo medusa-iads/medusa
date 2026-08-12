@@ -3,6 +3,7 @@ require("services.Services")
 require("services.MetricsService")
 require("services.BlackBoxService")
 require("services.HarmDetectionService")
+require("services.ManpadService")
 require("services.PkModel")
 require("core.Constants")
 
@@ -25,6 +26,35 @@ require("core.Constants")
 
 Medusa.Services.MetricsSnapshotService = {}
 Medusa.Services.MetricsSnapshotService._prevSnapshotMemKb = 0
+Medusa.Services.MetricsSnapshotService._manpadStateLabel = { network = nil, state = nil }
+
+local MANPAD_COUNTERS = {
+	{ "medusa_manpad_activations_total", "MANPAD ALERT to HOT transitions" },
+	{ "medusa_manpad_visual_detections_total", "MANPAD wakes triggered by directional visual detection" },
+	{ "medusa_manpad_audio_wakes_total", "MANPAD wakes triggered by audio proximity" },
+	{ "medusa_manpad_neighbor_wakes_total", "MANPAD groups scheduled by a nearby MANPAD activation" },
+	{ "medusa_manpad_position_refreshes_total", "MANPAD position refreshes" },
+	{ "medusa_manpad_winchester_total", "MANPAD groups that exhausted their ammunition" },
+	{ "medusa_manpad_autonomous_scans_total", "MANPAD autonomous DCS world searches" },
+	{ "medusa_manpad_autonomous_cache_reuses_total", "MANPAD autonomous cached scan results reused" },
+}
+
+local MANPAD_STATES = {
+	Medusa.Constants.Manpad.SleepWakeState.ASLEEP,
+	Medusa.Constants.Manpad.SleepWakeState.ALERTING,
+	Medusa.Constants.Manpad.SleepWakeState.ALERT,
+	Medusa.Constants.Manpad.SleepWakeState.HOT,
+	Medusa.Constants.Manpad.SleepWakeState.COOLDOWN,
+}
+local _manpadStateCounts = {}
+
+local function escapePrometheusLabel(value)
+	local escaped = tostring(value or "")
+	escaped = string.gsub(escaped, "\\", "\\\\")
+	escaped = string.gsub(escaped, "\n", "\\n")
+	escaped = string.gsub(escaped, '"', '\\"')
+	return escaped
+end
 
 function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	local MetricsService = Medusa.Services.MetricsService
@@ -163,6 +193,33 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.info("medusa_damaged_batteries_info", "Names of batteries with degraded status", "names")
 	MetricsService.info("medusa_shutdown_batteries_info", "Names of batteries in HARM shutdown", "names")
 
+	-- MANPAD metrics
+	local netStateLabel = { "network", "state" }
+	MetricsService.gauge("medusa_manpad_state", "MANPAD groups by sleep/wake state", netStateLabel)
+	for i = 1, #MANPAD_COUNTERS do
+		local definition = MANPAD_COUNTERS[i]
+		MetricsService.counter(definition[1], definition[2], netLabel)
+	end
+	MetricsService.gauge(
+		"medusa_manpad_autonomous_scan_queue_depth",
+		"MANPAD groups in the autonomous scan rotation",
+		netLabel
+	)
+	MetricsService.summary(
+		"medusa_manpad_autonomous_scan_duration_seconds",
+		"MANPAD autonomous DCS world search time",
+		defaultQuantiles,
+		nil,
+		netLabel
+	)
+	MetricsService.summary(
+		"medusa_manpad_eval_duration_seconds",
+		"ManpadService.evaluate step time",
+		defaultQuantiles,
+		nil,
+		netLabel
+	)
+
 	-- Serialize duration stays unlabeled: it spans all networks in a single operation
 	MetricsService.summary("medusa_serialize_duration_seconds", "Time to serialize all metrics", defaultQuantiles)
 end
@@ -209,6 +266,9 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 
 		for id, iads in pairs(iadsById) do
 			local labels = { network = id }
+			for i = 1, #MANPAD_COUNTERS do
+				ms.inc(MANPAD_COUNTERS[i][1], 0, labels)
+			end
 			local ai = iads:getAssetIndex()
 			if ai then
 				ms.set("medusa_batteries_total", ai:batteries():count(), labels)
@@ -267,6 +327,25 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 				ms.set("medusa_batteries_pd_protected", pdProtectedCount, labels)
 				ms.set("medusa_ammo_remaining", totalAmmo, labels)
 				ms.set("medusa_batteries_rearming", rearmingCount, labels)
+
+				for i = 1, #MANPAD_STATES do
+					_manpadStateCounts[MANPAD_STATES[i]] = 0
+				end
+				local manpads = ai:manpads():getAll()
+				for i = 1, #manpads do
+					local m = manpads[i]
+					local mState = m.Manpad and m.Manpad.SleepWakeState
+					if _manpadStateCounts[mState] ~= nil then
+						_manpadStateCounts[mState] = _manpadStateCounts[mState] + 1
+					end
+				end
+				local labelBuf = Medusa.Services.MetricsSnapshotService._manpadStateLabel
+				labelBuf.network = id
+				for i = 1, #MANPAD_STATES do
+					local manpadState = MANPAD_STATES[i]
+					labelBuf.state = manpadState
+					ms.set("medusa_manpad_state", _manpadStateCounts[manpadState], labelBuf)
+				end
 
 				local rpkVal = 0
 				if iads._rollingPkCount >= Medusa.Constants.ROLLING_PK_WINDOW then
@@ -717,6 +796,128 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 							bname,
 							b.TotalAmmoStatus or 0
 						)
+					end
+				end
+			end
+
+			en = en + 1
+			extLines[en] = "# HELP medusa_manpad_latitude_degrees MANPAD group latitude in WGS84 degrees"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_manpad_latitude_degrees gauge"
+			en = en + 1
+			extLines[en] = "# HELP medusa_manpad_longitude_degrees MANPAD group longitude in WGS84 degrees"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_manpad_longitude_degrees gauge"
+			en = en + 1
+			extLines[en] =
+				"# HELP medusa_manpad_info MANPAD group state, wake reason, detection mode, and fire readiness"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_manpad_info gauge"
+			en = en + 1
+			extLines[en] =
+				"# HELP medusa_manpad_heading_degrees Cached MANPAD unit heading in degrees clockwise from north"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_manpad_heading_degrees gauge"
+			en = en + 1
+			extLines[en] =
+				"# HELP medusa_manpad_narrow_detection_range_meters MANPAD narrow visual detection range in meters"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_manpad_narrow_detection_range_meters gauge"
+			en = en + 1
+			extLines[en] =
+				"# HELP medusa_manpad_wide_detection_range_meters MANPAD wide visual detection range in meters"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_manpad_wide_detection_range_meters gauge"
+			en = en + 1
+			extLines[en] =
+				"# HELP medusa_manpad_narrow_detection_half_angle_degrees MANPAD narrow visual detection half-angle in degrees"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_manpad_narrow_detection_half_angle_degrees gauge"
+			en = en + 1
+			extLines[en] =
+				"# HELP medusa_manpad_wide_detection_half_angle_degrees MANPAD wide visual detection half-angle in degrees"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_manpad_wide_detection_half_angle_degrees gauge"
+
+			local manpadNarrowRange = Medusa.Constants.Manpad.NARROW_RANGE_M
+			local manpadWideRange = manpadNarrowRange * Medusa.Constants.Manpad.WIDE_RANGE_FACTOR
+			local manpadNarrowHalfAngle = math.deg(math.acos(Medusa.Constants.Manpad.COS_NARROW))
+			local manpadWideHalfAngle = math.deg(math.acos(Medusa.Constants.Manpad.COS_WIDE))
+			en = en + 1
+			extLines[en] = string.format("medusa_manpad_narrow_detection_range_meters %.0f", manpadNarrowRange)
+			en = en + 1
+			extLines[en] = string.format("medusa_manpad_wide_detection_range_meters %.0f", manpadWideRange)
+			en = en + 1
+			extLines[en] =
+				string.format("medusa_manpad_narrow_detection_half_angle_degrees %.1f", manpadNarrowHalfAngle)
+			en = en + 1
+			extLines[en] = string.format("medusa_manpad_wide_detection_half_angle_degrees %.1f", manpadWideHalfAngle)
+
+			for id, iads in pairs(iadsById) do
+				local ai = iads:getAssetIndex()
+				if ai then
+					local networkLabel = escapePrometheusLabel(id)
+					local doctrine = iads:getDoctrine() or {}
+					local posture = doctrine.Posture or Medusa.Constants.Posture.HOT_WAR
+					local manpads = ai:manpads():getAll()
+					for i = 1, #manpads do
+						local manpad = manpads[i]
+						local manpadState = manpad.Manpad
+						local manpadLabel = escapePrometheusLabel(manpad.GroupName or manpad.BatteryId)
+						if manpad.Position then
+							local okLL, lat, lon = pcall(coord.LOtoLL, manpad.Position)
+							if okLL and lat and lon then
+								en = en + 1
+								extLines[en] = string.format(
+									'medusa_manpad_latitude_degrees{network="%s",manpad="%s"} %.6f',
+									networkLabel,
+									manpadLabel,
+									lat
+								)
+								en = en + 1
+								extLines[en] = string.format(
+									'medusa_manpad_longitude_degrees{network="%s",manpad="%s"} %.6f',
+									networkLabel,
+									manpadLabel,
+									lon
+								)
+							end
+						end
+						if manpadState then
+							local detectionMode = Medusa.Services.ManpadService.detectionMode(
+								manpadState.SleepWakeState,
+								posture,
+								manpadState.AlertCycleCount
+							)
+							local wakeReason = manpadState.WakeReason or Medusa.Constants.Manpad.WakeReason.NONE
+							local canFire = Medusa.Services.ManpadService.canFire(manpad)
+							en = en + 1
+							extLines[en] = string.format(
+								'medusa_manpad_info{network="%s",manpad="%s",state="%s",wake_reason="%s",detection_mode="%s",can_fire="%s"} 1',
+								networkLabel,
+								manpadLabel,
+								escapePrometheusLabel(manpadState.SleepWakeState),
+								escapePrometheusLabel(wakeReason),
+								escapePrometheusLabel(detectionMode),
+								canFire and "true" or "false"
+							)
+							local headings = manpadState.UnitHeadings or {}
+							local headingCount = manpadState.UnitHeadingCount or 0
+							for headingIndex = 1, headingCount do
+								local heading = headings[headingIndex]
+								if heading then
+									local headingDegrees = Medusa.Services.ManpadService.headingBearingDegrees(heading)
+									en = en + 1
+									extLines[en] = string.format(
+										'medusa_manpad_heading_degrees{network="%s",manpad="%s",heading_index="%d"} %.1f',
+										networkLabel,
+										manpadLabel,
+										headingIndex,
+										headingDegrees
+									)
+								end
+							end
+						end
 					end
 				end
 			end

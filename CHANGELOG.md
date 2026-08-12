@@ -9,14 +9,18 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Managed MANPAD groups with autonomous detection and engagement, coordinated wake behavior, ammunition and rearm handling, and tactical-map and Prometheus observability.
+
 ### Changed
+
+- Reduced per-tick memory allocation in HARM detection by reusing the feature-cache slot across evaluations
 
 ### Fixed
 
-### Removed
-
-### Deprecated
-
+- `MaxEngageRangePct` doctrine cap now applies to ALWAYS_ON batteries self-assigning under EMCON, matching WTA and handoff behavior
+- Guilt-by-association no longer promotes STALE tracks without fresh sensor evidence
+- Unrecoverable-failure shutdown is now resilient to store corruption and completes the release-to-AI path instead of silently halting
+- SEAD-priority assignment now respects the `MaxEngageRangePct` doctrine cap; out-of-range batteries can no longer be force-assigned to HARM/SEAD threats ahead of the greedy assignment loop
 
 ## [1.1.3] - 2026-04-09
 

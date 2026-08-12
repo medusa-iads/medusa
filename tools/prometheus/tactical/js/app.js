@@ -20,7 +20,9 @@ L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
 /* ---- Layer groups ---- */
 
 MTD.zoneLayer    = L.layerGroup().addTo(MTD.map);
+MTD.manpadLobeLayer = L.layerGroup().addTo(MTD.map);
 MTD.sensorLayer  = L.layerGroup().addTo(MTD.map);
+MTD.manpadLayer  = L.layerGroup().addTo(MTD.map);
 MTD.batteryLayer = L.layerGroup().addTo(MTD.map);
 MTD.trackLayer   = L.layerGroup().addTo(MTD.map);
 MTD.trailLayer   = L.layerGroup().addTo(MTD.map);
@@ -42,6 +44,7 @@ MTD.prevMissionTime    = -1;
 MTD.prevZoneVertices   = "";
 MTD.sensorMarkers      = {};
 MTD.sensorRings        = {};
+MTD.manpadMarkers      = {};
 
 /* ---- Main update loop ---- */
 
@@ -81,7 +84,15 @@ async function refresh() {
             MTD.query(MTD.netExpr("medusa_sensor_detection_range_m")).catch(function () { return []; }),    // 24
             MTD.query(MTD.netExpr("medusa_battery_cluster_lat")).catch(function () { return []; }),     // 25
             MTD.query(MTD.netExpr("medusa_battery_cluster_lon")).catch(function () { return []; }),     // 26
-            MTD.query(MTD.netExpr("medusa_battery_cluster_range_m")).catch(function () { return []; })  // 27
+            MTD.query(MTD.netExpr("medusa_battery_cluster_range_m")).catch(function () { return []; }), // 27
+            MTD.query(MTD.netExpr("medusa_manpad_latitude_degrees")).catch(function () { return []; }), // 28
+            MTD.query(MTD.netExpr("medusa_manpad_longitude_degrees")).catch(function () { return []; }), // 29
+            MTD.query(MTD.netExpr("medusa_manpad_info")).catch(function () { return []; }),              // 30
+            MTD.query(MTD.netExpr("medusa_manpad_heading_degrees")).catch(function () { return []; }),   // 31
+            MTD.query("medusa_manpad_narrow_detection_range_meters").catch(function () { return []; }), // 32
+            MTD.query("medusa_manpad_wide_detection_range_meters").catch(function () { return []; }),   // 33
+            MTD.query("medusa_manpad_narrow_detection_half_angle_degrees").catch(function () { return []; }), // 34
+            MTD.query("medusa_manpad_wide_detection_half_angle_degrees").catch(function () { return []; })    // 35
         ]);
 
         var batLat          = results[0];
@@ -112,6 +123,14 @@ async function refresh() {
         var clusterLatResult   = results[25];
         var clusterLonResult   = results[26];
         var clusterRangeResult = results[27];
+        var manpadLatResult    = results[28];
+        var manpadLonResult    = results[29];
+        var manpadInfoResult   = results[30];
+        var manpadHeadingResult = results[31];
+        var manpadNarrowRangeResult = results[32];
+        var manpadWideRangeResult = results[33];
+        var manpadNarrowAngleResult = results[34];
+        var manpadWideAngleResult = results[35];
 
         /* Liveness check */
         var isLive = false;
@@ -135,8 +154,11 @@ async function refresh() {
             MTD.ringsByBattery = {};
             MTD.zoneLayer.clearLayers();
             MTD.sensorLayer.clearLayers();
+            MTD.manpadLobeLayer.clearLayers();
+            MTD.manpadLayer.clearLayers();
             MTD.sensorMarkers = {};
             MTD.sensorRings = {};
+            MTD.manpadMarkers = {};
             MTD.prevZoneVertices = "";
             MTD.hasCentered = false;
             MTD.hideDetailCard();
@@ -176,6 +198,16 @@ async function refresh() {
         var sensorLonMap     = MTD.buildLabelMap(sensorLonResult, "sensor");
         var sensorInfoMap    = MTD.buildInfoMap(sensorInfoResult, "sensor");
         var sensorRangeMap   = MTD.buildLabelMap(sensorRangeResult, "sensor");
+        var manpadLatMap     = MTD.buildScopedLabelMap(manpadLatResult, "manpad");
+        var manpadLonMap     = MTD.buildScopedLabelMap(manpadLonResult, "manpad");
+        var manpadInfoMap    = MTD.buildScopedInfoMap(manpadInfoResult, "manpad");
+        var manpadHeadingMap = MTD.buildScopedIndexedValues(manpadHeadingResult, "manpad", "heading_index");
+        var manpadGeometry = {
+            narrowRangeMeters: MTD.firstMetricValue(manpadNarrowRangeResult),
+            wideRangeMeters: MTD.firstMetricValue(manpadWideRangeResult),
+            narrowHalfAngleDegrees: MTD.firstMetricValue(manpadNarrowAngleResult),
+            wideHalfAngleDegrees: MTD.firstMetricValue(manpadWideAngleResult)
+        };
 
         /* Build cluster map: { batteryName: [ {lat, lon}, ... ] } */
         var clusterMap = {};
@@ -250,7 +282,12 @@ async function refresh() {
             sensorLonMap: sensorLonMap,
             sensorInfoMap: sensorInfoMap,
             sensorRangeMap: sensorRangeMap,
-            clusterMap: clusterMap
+            clusterMap: clusterMap,
+            manpadLatMap: manpadLatMap,
+            manpadLonMap: manpadLonMap,
+            manpadInfoMap: manpadInfoMap,
+            manpadHeadingMap: manpadHeadingMap,
+            manpadGeometry: manpadGeometry
         };
 
         /* Kill markers: detect disappeared tracks */
@@ -271,6 +308,8 @@ async function refresh() {
         /* Render border zones (behind everything) */
         MTD.renderBorderZones(data);
 
+        var manpadResult = MTD.renderManpads(data);
+
         /* Render sensors (behind batteries) */
         MTD.renderSensors(data);
 
@@ -290,7 +329,7 @@ async function refresh() {
         var trkResult = MTD.renderTracks(data, trackHeadings);
 
         /* Combine bounds */
-        var bounds = batResult.bounds.concat(trkResult.bounds);
+        var bounds = batResult.bounds.concat(manpadResult.bounds, trkResult.bounds);
 
         /* Stats */
         var posture = "-";

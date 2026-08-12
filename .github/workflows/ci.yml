@@ -74,9 +74,9 @@ jobs:
         id: test
         run: task test
 
-      - name: Observability static checks
-        id: observability-static
-        run: task observability:static
+      - name: Observability checks
+        id: o11y-check
+        run: task o11y:check
 
       - name: Build
         id: build

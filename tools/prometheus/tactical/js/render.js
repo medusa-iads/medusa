@@ -17,6 +17,156 @@ function _inopIcon(color) {
     });
 }
 
+var MANPAD_STYLES = {
+    markerByState: {
+        ASLEEP: "#8a7f65",
+        ALERTING: "#d4a72c",
+        ALERT: "#ffbf47",
+        HOT: "#ff7043",
+        COOLDOWN: "#87715d"
+    },
+    audioWake: "#42a5f5",
+    canFire: "#4caf50",
+    narrow: { color: "#ffbf47", fillColor: "#ffbf47", weight: 0.8, opacity: 0.24, fillOpacity: 0.065 },
+    wide: { color: "#ff9800", fillColor: "#ff9800", weight: 0.7, opacity: 0.18, fillOpacity: 0.04 }
+};
+
+var MANPAD_LOBES = [
+    { profileKey: "wide", rangeKey: "wideRangeMeters", angleKey: "wideHalfAngleDegrees", segments: 18 },
+    { profileKey: "narrow", rangeKey: "narrowRangeMeters", angleKey: "narrowHalfAngleDegrees", segments: 12 }
+];
+
+MTD.manpadMarkerColor = function (state, wakeReason, canFire) {
+    if (state === "HOT" && canFire) return MANPAD_STYLES.canFire;
+    if (wakeReason === "AUDIO" && (state === "ALERTING" || state === "ALERT")) {
+        return MANPAD_STYLES.audioWake;
+    }
+    return MANPAD_STYLES.markerByState[state] || MANPAD_STYLES.markerByState.ASLEEP;
+};
+
+function _escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+MTD.manpadTooltip = function (name, state, wakeReason, canFire, network) {
+    var tooltip = _escapeHtml(name) + "<br>" + _escapeHtml(state);
+    if (wakeReason !== "NONE") tooltip += "<br>Wake: " + _escapeHtml(wakeReason);
+    if (state === "HOT") tooltip += "<br>Can fire: " + (canFire ? "YES" : "NO");
+    if (network) tooltip += "<br>" + _escapeHtml(network);
+    return tooltip;
+};
+
+MTD.isValidManpadGeometry = function (heading, rangeMeters, halfAngleDegrees) {
+    return Number.isFinite(heading) &&
+        Number.isFinite(rangeMeters) && rangeMeters > 0 &&
+        Number.isFinite(halfAngleDegrees) && halfAngleDegrees > 0;
+};
+
+function _highlightManpadLobes() {
+    for (var i = 0; i < this._medusaLobes.length; i++) {
+        this._medusaLobes[i].layer.setStyle({ weight: 1.5, opacity: 0.55, fillOpacity: 0.14 });
+    }
+}
+
+function _restoreManpadLobes() {
+    for (var i = 0; i < this._medusaLobes.length; i++) {
+        this._medusaLobes[i].layer.setStyle(this._medusaLobes[i].style);
+    }
+}
+
+function _manpadIcon(color) {
+    return L.divIcon({
+        className: "",
+        html: '<svg width="12" height="12" viewBox="0 0 12 12">' +
+              '<polygon points="6,0.5 11.5,6 6,11.5 0.5,6" fill="' + color + '" fill-opacity="0.85" ' +
+              'stroke="' + color + '" stroke-width="1"/></svg>',
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+    });
+}
+
+MTD.renderManpads = function (data) {
+    MTD.manpadLobeLayer.clearLayers();
+    MTD.manpadLayer.clearLayers();
+    MTD.manpadMarkers = {};
+
+    var bounds = [];
+    var keys = Object.keys(data.manpadLatMap);
+    var geometry = data.manpadGeometry || {};
+    var showLobes = MTD.opt("opt-manpad-lobes");
+
+    for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+        if (data.manpadLonMap[key] === undefined) continue;
+
+        var info = data.manpadInfoMap[key] || {};
+        var separatorIndex = key.indexOf("\u0000");
+        var name = info.manpad || key.substring(separatorIndex + 1);
+        var network = info.network || (separatorIndex >= 0 ? key.substring(0, separatorIndex) : "");
+        var state = info.state || "UNKNOWN";
+        var wakeReason = info.wake_reason || "NONE";
+        var canFire = info.can_fire === "true";
+        var detectionMode = info.detection_mode || "NONE";
+        var position = [data.manpadLatMap[key], data.manpadLonMap[key]];
+        var color = MTD.manpadMarkerColor(state, wakeReason, canFire);
+        var lobes = [];
+
+        bounds.push(position);
+
+        if (showLobes) {
+            var profile = MTD.manpadDetectionProfile(detectionMode);
+            var headings = data.manpadHeadingMap[key] || [];
+            for (var hi = 0; hi < headings.length; hi++) {
+                var heading = headings[hi].value;
+                for (var si = 0; si < MANPAD_LOBES.length; si++) {
+                    var spec = MANPAD_LOBES[si];
+                    var rangeMeters = geometry[spec.rangeKey];
+                    var halfAngleDegrees = geometry[spec.angleKey];
+                    if (!profile[spec.profileKey] || !MTD.isValidManpadGeometry(heading, rangeMeters, halfAngleDegrees)) continue;
+                    var style = MANPAD_STYLES[spec.profileKey];
+                    var lobe = L.polygon(
+                        MTD.buildSectorPolygon(
+                            position[0],
+                            position[1],
+                            heading,
+                            rangeMeters,
+                            halfAngleDegrees,
+                            spec.segments
+                        ),
+                        {
+                            color: style.color,
+                            fillColor: style.fillColor,
+                            weight: style.weight,
+                            opacity: style.opacity,
+                            fillOpacity: style.fillOpacity,
+                            interactive: false
+                        }
+                    ).addTo(MTD.manpadLobeLayer);
+                    lobes.push({ layer: lobe, style: style });
+                }
+            }
+        }
+
+        var tooltip = MTD.manpadTooltip(name, state, wakeReason, canFire, network);
+        var marker = L.marker(position, { icon: _manpadIcon(color) })
+            .bindTooltip(tooltip)
+            .addTo(MTD.manpadLayer);
+
+        marker._medusaLobes = lobes;
+        marker.on("mouseover", _highlightManpadLobes);
+        marker.on("mouseout", _restoreManpadLobes);
+
+        MTD.manpadMarkers[key] = { dot: marker, lobes: lobes };
+    }
+
+    return { bounds: bounds };
+};
+
 /* ---- Batteries ---- */
 
 MTD.renderBatteries = function (data) {
