@@ -228,8 +228,14 @@ function Medusa.Services.ManpadService.onRearmed(battery, now)
 end
 
 local function wakeAsleepManpadsInRadius(ctx, centerPos, radius, wakeReason, minSec, maxSec, excludeId)
-	local manpads =
-		NeighborPropagationService.findRecipients(ctx.geoGrid, ctx.manpadStore, centerPos, radius, "Manpad", excludeId)
+	local manpads = NeighborPropagationService.findRecipients(
+		ctx.localGeoGrid or ctx.geoGrid,
+		ctx.manpadStore,
+		centerPos,
+		radius,
+		"Manpad",
+		excludeId
+	)
 	local scheduledCount = 0
 	for i = 1, #manpads do
 		local battery = manpads[i]
@@ -486,7 +492,7 @@ end
 function Medusa.Services.ManpadService.evaluate(ctx)
 	local manpads = ctx.manpadStore:getAll(_batteryBuffer)
 	local trackStore = ctx.trackStore
-	local geoGrid = ctx.geoGrid
+	local geoGrid = ctx.networkedGeoGrid or ctx.geoGrid
 	local now = ctx.now
 	local posture = ctx.posture
 	local alertnessDecaySec = ctx.doctrine.MANPADAlertnessDecaySec
@@ -503,7 +509,7 @@ function Medusa.Services.ManpadService.refreshOnePosition(ctx)
 		batteries = manpads,
 		cursorBatteryId = ctx.posRefreshBatteryId,
 		now = ctx.now,
-		geoGrid = ctx.geoGrid,
+		geoGrid = ctx.localGeoGrid or ctx.geoGrid,
 		geoGridType = "Manpad",
 		stateField = "Manpad",
 		unitRole = C.BatteryUnitRole.MANPAD,

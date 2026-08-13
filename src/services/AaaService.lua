@@ -149,6 +149,11 @@ local function currentMode(battery)
 	return AM.INDEPENDENT
 end
 
+function Medusa.Services.AaaService.initializeMode(battery)
+	battery.Aaa.Mode = currentMode(battery)
+	return battery.Aaa.Mode
+end
+
 function Medusa.Services.AaaService.rebuildHeadings(battery)
 	CrewPerceptionService.rebuildHeadings(battery, battery.Aaa, BUR.AAA)
 end
@@ -183,6 +188,9 @@ local function reconcileMode(ctx, battery)
 	if aaa.Mode == mode then
 		return mode
 	end
+	if ctx.spatialIndex then
+		ctx.spatialIndex:withdrawBattery(battery.BatteryId)
+	end
 	if aaa.ResponseState ~= ARS.IDLE then
 		if not finishResponse(ctx, battery) then
 			return nil
@@ -199,6 +207,12 @@ local function reconcileMode(ctx, battery)
 		cancelPendingInfection(battery)
 	end
 	aaa.Mode = mode
+	if ctx.spatialIndex then
+		ctx.spatialIndex:syncBattery(battery)
+	end
+	if ctx.onModeChanged then
+		ctx.onModeChanged(battery, mode)
+	end
 	logger:debug(string.format("AAA %s mode changed to %s", battery.GroupName, mode))
 	return mode
 end
@@ -508,11 +522,11 @@ function Medusa.Services.AaaService.onShot(ctx, battery, unit, now)
 		doctrine = ctx.doctrine,
 	}
 	local neighbors = NeighborPropagationService.findRecipients(
-		ctx.geoGrid,
+		ctx.localGeoGrid or ctx.geoGrid,
 		ctx.batteryStore,
 		battery.Position,
 		AC.BARRAGE_PROPAGATION_RANGE_M,
-		"Battery",
+		"Aaa",
 		battery.BatteryId
 	)
 	local scheduled = 0
@@ -670,7 +684,7 @@ function Medusa.Services.AaaService.refreshOnePosition(ctx)
 	local allBatteries = ctx.batteryStore:getAll(batteryBuffer)
 	clear(independentBuffer)
 	for i = 1, #allBatteries do
-		if Battery.isIndependentAaa(allBatteries[i]) then
+		if Battery.isIndependentAaa(allBatteries[i]) and allBatteries[i].Aaa.Mode == AM.INDEPENDENT then
 			independentBuffer[#independentBuffer + 1] = allBatteries[i]
 		end
 	end
@@ -679,8 +693,8 @@ function Medusa.Services.AaaService.refreshOnePosition(ctx)
 		batteries = independentBuffer,
 		cursorBatteryId = ctx.posRefreshBatteryId,
 		now = ctx.now,
-		geoGrid = ctx.geoGrid,
-		geoGridType = "Battery",
+		geoGrid = ctx.localGeoGrid or ctx.geoGrid,
+		geoGridType = "Aaa",
 		stateField = "Aaa",
 		unitRole = BUR.AAA,
 	})

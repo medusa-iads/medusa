@@ -659,6 +659,7 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 	Medusa.Entities.Battery.recomputeEnvelope(battery)
 	if battery.Role == BR.AAA then
 		Medusa.Services.AaaService.rebuildHeadings(battery)
+		Medusa.Services.AaaService.initializeMode(battery)
 	end
 	if
 		battery.Role == Medusa.Constants.BatteryRole.LR_SAM

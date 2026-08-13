@@ -1003,7 +1003,7 @@ function TestWakeTriggers:test_cueFromIADS_wakesAsleepManpadsInRange()
 
 	local geoGrid = makeGeoGrid({ ManpadIds = { ["bat-cue-asleep"] = true } })
 
-	MS.cueFromIADS({ manpadStore = store, geoGrid = geoGrid }, { x = 0, y = 0, z = 0 })
+	MS.cueFromIADS({ manpadStore = store, localGeoGrid = geoGrid }, { x = 0, y = 0, z = 0 })
 
 	lu.assertEquals(
 		asleep_bat.Manpad.SleepWakeState,

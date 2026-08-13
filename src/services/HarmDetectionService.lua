@@ -3,6 +3,7 @@ require("services.Services")
 require("services.SpatialQuery")
 require("core.Constants")
 require("core.Logger")
+require("entities.Battery")
 
 --[[
             ██╗  ██╗ █████╗ ██████╗ ███╗   ███╗    ██████╗ ███████╗████████╗███████╗ ██████╗████████╗██╗ ██████╗ ███╗   ██╗
@@ -196,7 +197,11 @@ local function findClosestEmitter(track, geoGrid, batteryStore)
 	local best, bestDist = nil, math.huge
 	for i = 1, #batteries do
 		local b = batteries[i]
-		if (b.ActivationState == AS.STATE_WARM or b.ActivationState == AS.STATE_HOT) and b.Position then
+		if
+			(b.ActivationState == AS.STATE_WARM or b.ActivationState == AS.STATE_HOT)
+			and not Medusa.Entities.Battery.isIndependentAaa(b)
+			and b.Position
+		then
 			local dist = Distance2D(track.Position, b.Position)
 			if dist < bestDist then
 				best = b.Position

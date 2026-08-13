@@ -224,9 +224,10 @@ end
 
 function TestAaaService:test_position_refresh_updates_grid_and_metric()
 	local site = battery()
+	site.Aaa.Mode = C.Aaa.Mode.INDEPENDENT
 	local ctx = context(site, {})
 	local updatedBattery
-	ctx.geoGrid = {
+	ctx.localGeoGrid = {
 		updatePosition = function(_, batteryId)
 			if batteryId == site.BatteryId then
 				updatedBattery = site
@@ -473,11 +474,11 @@ function TestAaaService:test_aaa_fire_infects_idle_and_alert_neighbors_after_ten
 		barrageState = Medusa.Services.AaaService.newBarrageState(),
 		batteryStore = store,
 		trackStore = {},
-		geoGrid = {
+		localGeoGrid = {
 			queryRadius = function(_, _, radius)
 				queryCount = queryCount + 1
 				queriedRadius = radius
-				return { BatteryIds = { source = true, idle = true, alert = true, active = true, changed = true } }
+				return { AaaIds = { source = true, idle = true, alert = true, active = true, changed = true } }
 			end,
 		},
 		doctrine = { ROE = C.ROEState.TIGHT, AAA = { MaxBarrageGroups = 15 } },
@@ -576,9 +577,9 @@ function TestAaaService:test_barrage_infection_delays_vary_without_dropping_belo
 		barrageState = Medusa.Services.AaaService.newBarrageState(),
 		batteryStore = store,
 		trackStore = {},
-		geoGrid = {
+		localGeoGrid = {
 			queryRadius = function()
-				return { BatteryIds = { source = true, first = true, second = true } }
+				return { AaaIds = { source = true, first = true, second = true } }
 			end,
 		},
 		doctrine = { ROE = C.ROEState.TIGHT, AAA = { MaxBarrageGroups = 15 } },
@@ -612,9 +613,9 @@ function TestAaaService:test_barrage_participant_cap_is_shared_across_networks()
 			barrageState = barrageState,
 			batteryStore = store,
 			trackStore = {},
-			geoGrid = {
+			localGeoGrid = {
 				queryRadius = function()
-					return { BatteryIds = { [source.BatteryId] = true, [recipient.BatteryId] = true } }
+					return { AaaIds = { [source.BatteryId] = true, [recipient.BatteryId] = true } }
 				end,
 			},
 			doctrine = {
@@ -749,9 +750,21 @@ function TestAaaService:test_radar_loss_returns_site_to_independent_cold_state()
 	})
 	site.Aaa.Mode = C.Aaa.Mode.RADAR_DIRECTED
 	local ctx = context(site, {})
+	local withdrawnId
+	local syncedBattery
+	ctx.spatialIndex = {
+		withdrawBattery = function(_, batteryId)
+			withdrawnId = batteryId
+		end,
+		syncBattery = function(_, value)
+			syncedBattery = value
+		end,
+	}
 
 	Medusa.Services.AaaService.evaluate(ctx)
 
 	lu.assertEquals(site.Aaa.Mode, C.Aaa.Mode.INDEPENDENT)
 	lu.assertEquals(site.ActivationState, C.ActivationState.STATE_COLD)
+	lu.assertEquals(withdrawnId, site.BatteryId)
+	lu.assertEquals(syncedBattery, site)
 end
