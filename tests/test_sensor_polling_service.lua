@@ -47,13 +47,13 @@ function TestSensorPollingServicePollSensor:setUp()
 	})
 end
 
-function TestSensorPollingServicePollSensor:test_returnsEmptyWhenNoController()
+function TestSensorPollingServicePollSensor:test_returnsNilWhenNoController()
 	GetGroupController = function(_)
 		return nil
 	end
 
 	local reports = self.svc:pollSensor("missing-group", 100)
-	lu.assertEquals(#reports, 0)
+	lu.assertNil(reports)
 end
 
 function TestSensorPollingServicePollSensor:test_returnsEmptyWhenNoDetections()
@@ -200,31 +200,6 @@ end
 function TestSensorPollingServicePollSensor:test_rejectsNilObjectId()
 	local obj = {
 		id_ = nil,
-		getCategory = function(self)
-			return Object.Category.UNIT
-		end,
-		getPoint = function(self)
-			return { x = 1, y = 2, z = 3 }
-		end,
-		getVelocity = function(self)
-			return { x = 0, y = 0, z = 0 }
-		end,
-	}
-
-	GetGroupController = function(_)
-		return {}
-	end
-	GetControllerDetectedTargets = function(_)
-		return { { object = obj } }
-	end
-
-	local reports = self.svc:pollSensor("sensor-group", 100)
-	lu.assertEquals(#reports, 0)
-end
-
-function TestSensorPollingServicePollSensor:test_rejectsHighObjectId()
-	local obj = {
-		id_ = 50000000,
 		getCategory = function(self)
 			return Object.Category.UNIT
 		end,

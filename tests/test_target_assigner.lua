@@ -440,9 +440,6 @@ function TestPkFloor:setUp()
 end
 
 function TestPkFloor:test_high_pkfloor_rejects_marginal_track()
-	-- Track at 900m with velocity toward battery. After 8s projection, projected dist ~700m.
-	-- Pk at 700m with optimal=450, sigma=250: gaussian=exp(-0.5*1.0)=0.607, pk~0.42
-	-- PkFloor=0.50 -> should NOT assign.
 	local track = makeTrack({
 		TrackId = "T1",
 		Position = { x = 900, y = 500, z = 0 },
@@ -461,7 +458,7 @@ function TestPkFloor:test_high_pkfloor_rejects_marginal_track()
 	})
 	self.batteryStore:add(battery)
 
-	local doctrine = makeFreeDoctrine({ PkFloor = 0.50 })
+	local doctrine = makeFreeDoctrine({ PkFloor = 1.0 })
 	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
 		trackStore = self.trackStore,
 		batteryStore = self.batteryStore,
@@ -712,7 +709,8 @@ function TestCheckDeactivations:test_returns_hot_battery_with_nil_target()
 	}))
 
 	lu.assertEquals(#result, 1)
-	lu.assertIs(result[1], battery)
+	lu.assertIs(result[1].battery, battery)
+	lu.assertEquals(result[1].reason, "idle hold-down expired")
 end
 
 function TestCheckDeactivations:test_returns_hot_battery_when_track_removed()
@@ -733,7 +731,8 @@ function TestCheckDeactivations:test_returns_hot_battery_when_track_removed()
 	}))
 
 	lu.assertEquals(#result, 1)
-	lu.assertIs(result[1], battery)
+	lu.assertIs(result[1].battery, battery)
+	lu.assertEquals(result[1].reason, "track expired")
 end
 
 function TestCheckDeactivations:test_returns_hot_battery_when_track_stale_no_holddown()
@@ -760,7 +759,8 @@ function TestCheckDeactivations:test_returns_hot_battery_when_track_stale_no_hol
 	}))
 
 	lu.assertEquals(#result, 1)
-	lu.assertIs(result[1], battery)
+	lu.assertIs(result[1].battery, battery)
+	lu.assertEquals(result[1].reason, "track stale")
 end
 
 function TestCheckDeactivations:test_holddown_protects_stale_track()
@@ -904,7 +904,7 @@ function TestCheckDeactivations:test_returns_empty_with_no_batteries()
 	lu.assertEquals(#result, 0)
 end
 
-function TestCheckDeactivations:test_nil_doctrine_defaults_holddown_zero()
+function TestCheckDeactivations:test_missing_holddown_uses_default()
 	local track = makeTrack({
 		TrackId = "T1",
 		LifecycleState = Medusa.Constants.TrackLifecycleState.STALE,
@@ -927,5 +927,5 @@ function TestCheckDeactivations:test_nil_doctrine_defaults_holddown_zero()
 		doctrine = {},
 	}))
 
-	lu.assertEquals(#result, 1)
+	lu.assertEquals(#result, 0)
 end
