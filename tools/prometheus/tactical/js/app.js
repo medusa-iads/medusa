@@ -98,7 +98,7 @@ async function refresh() {
             MTD.query(MTD.netExpr("medusa_aaa_heading_degrees")).catch(function () { return []; }),            // 37
             MTD.query("medusa_aaa_visual_detection_range_meters").catch(function () { return []; }),          // 38
             MTD.query("medusa_aaa_visual_detection_half_angle_degrees").catch(function () { return []; }),     // 39
-            MTD.query(MTD.netExpr("medusa_aaa_acoustic_range_meters")).catch(function () { return []; })       // 40
+            MTD.query(MTD.netExpr("medusa_aaa_audio_range_meters")).catch(function () { return []; })          // 40
         ]);
 
         var batLat          = results[0];
@@ -141,7 +141,7 @@ async function refresh() {
         var aaaHeadingResult = results[37];
         var aaaVisualRangeResult = results[38];
         var aaaVisualAngleResult = results[39];
-        var aaaAcousticRangeResult = results[40];
+        var aaaAudioRangeResult = results[40];
 
         /* Liveness check */
         var isLive = false;
@@ -222,7 +222,7 @@ async function refresh() {
         };
         var aaaInfoMap = MTD.buildScopedInfoMap(aaaInfoResult, "aaa");
         var aaaHeadingMap = MTD.buildScopedIndexedValues(aaaHeadingResult, "aaa", "heading_index");
-        var aaaAcousticRangeMap = MTD.buildLabelMap(aaaAcousticRangeResult, "network");
+        var aaaAudioRangeMap = MTD.buildLabelMap(aaaAudioRangeResult, "network");
         var aaaGeometry = {
             rangeMeters: MTD.firstMetricValue(aaaVisualRangeResult),
             halfAngleDegrees: MTD.firstMetricValue(aaaVisualAngleResult)
@@ -309,7 +309,7 @@ async function refresh() {
             manpadGeometry: manpadGeometry,
             aaaInfoMap: aaaInfoMap,
             aaaHeadingMap: aaaHeadingMap,
-            aaaAcousticRangeMap: aaaAcousticRangeMap,
+            aaaAudioRangeMap: aaaAudioRangeMap,
             aaaGeometry: aaaGeometry
         };
 

@@ -36,7 +36,7 @@ local CrewPerceptionService = Medusa.Services.CrewPerceptionService
 local NeighborPropagationService = Medusa.Services.NeighborPropagationService
 local logger = Medusa.Logger:ns("AaaService")
 local DETECTION_SOURCE = {
-	ACOUSTIC = "ACOUSTIC",
+	AUDIO = "AUDIO",
 	VISUAL = "VISUAL",
 }
 local PRIMARY_PROFILES = { CrewPerceptionService.PRIMARY_PROFILE }
@@ -272,12 +272,12 @@ local function alert(battery, target, source, now)
 	aaa.ResponseAt = now + AC.REACTION_DELAY_SEC
 	aaa.PendingTarget = captureDetection(target)
 	local metricName = source == DETECTION_SOURCE.VISUAL and "medusa_aaa_visual_detections_total"
-		or "medusa_aaa_acoustic_detections_total"
+		or "medusa_aaa_audio_detections_total"
 	Medusa.Services.MetricsService.inc(metricName)
 	logger:debug(string.format("AAA %s detected %s by %s", battery.GroupName, target.UnitName, source))
 end
 
-local function tryDetection(ctx, search, battery, acousticRangeM)
+local function tryDetection(ctx, search, battery, audioRangeM)
 	local aaa = battery.Aaa
 	local candidates = collectCandidates(search, battery, ctx.now)
 	for i = 1, #candidates do
@@ -288,24 +288,24 @@ local function tryDetection(ctx, search, battery, acousticRangeM)
 		end
 	end
 
-	local lastAttempt = aaa.LastAcousticAttemptTime
-	if lastAttempt and ctx.now - lastAttempt < AC.ACOUSTIC_RETRY_SEC then
+	local lastAttempt = aaa.LastAudioAttemptTime
+	if lastAttempt and ctx.now - lastAttempt < AC.AUDIO_RETRY_SEC then
 		return false
 	end
-	aaa.LastAcousticAttemptTime = ctx.now
-	local chance = AC.ACOUSTIC_DETECTION_CHANCE * (POSTURE_CHANCE_MULTIPLIER[ctx.posture] or 1)
+	aaa.LastAudioAttemptTime = ctx.now
+	local chance = AC.AUDIO_DETECTION_CHANCE * (POSTURE_CHANCE_MULTIPLIER[ctx.posture] or 1)
 	for i = 1, #candidates do
 		local target = candidates[i]
-		if CrewPerceptionService.hears(battery.Position, target.Position, acousticRangeM) then
-			Medusa.Services.MetricsService.inc("medusa_aaa_acoustic_attempts_total")
+		if CrewPerceptionService.hears(battery.Position, target.Position, audioRangeM) then
+			Medusa.Services.MetricsService.inc("medusa_aaa_audio_attempts_total")
 			local roll = math.random()
 			if roll < chance then
-				alert(battery, target, DETECTION_SOURCE.ACOUSTIC, ctx.now)
+				alert(battery, target, DETECTION_SOURCE.AUDIO, ctx.now)
 				return true
 			end
 			logger:debug(
 				string.format(
-					"AAA %s failed acoustic detection of %s (roll=%.3f chance=%.3f)",
+					"AAA %s failed audio detection of %s (roll=%.3f chance=%.3f)",
 					battery.GroupName,
 					target.UnitName,
 					roll,
@@ -605,13 +605,13 @@ local function completeAreaFire(ctx, battery)
 	end
 end
 
-local function evaluateBarrage(ctx, search, battery, acousticRangeM)
+local function evaluateBarrage(ctx, search, battery, audioRangeM)
 	local aaa = battery.Aaa
 	if not barrageIsActive(aaa, ctx.now) then
 		finishResponse(ctx, battery)
 		return
 	end
-	if tryDetection(ctx, search, battery, acousticRangeM) then
+	if tryDetection(ctx, search, battery, audioRangeM) then
 		stopFireTask(battery)
 		beginResponse(ctx, search, battery)
 		return
@@ -626,7 +626,7 @@ local function evaluateBarrage(ctx, search, battery, acousticRangeM)
 	end
 end
 
-local function evaluateBattery(ctx, search, battery, acousticRangeM)
+local function evaluateBattery(ctx, search, battery, audioRangeM)
 	local aaa = battery.Aaa
 	local state = aaa.ResponseState
 	if ctx.doctrine.ROE == C.ROEState.HOLD then
@@ -636,7 +636,7 @@ local function evaluateBattery(ctx, search, battery, acousticRangeM)
 		return
 	end
 	if state == ARS.IDLE then
-		tryDetection(ctx, search, battery, acousticRangeM)
+		tryDetection(ctx, search, battery, audioRangeM)
 	elseif state == ARS.ALERT and ctx.now >= aaa.ResponseAt then
 		beginResponse(ctx, search, battery)
 	elseif state == ARS.AREA_FIRE and ctx.now >= aaa.ResponseUntil then
@@ -644,7 +644,7 @@ local function evaluateBattery(ctx, search, battery, acousticRangeM)
 	elseif state == ARS.LOCAL_ACQUISITION and ctx.now >= aaa.ResponseUntil then
 		resumeBarrageOrFinish(ctx, battery)
 	elseif BARRAGE_STATES[state] then
-		evaluateBarrage(ctx, search, battery, acousticRangeM)
+		evaluateBarrage(ctx, search, battery, audioRangeM)
 	end
 end
 
@@ -667,8 +667,8 @@ function Medusa.Services.AaaService.evaluate(ctx)
 			end
 		end
 	end
-	local acousticRangeM = ctx.doctrine.AAA.AcousticRangeM
-	local searchRadiusM = math.max(acousticRangeM, VISUAL_SEARCH_RADIUS_M)
+	local audioRangeM = ctx.doctrine.AAA.AudioRangeM
+	local searchRadiusM = math.max(audioRangeM, VISUAL_SEARCH_RADIUS_M)
 	local search = getLocalSearch(ctx, searchRadiusM)
 	search:refresh(independentBuffer, ctx.now, function(battery)
 		local state = battery.Aaa.ResponseState
@@ -676,7 +676,7 @@ function Medusa.Services.AaaService.evaluate(ctx)
 			and ctx.doctrine.ROE ~= C.ROEState.HOLD
 	end)
 	for i = 1, #independentBuffer do
-		evaluateBattery(ctx, search, independentBuffer[i], acousticRangeM)
+		evaluateBattery(ctx, search, independentBuffer[i], audioRangeM)
 	end
 end
 

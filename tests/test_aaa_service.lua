@@ -98,7 +98,7 @@ local function context(site, targets, overrides)
 		posture = C.Posture.HOT_WAR,
 		doctrine = {
 			ROE = C.ROEState.TIGHT,
-			AAA = { AcousticRangeM = 6000, AreaFireChance = 0.20, MaxBarrageGroups = 15 },
+			AAA = { AudioRangeM = 6000, AreaFireChance = 0.20, MaxBarrageGroups = 15 },
 		},
 	}
 	if overrides then
@@ -191,7 +191,7 @@ function TestAaaService:test_records_visual_detection_and_local_acquisition()
 	end
 	local site = battery()
 	local ctx = context(site, { target("aircraft", 5000, 500, 0) })
-	ctx.doctrine.AAA.AcousticRangeM = 0
+	ctx.doctrine.AAA.AudioRangeM = 0
 
 	Medusa.Services.AaaService.evaluate(ctx)
 	ctx.now = 15
@@ -199,13 +199,13 @@ function TestAaaService:test_records_visual_detection_and_local_acquisition()
 
 	lu.assertEquals(self.metricCounts.medusa_aaa_visual_detections_total, 1)
 	lu.assertEquals(self.metricCounts.medusa_aaa_local_acquisition_responses_total, 1)
-	lu.assertIsNil(self.metricCounts.medusa_aaa_acoustic_detections_total)
+	lu.assertIsNil(self.metricCounts.medusa_aaa_audio_detections_total)
 	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.LOCAL_ACQUISITION)
 	lu.assertEquals(site.ActivationState, C.ActivationState.STATE_HOT)
 	lu.assertIsNil(site.CurrentTargetTrackId)
 end
 
-function TestAaaService:test_records_acoustic_attempts_detection_and_area_fire()
+function TestAaaService:test_records_audio_attempts_detection_and_area_fire()
 	math.random = function()
 		return 0
 	end
@@ -217,8 +217,8 @@ function TestAaaService:test_records_acoustic_attempts_detection_and_area_fire()
 	ctx.now = 15
 	Medusa.Services.AaaService.evaluate(ctx)
 
-	lu.assertEquals(self.metricCounts.medusa_aaa_acoustic_attempts_total, 1)
-	lu.assertEquals(self.metricCounts.medusa_aaa_acoustic_detections_total, 1)
+	lu.assertEquals(self.metricCounts.medusa_aaa_audio_attempts_total, 1)
+	lu.assertEquals(self.metricCounts.medusa_aaa_audio_detections_total, 1)
 	lu.assertEquals(self.metricCounts.medusa_aaa_area_fire_responses_total, 1)
 end
 
@@ -660,7 +660,7 @@ function TestAaaService:test_barrage_participant_cap_is_shared_across_networks()
 	lu.assertEquals(self.metricNetworks.medusa_aaa_barrage_infections_total, "second-network")
 end
 
-function TestAaaService:test_acoustic_detection_rolls_for_each_aircraft()
+function TestAaaService:test_audio_detection_rolls_for_each_aircraft()
 	local rolls = 0
 	math.random = function()
 		rolls = rolls + 1

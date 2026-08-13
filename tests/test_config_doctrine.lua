@@ -92,7 +92,7 @@ function TestGetDoctrine:test_nil_input_uses_defaults()
 	lu.assertAlmostEquals(d.PkFloor, 0.25, 0.001)
 	lu.assertEquals(d.MANPADAlertnessDecaySec, 14400)
 	lu.assertEquals(d.MANPADFieldRadioRangeM, 5000)
-	lu.assertEquals(d.AAA.AcousticRangeM, 6000)
+	lu.assertEquals(d.AAA.AudioRangeM, 6000)
 	lu.assertAlmostEquals(d.AAA.AreaFireChance, 0.20, 0.001)
 	lu.assertEquals(d.AAA.MaxBarrageGroups, 15)
 end
@@ -100,9 +100,9 @@ end
 function TestGetDoctrine:test_aaa_overrides_are_validated()
 	Medusa.Config:initialize()
 	local d = Medusa.Config:getDoctrine({
-		AAA = { AcousticRangeM = 25000, AreaFireChance = -0.5, MaxBarrageGroups = 101 },
+		AAA = { AudioRangeM = 25000, AreaFireChance = -0.5, MaxBarrageGroups = 101 },
 	})
-	lu.assertEquals(d.AAA.AcousticRangeM, 20000)
+	lu.assertEquals(d.AAA.AudioRangeM, 20000)
 	lu.assertEquals(d.AAA.AreaFireChance, 0)
 	lu.assertEquals(d.AAA.MaxBarrageGroups, 100)
 	local disabled = Medusa.Config:getDoctrine({ AAA = { MaxBarrageGroups = -1 } })
@@ -111,10 +111,10 @@ function TestGetDoctrine:test_aaa_overrides_are_validated()
 	lu.assertEquals(fractional.AAA.MaxBarrageGroups, 15)
 end
 
-function TestGetDoctrine:test_aaa_acoustic_range_zero_disables_acoustic_detection()
+function TestGetDoctrine:test_aaa_audio_range_zero_disables_audio_detection()
 	Medusa.Config:initialize()
-	local d = Medusa.Config:getDoctrine({ AAA = { AcousticRangeM = 0 } })
-	lu.assertEquals(d.AAA.AcousticRangeM, 0)
+	local d = Medusa.Config:getDoctrine({ AAA = { AudioRangeM = 0 } })
+	lu.assertEquals(d.AAA.AudioRangeM, 0)
 	lu.assertAlmostEquals(d.AAA.AreaFireChance, 0.20, 0.001)
 end
 

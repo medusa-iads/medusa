@@ -53,8 +53,8 @@ local _manpadStateCounts = {}
 
 local AAA_COUNTERS = {
 	{ "medusa_aaa_visual_detections_total", "AAA visual detections" },
-	{ "medusa_aaa_acoustic_attempts_total", "AAA acoustic detection rolls" },
-	{ "medusa_aaa_acoustic_detections_total", "Successful AAA acoustic detections" },
+	{ "medusa_aaa_audio_attempts_total", "AAA audio detection rolls" },
+	{ "medusa_aaa_audio_detections_total", "Successful AAA audio detections" },
 	{ "medusa_aaa_area_fire_responses_total", "AAA area-fire responses" },
 	{ "medusa_aaa_barrage_responses_total", "AAA barrage responses started" },
 	{ "medusa_aaa_barrage_bursts_total", "AAA barrage bursts started" },
@@ -912,9 +912,9 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 			en = en + 1
 			extLines[en] = "# TYPE medusa_aaa_visual_detection_half_angle_degrees gauge"
 			en = en + 1
-			extLines[en] = "# HELP medusa_aaa_acoustic_range_meters Configured AAA acoustic detection range in meters"
+			extLines[en] = "# HELP medusa_aaa_audio_range_meters Configured AAA audio detection range in meters"
 			en = en + 1
-			extLines[en] = "# TYPE medusa_aaa_acoustic_range_meters gauge"
+			extLines[en] = "# TYPE medusa_aaa_audio_range_meters gauge"
 
 			local aaaVisualRange = Medusa.Constants.LocalAircraftDetection.PRIMARY_RANGE_M
 			local aaaVisualHalfAngle =
@@ -932,9 +932,9 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 					local aaaDoctrine = doctrine.AAA or {}
 					en = en + 1
 					extLines[en] = string.format(
-						'medusa_aaa_acoustic_range_meters{network="%s"} %.0f',
+						'medusa_aaa_audio_range_meters{network="%s"} %.0f',
 						networkLabel,
-						aaaDoctrine.AcousticRangeM or 0
+						aaaDoctrine.AudioRangeM or 0
 					)
 					local batteries = ai:batteries():getAll()
 					for i = 1, #batteries do

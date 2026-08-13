@@ -176,7 +176,7 @@ var AAA_STYLES = {
     hot: "#4caf50",
     radarCold: "#4a90d9",
     visual: { color: "#ffbf47", fillColor: "#ffbf47", weight: 0.8, opacity: 0.3, fillOpacity: 0.06 },
-    acoustic: { color: "#42a5f5", weight: 0.8, opacity: 0.25, dashArray: "5 5" }
+    audio: { color: "#42a5f5", weight: 0.8, opacity: 0.25, dashArray: "5 5" }
 };
 
 MTD.aaaMarkerColor = function (mode, responseState, activationState) {
@@ -223,15 +223,15 @@ MTD.renderAaaDetection = function (data) {
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
 
         var position = [lat, lon];
-        var acousticRange = (data.aaaAcousticRangeMap || {})[info.network];
-        if (Number.isFinite(acousticRange) && acousticRange > 0) {
+        var audioRange = (data.aaaAudioRangeMap || {})[info.network];
+        if (Number.isFinite(audioRange) && audioRange > 0) {
             L.circle(position, {
-                radius: acousticRange,
-                color: AAA_STYLES.acoustic.color,
+                radius: audioRange,
+                color: AAA_STYLES.audio.color,
                 fill: false,
-                weight: AAA_STYLES.acoustic.weight,
-                opacity: AAA_STYLES.acoustic.opacity,
-                dashArray: AAA_STYLES.acoustic.dashArray,
+                weight: AAA_STYLES.audio.weight,
+                opacity: AAA_STYLES.audio.opacity,
+                dashArray: AAA_STYLES.audio.dashArray,
                 interactive: false
             }).addTo(MTD.aaaDetectionLayer);
         }

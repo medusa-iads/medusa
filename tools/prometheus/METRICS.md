@@ -41,8 +41,8 @@ The tactical display anchors every cached unit heading at the cached group posit
 |---|---|---|---|
 | `medusa_aaa_state` | Count AAA groups by operating mode and response state | Gauge, groups | `network`, `mode`, `state` |
 | `medusa_aaa_visual_detections_total` | Count successful visual detections | Counter, detections | `network` |
-| `medusa_aaa_acoustic_attempts_total` | Count acoustic detection rolls | Counter, attempts | `network` |
-| `medusa_aaa_acoustic_detections_total` | Count successful acoustic detections | Counter, detections | `network` |
+| `medusa_aaa_audio_attempts_total` | Count audio detection rolls | Counter, attempts | `network` |
+| `medusa_aaa_audio_detections_total` | Count successful audio detections | Counter, detections | `network` |
 | `medusa_aaa_area_fire_responses_total` | Count area-fire responses | Counter, responses | `network` |
 | `medusa_aaa_barrage_responses_total` | Count barrage responses started | Counter, responses | `network` |
 | `medusa_aaa_barrage_bursts_total` | Count 10-15-second barrage bursts started | Counter, bursts | `network` |
@@ -58,8 +58,8 @@ The tactical display anchors every cached unit heading at the cached group posit
 | `medusa_aaa_heading_degrees` | Expose each cached AAA gun heading clockwise from north | Gauge, degrees | `network`, `aaa`, `heading_index` |
 | `medusa_aaa_visual_detection_range_meters` | Expose the visual detection range | Gauge, meters | None |
 | `medusa_aaa_visual_detection_half_angle_degrees` | Expose the visual detection half-angle | Gauge, degrees | None |
-| `medusa_aaa_acoustic_range_meters` | Expose the configured acoustic detection range | Gauge, meters | `network` |
+| `medusa_aaa_audio_range_meters` | Expose the configured audio detection range | Gauge, meters | `network` |
 
-For `N` active networks, `G` exported AAA groups, and `U` cached gun headings, AAA adds `2 + N + G + U` active extended series. Changes to `mode` or `state` replace the active `medusa_aaa_info` series. The tactical display draws independent AAA visual sectors and acoustic ranges from these metrics.
+For `N` active networks, `G` exported AAA groups, and `U` cached gun headings, AAA adds `2 + N + G + U` active extended series. Changes to `mode` or `state` replace the active `medusa_aaa_info` series. The tactical display draws independent AAA visual sectors and audio ranges from these metrics.
 
 Counters reset with the mission. State gauges are replaced on each snapshot. Local-search and evaluation summaries retain at most 1,000 observations per network. Extended heading, state, and detection-geometry metrics exist only while extended telemetry is enabled.

@@ -104,10 +104,10 @@ local DOCTRINE_SCHEMA = {
 
 local AAA_SCHEMA = {
 	{
-		name = "AcousticRangeM",
-		default = Medusa.Constants.Aaa.DEFAULT_ACOUSTIC_RANGE_M,
+		name = "AudioRangeM",
+		default = Medusa.Constants.Aaa.DEFAULT_AUDIO_RANGE_M,
 		min = 0,
-		max = Medusa.Constants.Aaa.MAX_ACOUSTIC_RANGE_M,
+		max = Medusa.Constants.Aaa.MAX_AUDIO_RANGE_M,
 	},
 	{
 		name = "AreaFireChance",

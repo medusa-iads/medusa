@@ -296,7 +296,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
       "targets": [
         { "expr": "rate(medusa_aaa_visual_detections_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Visual Detections/min" },
-        { "expr": "rate(medusa_aaa_acoustic_detections_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Acoustic Detections/min" },
+        { "expr": "rate(medusa_aaa_audio_detections_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Audio Detections/min" },
         { "expr": "rate(medusa_aaa_area_fire_responses_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Area Fire/min" },
         { "expr": "rate(medusa_aaa_barrage_responses_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Barrages/min" },
         { "expr": "rate(medusa_aaa_barrage_bursts_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Barrage Bursts/min" },

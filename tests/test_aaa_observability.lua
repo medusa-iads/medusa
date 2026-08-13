@@ -113,7 +113,7 @@ function TestAaaObservability:test_snapshot_exports_bounded_state_and_excludes_g
 	aaa.Aaa.ResponseState = C.Aaa.ResponseState.ALERT
 	Medusa.Core.IadsById.red = network({ sam, aaa }, {
 		Posture = C.Posture.HOT_WAR,
-		AAA = { AcousticRangeM = 6000 },
+		AAA = { AudioRangeM = 6000 },
 	})
 	MSS.register({ "network" })
 	MSS.installSnapshot()
@@ -138,7 +138,7 @@ function TestAaaObservability:test_extended_snapshot_exports_aaa_state_headings_
 	aaa.Aaa.UnitHeadingCount = 1
 	Medusa.Core.IadsById.red = network({ aaa }, {
 		Posture = C.Posture.HOT_WAR,
-		AAA = { AcousticRangeM = 6500 },
+		AAA = { AudioRangeM = 6500 },
 	})
 	Medusa.Config.Current.PrometheusExtendEnabled = true
 	coord.LOtoLL = function()
@@ -153,7 +153,7 @@ function TestAaaObservability:test_extended_snapshot_exports_aaa_state_headings_
 		contains(output, 'medusa_aaa_info{network="red",aaa="RED-AAA",mode="INDEPENDENT",state="LOCAL_ACQUISITION"} 1')
 	)
 	lu.assertTrue(contains(output, 'medusa_aaa_heading_degrees{network="red",aaa="RED-AAA",heading_index="1"} 90.0'))
-	lu.assertTrue(contains(output, 'medusa_aaa_acoustic_range_meters{network="red"} 6500'))
+	lu.assertTrue(contains(output, 'medusa_aaa_audio_range_meters{network="red"} 6500'))
 	lu.assertTrue(contains(output, 'medusa_battery_ammo{network="red",battery="RED-AAA"} 250'))
 	lu.assertTrue(contains(output, "medusa_aaa_visual_detection_range_meters 8000"))
 	lu.assertTrue(contains(output, "medusa_aaa_visual_detection_half_angle_degrees"))

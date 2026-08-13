@@ -122,19 +122,14 @@ function TestAmmoExtraction:test_aaa_tracks_shell_ammunition_without_missile_ran
 	lu.assertEquals(count, 120)
 	lu.assertEquals(#ammo, 1)
 	lu.assertEquals(ammo[1].WeaponTypeName, "weapons.shells.KS19_100HE")
-	lu.assertEquals(ammo[1].CaliberMm, 100)
-	lu.assertEquals(ammo[1].RangeMax, 10000)
+	lu.assertEquals(ammo[1].RangeMax, 12000)
 end
 
-function TestAmmoExtraction:test_aaa_range_estimate_is_calibrated_across_gun_families()
+function TestAmmoExtraction:test_aaa_missing_range_uses_same_fallback_for_all_shells()
 	local cases = {
-		{ name = "FlaK 38", caliber = 20, dcsRange = 2500, expected = 2000 },
-		{ name = "ZU-23 / ZSU-23-4", caliber = 23, dcsRange = 2500, expected = 2300 },
-		{ name = "Bofors 40 mm", caliber = 40, dcsRange = 2000, expected = 4000 },
-		{ name = "ZSU-57-2", caliber = 57, dcsRange = 7000, expected = 5700 },
-		{ name = "FlaK 18/36/37/41", caliber = 88, dcsRange = 5000, expected = 8800 },
-		{ name = "KS-19", caliber = 100, dcsRange = 20000, expected = 10000 },
-		{ name = "mod 130 mm", caliber = 130, dcsRange = 10000, expected = 10000 },
+		{ name = "small", caliber = 20 },
+		{ name = "large", caliber = 130 },
+		{ name = "unknown" },
 	}
 
 	for i = 1, #cases do
@@ -152,13 +147,11 @@ function TestAmmoExtraction:test_aaa_range_estimate_is_calibrated_across_gun_fam
 		end
 
 		local ammo = Medusa.Services.EntityFactory.extractAmmo("aaa-unit", Medusa.Constants.BatteryRole.AAA)
-		lu.assertEquals(ammo[1].RangeMax, case.expected, case.name)
-		lu.assertTrue(ammo[1].RangeMax >= case.dcsRange / 2, case.name)
-		lu.assertTrue(ammo[1].RangeMax <= case.dcsRange * 2, case.name)
+		lu.assertEquals(ammo[1].RangeMax, 12000, case.name)
 	end
 end
 
-function TestAmmoExtraction:test_aaa_prefers_reported_shell_range_over_caliber_estimate()
+function TestAmmoExtraction:test_aaa_prefers_reported_shell_range_over_fallback()
 	GetUnitAmmo = function()
 		return {
 			{
@@ -175,18 +168,6 @@ function TestAmmoExtraction:test_aaa_prefers_reported_shell_range_over_caliber_e
 	local ammo = Medusa.Services.EntityFactory.extractAmmo("aaa-unit", Medusa.Constants.BatteryRole.AAA)
 
 	lu.assertEquals(ammo[1].RangeMax, 20000)
-end
-
-function TestAmmoExtraction:test_aaa_without_reported_range_or_caliber_keeps_range_unknown()
-	GetUnitAmmo = function()
-		return {
-			{ count = 1, desc = { typeName = "weapons.shells.Unknown" } },
-		}
-	end
-
-	local ammo = Medusa.Services.EntityFactory.extractAmmo("aaa-unit", Medusa.Constants.BatteryRole.AAA)
-
-	lu.assertIsNil(ammo[1].RangeMax)
 end
 
 function TestAmmoExtraction:test_recompute_single_launcher()

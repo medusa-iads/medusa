@@ -186,18 +186,10 @@ local function resolveWeaponRange(typeName, dcsRange)
 end
 
 local SHELL_TYPE_PREFIX = "weapons.shells."
-local AAA_RANGE_METERS_PER_CALIBER_MM = 100
-local AAA_MAX_ESTIMATED_RANGE_M = 10000
+local AAA_FALLBACK_RANGE_M = 12000
 
 local function isShellType(typeName)
 	return type(typeName) == "string" and string.sub(typeName, 1, #SHELL_TYPE_PREFIX) == SHELL_TYPE_PREFIX
-end
-
-local function estimateAaaRange(caliberMm)
-	if type(caliberMm) ~= "number" or caliberMm <= 0 then
-		return nil
-	end
-	return math.min(caliberMm * AAA_RANGE_METERS_PER_CALIBER_MM, AAA_MAX_ESTIMATED_RANGE_M)
 end
 
 function Medusa.Services.EntityFactory.extractAmmo(unitName, batteryRole)
@@ -215,10 +207,9 @@ function Medusa.Services.EntityFactory.extractAmmo(unitName, batteryRole)
 		local accepted = isAaa and shell or (not isAaa and desc and desc.missileCategory)
 		if entry.count and entry.count > 0 and accepted then
 			local dcsRange = math.max(desc.rangeMaxAltMax or 0, desc.rangeMaxAltMin or 0)
-			local caliberMm = desc.warhead and desc.warhead.caliber or nil
 			local rangeMax
 			if isAaa then
-				rangeMax = dcsRange > 0 and dcsRange or estimateAaaRange(caliberMm)
+				rangeMax = dcsRange > 0 and dcsRange or AAA_FALLBACK_RANGE_M
 			else
 				rangeMax = resolveWeaponRange(desc.typeName, dcsRange)
 			end
@@ -229,7 +220,6 @@ function Medusa.Services.EntityFactory.extractAmmo(unitName, batteryRole)
 				WeaponTypeName = desc.typeName,
 				WeaponDisplayName = desc.displayName,
 				Count = entry.count,
-				CaliberMm = caliberMm,
 				RangeMax = rangeMax,
 				RangeMin = desc.rangeMin,
 				AltMax = desc.altMax,
