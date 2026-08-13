@@ -63,6 +63,17 @@ tasks:
       - "{{.SOURCE_DIR}}/**/*.lua"
       - "{{.TEST_DIR}}/**/*.lua"
 
+  pr:loc:
+    desc: "Report runtime Lua LOC changed from BASE_REF (default: dev) to HEAD_REF (default: HEAD)"
+    vars:
+      BASE_REF: '{{.BASE_REF | default "dev"}}'
+      HEAD_REF: '{{.HEAD_REF | default "HEAD"}}'
+    env:
+      PR_LOC_BASE_REF: "{{.BASE_REF}}"
+      PR_LOC_HEAD_REF: "{{.HEAD_REF}}"
+    cmds:
+      - '{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/ci/runtime_lua_loc.py --base-ref "$PR_LOC_BASE_REF" --head-ref "$PR_LOC_HEAD_REF"'
+
   build:
     deps: [format, delete:artifact]
     desc: "Build the {{.PROJECT_NAME}} artifact"
