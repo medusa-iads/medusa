@@ -28,7 +28,6 @@ jobs:
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       REPOSITORY: ${{ github.repository }}
-      REPORT_PATH: ${{ runner.temp }}/runtime-lua-loc.md
       TRUSTED_SHA: ${{ github.workflow_sha }}
     steps:
       - name: Fetch trusted base and pull request data
@@ -55,7 +54,7 @@ jobs:
 
       - name: Render runtime Lua LOC report
         shell: bash
-        run: python scripts/ci/runtime_lua_loc.py --base-ref "$BASE_SHA" --head-ref "$HEAD_SHA" > "$REPORT_PATH"
+        run: python scripts/ci/runtime_lua_loc.py --base-ref "$BASE_SHA" --head-ref "$HEAD_SHA" > "${RUNNER_TEMP}/runtime-lua-loc.md"
 
       - name: Create or update pull request comment
         env:
@@ -68,6 +67,7 @@ jobs:
               --jq '.[] | select(.user.type == "Bot" and (.body | contains("<!-- medusa-runtime-lua-loc -->"))) | .id' \
               | sed -n '1p'
           )"
+          REPORT_PATH="${RUNNER_TEMP}/runtime-lua-loc.md"
           BODY_JSON="${RUNNER_TEMP}/runtime-lua-loc.json"
           jq --null-input --rawfile body "$REPORT_PATH" '{body: $body}' > "$BODY_JSON"
           if [ -n "$COMMENT_ID" ]; then
