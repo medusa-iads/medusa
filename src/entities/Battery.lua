@@ -26,10 +26,81 @@ local DEGRADED_DETECTION_RANGE_PERCENT = 60
 local REACTION_DELAY_MULTIPLIER_ON_DEGRADE = 1.5
 
 local BUR = Medusa.Constants.BatteryUnitRole
+local BR = Medusa.Constants.BatteryRole
+local MC = Medusa.Constants.Manpad
 local TRACKER_ROLES = { [BUR.TRACK_RADAR] = true, [BUR.TELAR] = true, [BUR.TLAR] = true }
 local LAUNCHER_ROLES = Medusa.Constants.LAUNCHER_ROLES
+local MANPAD_ROLES = { [BUR.MANPAD] = true }
 local SEARCH_ROLES = { [BUR.SEARCH_RADAR] = true, [BUR.TLAR] = true }
 local RDP = Medusa.Constants.BatteryRadarDependencyPolicy
+local MANPAD_STATES = {}
+for _, state in pairs(MC.SleepWakeState) do
+	MANPAD_STATES[state] = true
+end
+local MANPAD_WAKE_REASONS = {}
+for _, reason in pairs(MC.WakeReason) do
+	MANPAD_WAKE_REASONS[reason] = true
+end
+
+local function isNonNegativeInteger(value)
+	return type(value) == "number" and value >= 0 and value == math.floor(value)
+end
+
+function Medusa.Entities.Battery.validateManpadState(role, manpad)
+	if role ~= BR.MANPAD then
+		if manpad ~= nil then
+			error("non-MANPAD battery cannot have Manpad state")
+		end
+		return
+	end
+	if type(manpad) ~= "table" then
+		error("MANPAD battery requires Manpad state")
+	end
+	if not MANPAD_STATES[manpad.SleepWakeState] then
+		error("invalid MANPAD SleepWakeState")
+	end
+	if not MANPAD_WAKE_REASONS[manpad.WakeReason] then
+		error("invalid MANPAD WakeReason")
+	end
+	if not isNonNegativeInteger(manpad.AlertCycleCount) then
+		error("MANPAD AlertCycleCount must be a non-negative integer")
+	end
+	if manpad.LastAlertedTime ~= nil and type(manpad.LastAlertedTime) ~= "number" then
+		error("MANPAD LastAlertedTime must be a number")
+	end
+	if
+		type(manpad.AudioCueRangeM) ~= "number"
+		or manpad.AudioCueRangeM < MC.AUDIO_RANGE_MIN_M
+		or manpad.AudioCueRangeM > MC.AUDIO_RANGE_MAX_M
+	then
+		error("MANPAD AudioCueRangeM must be within the supported range")
+	end
+	if type(manpad.UnitHeadings) ~= "table" then
+		error("MANPAD UnitHeadings must be a table")
+	end
+	if not isNonNegativeInteger(manpad.UnitHeadingCount) then
+		error("MANPAD UnitHeadingCount must be a non-negative integer")
+	end
+	if manpad.UnitHeadingCount ~= #manpad.UnitHeadings then
+		error("MANPAD UnitHeadingCount must match UnitHeadings")
+	end
+	for i = 1, manpad.UnitHeadingCount do
+		local heading = manpad.UnitHeadings[i]
+		if type(heading) ~= "table" or type(heading.hx) ~= "number" or type(heading.hz) ~= "number" then
+			error("invalid MANPAD UnitHeading")
+		end
+	end
+	if manpad.LastPositionRefreshTime ~= nil and type(manpad.LastPositionRefreshTime) ~= "number" then
+		error("MANPAD LastPositionRefreshTime must be a number")
+	end
+end
+
+function Medusa.Entities.Battery.prepareManpadState(role, manpad)
+	if role == BR.MANPAD and type(manpad) == "table" and manpad.WakeReason == nil then
+		manpad.WakeReason = MC.WakeReason.NONE
+	end
+	Medusa.Entities.Battery.validateManpadState(role, manpad)
+end
 
 function Medusa.Entities.Battery.new(data)
 	if not data then
@@ -44,13 +115,15 @@ function Medusa.Entities.Battery.new(data)
 	if data.GroupName == nil then
 		error("missing required field: GroupName")
 	end
+	local role = data.Role or BR.GENERIC_SAM
+	Medusa.Entities.Battery.prepareManpadState(role, data.Manpad)
 
 	local o = {
 		BatteryId = data.BatteryId or NewULID(),
 		NetworkId = data.NetworkId,
 		GroupId = data.GroupId,
 		GroupName = data.GroupName,
-		Role = data.Role or Medusa.Constants.BatteryRole.GENERIC_SAM,
+		Role = role,
 		ActivationState = data.ActivationState or Medusa.Constants.ActivationState.INITIALIZING,
 		OperationalStatus = data.OperationalStatus or Medusa.Constants.BatteryOperationalStatus.ACTIVE,
 		SystemType = data.SystemType or "UNKNOWN",
@@ -84,6 +157,7 @@ function Medusa.Entities.Battery.new(data)
 		LastAssignmentChangeTime = data.LastAssignmentChangeTime,
 		LastShotTime = data.LastShotTime,
 		ShotsFired = 0,
+		Manpad = data.Manpad,
 		RearmCheckTime = nil,
 	}
 
@@ -201,6 +275,25 @@ function Medusa.Entities.Battery.hasLauncherRole(unit, launcherRoles)
 	return false
 end
 
+function Medusa.Entities.Battery.isAmmoBearingRole(batteryRole, unitRole)
+	if batteryRole == BR.MANPAD then
+		return MANPAD_ROLES[unitRole] == true
+	end
+	return LAUNCHER_ROLES[unitRole] == true
+end
+
+function Medusa.Entities.Battery.isAmmoBearingUnit(battery, unit)
+	if not unit.Roles then
+		return false
+	end
+	for i = 1, #unit.Roles do
+		if Medusa.Entities.Battery.isAmmoBearingRole(battery.Role, unit.Roles[i]) then
+			return true
+		end
+	end
+	return false
+end
+
 function Medusa.Entities.Battery.updateAmmoEnvelope(at, env)
 	if at.RangeMax and (not env.maxWeaponRange or at.RangeMax > env.maxWeaponRange) then
 		env.maxWeaponRange = at.RangeMax
@@ -241,7 +334,7 @@ function Medusa.Entities.Battery.recomputeEnvelope(battery)
 	for i = 1, #battery.Units do
 		local unit = battery.Units[i]
 		if
-			Medusa.Entities.Battery.hasLauncherRole(unit, LAUNCHER_ROLES)
+			Medusa.Entities.Battery.isAmmoBearingUnit(battery, unit)
 			and unit.AmmoCount
 			and unit.AmmoCount > 0
 			and unit.AmmoTypes
@@ -330,7 +423,7 @@ function Medusa.Entities.Battery.applyDegradedBehavior(battery, degradation, con
 	end
 	local BAS = Medusa.Services.BatteryActivationService
 	if degradation == "SEARCH_LOST_CP_DEAD" then
-		BAS.goAutonomous(battery, context.batteryStore, context.geoGrid, context.unitIdIndex, context.trackStore)
+		BAS.goAutonomous(battery, context.batteryRepository, context.geoGrid, context.trackStore)
 		return "autonomous"
 	end
 	if degradation == "SEARCH_LOST_CP_ALIVE" then
@@ -347,6 +440,16 @@ function Medusa.Entities.Battery.recomputeOperationalStatus(battery)
 	if not battery.Units or #battery.Units == 0 then
 		battery.OperationalStatus = BOS.DESTROYED
 		return BOS.DESTROYED
+	end
+	if battery.Role == BR.MANPAD then
+		if not Medusa.Entities.Battery.hasRoleAlive(battery, MANPAD_ROLES) then
+			battery.OperationalStatus = BOS.DESTROYED
+		elseif battery.TotalAmmoStatus <= 0 then
+			battery.OperationalStatus = battery.AmmoDepletedBehavior or BOS.REARMING
+		else
+			battery.OperationalStatus = BOS.ACTIVE
+		end
+		return battery.OperationalStatus
 	end
 
 	local hasTracker = false
@@ -388,6 +491,12 @@ function Medusa.Entities.Battery.recomputeOperationalStatus(battery)
 end
 
 function Medusa.Entities.Battery.computeEffectiveRanges(battery)
+	if battery.Role == BR.MANPAD then
+		battery.EffectiveDetectionRangeMax = battery.DetectionRangeMax
+		battery.EffectiveReactionDelaySec = battery.ReactionDelaySec
+		battery.EngagementRangeMax = battery.WeaponRangeMax
+		return
+	end
 	local searchDown = not Medusa.Entities.Battery.hasRoleAlive(battery, SEARCH_ROLES)
 
 	if searchDown and battery.RadarDependencyPolicy == RDP.OPTIONAL_DEGRADED then

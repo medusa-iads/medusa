@@ -41,7 +41,10 @@ TestSensorPollingServicePollSensor = {}
 function TestSensorPollingServicePollSensor:setUp()
 	setupMocks()
 	mockIdCounter = 0
-	self.svc = Medusa.Services.SensorPollingService:new()
+	self.svc = Medusa.Services.SensorPollingService:new({
+		PerTrackScanUpdateRate = 5,
+		SensorCleanupSec = 30,
+	})
 end
 
 function TestSensorPollingServicePollSensor:test_returnsEmptyWhenNoController()
@@ -96,6 +99,8 @@ function TestSensorPollingServicePollSensor:test_buildsReportFromDetection()
 
 	lu.assertEquals(#reports, 1)
 	lu.assertEquals(reports[1].NetworkId, 1)
+	lu.assertIsNil(reports[1].ObjectCategory)
+	lu.assertIsNil(reports[1].UnitCategory)
 	lu.assertEquals(reports[1].Position.x, 100)
 	lu.assertEquals(reports[1].Position.y, 500)
 	lu.assertEquals(reports[1].Position.z, 200)
@@ -295,6 +300,8 @@ function TestSensorPollingServicePollSensor:test_acceptsWeaponObjects()
 	local reports = self.svc:pollSensor("sensor-group", 100)
 	lu.assertEquals(#reports, 1)
 	lu.assertEquals(reports[1].NetworkId, 1)
+	lu.assertIsNil(reports[1].ObjectCategory)
+	lu.assertIsNil(reports[1].UnitCategory)
 	lu.assertEquals(reports[1].Position.x, 1)
 	lu.assertEquals(reports[1].Velocity.x, 300)
 end

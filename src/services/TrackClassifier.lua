@@ -14,7 +14,7 @@ require("core.Logger")
 
     What this service does
     - Promotes track identification through the ROE ladder: UNKNOWN → BOGEY → BANDIT → HOSTILE.
-    - Uses criteria-based promotion with DCS surrogates for real ROE decision-making (ADR-0018).
+    - Uses criteria-based promotion with DCS surrogates for real ROE decision-making.
     - Posture (HOT/WARM/COLD_WAR) and border zones gate how fast and whether tracks can advance.
     - Classifies aircraft type (fixed-wing, rotary, missile, fighter, heavy) from speed and maneuver data.
 
@@ -34,6 +34,7 @@ local AAT = Medusa.Constants.AssessedAircraftType
 local ManeuverState = Medusa.Constants.ManeuverState
 local TI = Medusa.Constants.TrackIdentification
 local P = Medusa.Constants.Posture
+local LS = Medusa.Constants.TrackLifecycleState
 
 local TYPE_RANK = {
 	[AAT.UNKNOWN] = 0,
@@ -395,6 +396,7 @@ local function applyGuiltByAssociation(tracks, trackStore, now)
 					and cId ~= TI.WHITEAIR
 					and cId ~= promoted.newId
 					and candidate.Position
+					and candidate.LifecycleState == LS.ACTIVE
 				then
 					if isGuiltAligned(promoted.track, pSpeed, pHdg, candidate) then
 						trackStore:updateIdentification(candidate.TrackId, promoted.newId)
@@ -531,10 +533,6 @@ local function subdivideFixedWing(track, aircraftType)
 	if isFighterManeuver(track) then
 		return AAT.FIGHTER
 	end
-	local trackAge = track.LastDetectionTime - track.FirstDetectionTime
-	if trackAge > Medusa.Constants.HEAVY_DWELL_SEC and track.ManeuverState == ManeuverState.STRAIGHT then
-		return AAT.HEAVY
-	end
 	return AAT.FIXED_WING
 end
 
@@ -542,7 +540,6 @@ end
 --- upward in the type hierarchy (e.g. FIXED_WING -> FIGHTER, never the reverse).
 --- @param track table Track entity
 function Medusa.Services.TrackClassifier.assessSingleAircraftType(track)
-	local LS = Medusa.Constants.TrackLifecycleState
 	if track.LifecycleState ~= LS.ACTIVE or track.AssessedAircraftType == AAT.HARM then
 		return
 	end

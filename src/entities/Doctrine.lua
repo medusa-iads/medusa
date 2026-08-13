@@ -1,5 +1,6 @@
 require("_header")
 require("entities.Entities")
+require("core.Constants")
 
 --[[
             ██████╗  ██████╗  ██████╗████████╗██████╗ ██╗███╗   ██╗███████╗
@@ -60,6 +61,14 @@ local DOCTRINE_SCHEMA = {
 	{ name = "SensorCleanupSec", type = "number", default = 30, min = 5, max = 300 },
 	{ name = "BallisticSimStepSec", type = "number", default = 1.0, min = 0.1, max = 5 },
 	{ name = "BallisticSimMaxSec", type = "number", default = 120, min = 10, max = 600 },
+	{ name = "MANPADAlertnessDecaySec", type = "number", default = 14400, min = 0 },
+	{
+		name = "MANPADFieldRadioRangeM",
+		type = "number",
+		default = Medusa.Constants.Manpad.DEFAULT_FIELD_RADIO_RANGE_M,
+		min = 0,
+		max = Medusa.Constants.Manpad.MAX_FIELD_RADIO_RANGE_M,
+	},
 	-- Optional clamped numbers (nil if not set)
 	{ name = "ScanSec", type = "number_opt", min = 0, max = 86400 },
 	{ name = "QuietPeriodSec", type = "number_opt", min = 0, max = 86400 },

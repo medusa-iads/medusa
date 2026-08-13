@@ -78,8 +78,8 @@ if Medusa.Config:get().PrometheusEnabled and io and io.open then
 		if not ok then
 			_promLogger:error("serialize failed: " .. tostring(err))
 		end
-		return timer.getTime() + _promInterval
-	end, nil, timer.getTime() + _promInterval)
+		return GetTime() + _promInterval
+	end, nil, GetTime() + _promInterval)
 else
 	if Medusa.Config:get().PrometheusEnabled then
 		Medusa.Logger:ns("Prometheus"):info("enabled but io is sanitized; desanitize io in MissionScripting.lua")

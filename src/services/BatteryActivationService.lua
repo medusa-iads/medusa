@@ -42,19 +42,14 @@ function Medusa.Services.BatteryActivationService.erectGroup(groupName)
 end
 
 --- Releases a battery from IADS control entirely. Sets it weapons free and removes it from all stores.
-function Medusa.Services.BatteryActivationService.goAutonomous(battery, batteryStore, geoGrid, unitIdIndex, trackStore)
+function Medusa.Services.BatteryActivationService.goAutonomous(battery, batteryRepository, geoGrid, trackStore)
 	Medusa.Services.BatteryActivationService.erectGroup(battery.GroupName)
 	Battery.releaseTrack(battery, trackStore)
-	if unitIdIndex and battery.Units then
-		for j = 1, #battery.Units do
-			unitIdIndex[battery.Units[j].UnitId] = nil
-		end
-	end
 	if geoGrid then
 		geoGrid:remove(battery.BatteryId)
 	end
-	if batteryStore then
-		batteryStore:remove(battery.BatteryId)
+	if batteryRepository then
+		batteryRepository:remove(battery.BatteryId)
 	end
 	_logger:info(string.format("battery %s released to autonomous DCS AI control", battery.GroupName))
 	return true
@@ -68,6 +63,7 @@ function Medusa.Services.BatteryActivationService.goHot(battery, now)
 	return Medusa.Services.BatteryActivationService._activateHot(battery, now)
 end
 
+-- Skips StateChangeHoldDownSec: emergency HARM/MANPAD response requires instant activation.
 function Medusa.Services.BatteryActivationService.forceGoHot(battery, now)
 	if battery.ActivationState == AS.STATE_HOT then
 		return false

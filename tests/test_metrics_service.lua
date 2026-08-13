@@ -451,9 +451,3 @@ function TestMetricsServiceBoundary:test_boundary_manyMetricsNoError()
 	assertContains(out, "metric_1 1", "test_boundary_manyMetricsNoError first metric present")
 	assertContains(out, "metric_50 50", "test_boundary_manyMetricsNoError last metric present")
 end
-
--- ============================================================
--- Run all tests
--- ============================================================
-
-os.exit(lu.LuaUnit.run())

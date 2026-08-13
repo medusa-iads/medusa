@@ -4,6 +4,7 @@ require("core.Logger")
 require("entities.Battery")
 require("entities.SensorUnit")
 require("entities.C2Node")
+require("services.ManpadService")
 
 --[[
             ███████╗███╗   ██╗████████╗██╗████████╗██╗   ██╗    ███████╗ █████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗
@@ -26,6 +27,7 @@ Medusa.Services.EntityFactory = {}
 
 local logger = Medusa.Logger:ns("EntityFactory")
 local BUR = Medusa.Constants.BatteryUnitRole
+local BR = Medusa.Constants.BatteryRole
 local Role = Medusa.Constants.Role
 local launcherRoles = Medusa.Constants.LAUNCHER_ROLES
 
@@ -82,6 +84,12 @@ local function classifyUnitRole(desc)
 	if a["EWR"] then
 		return BUR.SEARCH_RADAR
 	end
+	if a["MANPADS"] then
+		return BUR.MANPAD
+	end
+	if a["AAA"] then
+		return BUR.AAA
+	end
 	return BUR.OTHER
 end
 
@@ -127,13 +135,13 @@ local function resolveWeaponRange(typeName, dcsRange)
 	return dcsRange
 end
 
-function Medusa.Services.EntityFactory.extractAmmo(unitName)
+function Medusa.Services.EntityFactory.extractAmmo(unitName, batteryRole)
 	local ammoTable = GetUnitAmmo(unitName)
 	if not ammoTable or #ammoTable == 0 then
 		return nil, 0
 	end
 
-	-- Prefer missiles; fall back to guns if no missiles (e.g., Pantsir out of SAMs)
+	-- Prefer missiles; standard batteries fall back to guns (e.g., Pantsir out of SAMs).
 	local missiles = {}
 	local guns = {}
 	for i = 1, #ammoTable do
@@ -159,7 +167,10 @@ function Medusa.Services.EntityFactory.extractAmmo(unitName)
 		end
 	end
 
-	local ammoTypes = #missiles > 0 and missiles or guns
+	local ammoTypes = missiles
+	if #ammoTypes == 0 and batteryRole ~= BR.MANPAD then
+		ammoTypes = guns
+	end
 	local totalCount = 0
 	for i = 1, #ammoTypes do
 		totalCount = totalCount + ammoTypes[i].Count
@@ -260,8 +271,8 @@ local function createBatteryUnit(unit, batteryRole)
 	local resolvedBatteryRole = batteryRole or classifyBatteryRole(desc)
 
 	local ammoTypes, ammoCount = nil, 0
-	if launcherRoles[role] and unitName then
-		ammoTypes, ammoCount = Medusa.Services.EntityFactory.extractAmmo(unitName)
+	if Medusa.Entities.Battery.isAmmoBearingRole(resolvedBatteryRole, role) and unitName then
+		ammoTypes, ammoCount = Medusa.Services.EntityFactory.extractAmmo(unitName, resolvedBatteryRole)
 	end
 
 	local batteryUnit = Medusa.Entities.Battery.newUnit({
@@ -374,7 +385,8 @@ local function classifySystemType(units)
 	local OTHER = Medusa.Constants.BatteryUnitRole.OTHER
 	for i = 1, #units do
 		local roles = units[i].Roles
-		if not (roles and roles[1] == OTHER) then
+		-- Skip non-combat units so mixed groups (e.g. SA-10 + Igla) keep the dominant SAM label
+		if not (roles and (roles[1] == OTHER or roles[1] == BUR.MANPAD or roles[1] == BUR.AAA)) then
 			local dn = units[i].DisplayName or units[i].UnitTypeName or ""
 			local key = dn:match("[Ss][Aa]%-(%d+)")
 			if key then
@@ -502,8 +514,8 @@ local function clusterLaunchers(dcsUnits, batteryUnits)
 	return { clusters = clusters, centroid = centroid, spreadRadius = math.sqrt(maxSpread2) }
 end
 
-local function createBattery(dto, stores, networkId, harmSystems)
-	local units = GetGroupUnits(dto.groupName)
+local function createBattery(dto, stores, networkId, harmSystems, units)
+	units = units or GetGroupUnits(dto.groupName)
 	local position = nil
 	if units and units[1] then
 		position = GetUnitPosition(units[1])
@@ -597,6 +609,67 @@ local function createBattery(dto, stores, networkId, harmSystems)
 	return "battery", 1
 end
 
+local function createManpad(dto, stores, networkId, units)
+	units = units or GetGroupUnits(dto.groupName)
+	local position = nil
+	if units then
+		for i = 1, #units do
+			if classifyUnitRole(GetUnitDesc(units[i])) == BUR.MANPAD then
+				position = GetUnitPosition(units[i])
+				break
+			end
+		end
+	end
+
+	local battery = Medusa.Entities.Battery.new({
+		NetworkId = networkId,
+		GroupId = dto.groupId,
+		GroupName = dto.groupName,
+		Position = position,
+		Role = Medusa.Constants.BatteryRole.MANPAD,
+		Manpad = {
+			SleepWakeState = Medusa.Constants.Manpad.SleepWakeState.ASLEEP,
+			WakeReason = Medusa.Constants.Manpad.WakeReason.NONE,
+			AlertCycleCount = 0,
+			LastAlertedTime = nil,
+			AudioCueRangeM = Medusa.Services.ManpadService.sampleAudioCueRange(),
+			AlertStartTime = nil,
+			HotUntil = nil,
+			CooldownUntil = nil,
+			LastPositionRefreshTime = nil,
+			WakeTimerId = nil,
+			UnitHeadings = {},
+			UnitHeadingCount = 0,
+		},
+	})
+
+	battery.Units = {}
+	if units then
+		for i = 1, #units do
+			if GetUnitID(units[i]) then
+				local batteryUnit = createBatteryUnit(units[i], Medusa.Constants.BatteryRole.MANPAD)
+				battery.Units[#battery.Units + 1] = batteryUnit
+			end
+		end
+	end
+
+	local defaults = Medusa.Constants.SystemTypeDefaults[Medusa.Constants.BatteryRole.MANPAD]
+	battery.AmmoDepletedBehavior = defaults.AmmoDepletedBehavior
+	Medusa.Entities.Battery.recomputeState(battery)
+	Medusa.Services.ManpadService.rebuildHeadings(battery)
+
+	stores.manpads:add(battery)
+	logger:info(
+		string.format(
+			"manpad %s: %d soldiers (%d headings cached)",
+			battery.GroupName,
+			#battery.Units,
+			battery.Manpad.UnitHeadingCount
+		)
+	)
+	return "manpad", 1
+end
+
 local function hasOnlyRadarUnits(groupName)
 	local units = GetGroupUnits(groupName)
 	if not units or #units == 0 then
@@ -641,5 +714,24 @@ function Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, har
 		return createSensors(dto, stores, networkId)
 	end
 
-	return createBattery(dto, stores, networkId, harmSystems)
+	-- Pure-MANPAD groups route to stores.manpads; any launcher/TLAR/TELAR/AAA unit
+	-- falls through to createBattery so SAM/AAA precedence wins for mixed groups.
+	local units = GetGroupUnits(dto.groupName) or {}
+	local hasManpad, hasLauncherUnit, hasAaa = false, false, false
+	for i = 1, #units do
+		local role = classifyUnitRole(GetUnitDesc(units[i]))
+		if role == BUR.MANPAD then
+			hasManpad = true
+		elseif role == BUR.AAA then
+			hasAaa = true
+		elseif role == BUR.LAUNCHER or role == BUR.TLAR or role == BUR.TELAR then
+			hasLauncherUnit = true
+		end
+	end
+
+	if hasManpad and not hasLauncherUnit and not hasAaa then
+		return createManpad(dto, stores, networkId, units)
+	end
+
+	return createBattery(dto, stores, networkId, harmSystems, units)
 end
