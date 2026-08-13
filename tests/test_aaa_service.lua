@@ -109,6 +109,28 @@ local function context(site, targets, overrides)
 	return ctx
 end
 
+local function propagationContext(sites, options)
+	local repository = Medusa.Services.BatteryStore:new()
+	local store = repository:batteries()
+	local aaaIds = {}
+	for i = 1, #sites do
+		store:add(sites[i])
+		aaaIds[sites[i].BatteryId] = true
+	end
+	return {
+		networkId = options.networkId,
+		barrageState = options.barrageState or Medusa.Services.AaaService.newBarrageState(),
+		batteryStore = store,
+		trackStore = {},
+		localGeoGrid = {
+			queryRadius = function()
+				return { AaaIds = aaaIds }
+			end,
+		},
+		doctrine = { ROE = C.ROEState.TIGHT, AAA = { MaxBarrageGroups = options.maxBarrageGroups } },
+	}
+end
+
 TestAaaService = {}
 
 function TestAaaService:setUp()
@@ -460,29 +482,17 @@ function TestAaaService:test_aaa_fire_infects_idle_and_alert_neighbors_after_ten
 	local changed = battery({ BatteryId = "changed", NetworkId = "infection-net", GroupId = 5, GroupName = "changed" })
 	changed.Units[1].UnitId = 5
 
-	local repository = Medusa.Services.BatteryStore:new()
-	local store = repository:batteries()
-	store:add(source)
-	store:add(idle)
-	store:add(alertSite)
-	store:add(active)
-	store:add(changed)
 	local queriedRadius
 	local queryCount = 0
-	local ctx = {
+	local ctx = propagationContext({ source, idle, alertSite, active, changed }, {
 		networkId = "infection-net",
-		barrageState = Medusa.Services.AaaService.newBarrageState(),
-		batteryStore = store,
-		trackStore = {},
-		localGeoGrid = {
-			queryRadius = function(_, _, radius)
-				queryCount = queryCount + 1
-				queriedRadius = radius
-				return { AaaIds = { source = true, idle = true, alert = true, active = true, changed = true } }
-			end,
-		},
-		doctrine = { ROE = C.ROEState.TIGHT, AAA = { MaxBarrageGroups = 15 } },
-	}
+		maxBarrageGroups = 15,
+	})
+	ctx.localGeoGrid.queryRadius = function(_, _, radius)
+		queryCount = queryCount + 1
+		queriedRadius = radius
+		return { AaaIds = { source = true, idle = true, alert = true, active = true, changed = true } }
+	end
 
 	Medusa.Services.AaaService.onShot(ctx, source, source.Units[1], 100)
 
@@ -563,27 +573,14 @@ function TestAaaService:test_barrage_infection_delays_vary_without_dropping_belo
 	first.Units[1].UnitId = 2
 	local second = battery({ BatteryId = "second", GroupId = 3, GroupName = "second" })
 	second.Units[1].UnitId = 3
-	local repository = Medusa.Services.BatteryStore:new()
-	local store = repository:batteries()
-	store:add(source)
-	store:add(first)
-	store:add(second)
 	local rolls = { 0, 1, 0.2, 0.8 }
 	math.random = function()
 		return table.remove(rolls, 1)
 	end
-	local ctx = {
+	local ctx = propagationContext({ source, first, second }, {
 		networkId = "delay-net",
-		barrageState = Medusa.Services.AaaService.newBarrageState(),
-		batteryStore = store,
-		trackStore = {},
-		localGeoGrid = {
-			queryRadius = function()
-				return { AaaIds = { source = true, first = true, second = true } }
-			end,
-		},
-		doctrine = { ROE = C.ROEState.TIGHT, AAA = { MaxBarrageGroups = 15 } },
-	}
+		maxBarrageGroups = 15,
+	})
 
 	Medusa.Services.AaaService.onShot(ctx, source, source.Units[1], 100)
 
@@ -603,27 +600,6 @@ function TestAaaService:test_barrage_participant_cap_is_shared_across_networks()
 	local barrageState = Medusa.Services.AaaService.newBarrageState()
 	Medusa.Services.AaaService.setBarrageLimit(barrageState, "first-network", 1)
 	Medusa.Services.AaaService.setBarrageLimit(barrageState, "second-network", 2)
-	local function propagationContext(networkId, source, recipient, maxBarrageGroups)
-		local repository = Medusa.Services.BatteryStore:new()
-		local store = repository:batteries()
-		store:add(source)
-		store:add(recipient)
-		return {
-			networkId = networkId,
-			barrageState = barrageState,
-			batteryStore = store,
-			trackStore = {},
-			localGeoGrid = {
-				queryRadius = function()
-					return { AaaIds = { [source.BatteryId] = true, [recipient.BatteryId] = true } }
-				end,
-			},
-			doctrine = {
-				ROE = C.ROEState.TIGHT,
-				AAA = { MaxBarrageGroups = maxBarrageGroups },
-			},
-		}
-	end
 	local sourceA =
 		firingBattery({ BatteryId = "source-a", NetworkId = "first-network", GroupId = 1, GroupName = "source-a" })
 	local recipientA =
@@ -639,7 +615,11 @@ function TestAaaService:test_barrage_participant_cap_is_shared_across_networks()
 	end
 
 	Medusa.Services.AaaService.onShot(
-		propagationContext("second-network", sourceB, recipientB, 2),
+		propagationContext({ sourceB, recipientB }, {
+			networkId = "second-network",
+			barrageState = barrageState,
+			maxBarrageGroups = 2,
+		}),
 		sourceB,
 		sourceB.Units[1],
 		100
@@ -647,7 +627,11 @@ function TestAaaService:test_barrage_participant_cap_is_shared_across_networks()
 	self.now = 110
 	self.scheduledCallbacks[1].callback()
 	Medusa.Services.AaaService.onShot(
-		propagationContext("first-network", sourceA, recipientA, 1),
+		propagationContext({ sourceA, recipientA }, {
+			networkId = "first-network",
+			barrageState = barrageState,
+			maxBarrageGroups = 1,
+		}),
 		sourceA,
 		sourceA.Units[1],
 		100
