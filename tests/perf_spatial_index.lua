@@ -12,7 +12,7 @@ require("harness")
 require("core.Constants")
 require("entities.Battery")
 require("services.Services")
-require("services.AssetSpatialIndexService")
+require("services.GeospatialIndexService")
 
 local BR = Medusa.Constants.BatteryRole
 local AM = Medusa.Constants.Aaa.Mode
@@ -44,7 +44,7 @@ local function battery(id, role, index)
 end
 
 local unified = GeoGrid(10000, { "Battery", "Track", "Manpad" })
-local split = Medusa.Services.AssetSpatialIndexService:new(10000)
+local split = Medusa.Services.GeospatialIndexService:new(10000)
 
 for i = 1, NETWORKED_BATTERY_COUNT do
 	local value = battery("networked-" .. i, BR.MR_SAM, i)

@@ -5,7 +5,7 @@ require("_header")
 require("core.Constants")
 require("entities.Battery")
 require("services.Services")
-require("services.AssetSpatialIndexService")
+require("services.GeospatialIndexService")
 
 local C = Medusa.Constants
 local BR = C.BatteryRole
@@ -32,13 +32,13 @@ local function contains(grid, typeName, id)
 	return ids[id] == true
 end
 
-TestAssetSpatialIndexService = {}
+TestGeospatialIndexService = {}
 
-function TestAssetSpatialIndexService:setUp()
-	self.index = Medusa.Services.AssetSpatialIndexService:new(10000)
+function TestGeospatialIndexService:setUp()
+	self.index = Medusa.Services.GeospatialIndexService:new(10000)
 end
 
-function TestAssetSpatialIndexService:test_routes_networked_and_local_defenses_to_separate_grids()
+function TestGeospatialIndexService:test_routes_networked_and_local_defenses_to_separate_grids()
 	local sam = battery("sam", BR.MR_SAM)
 	local manpad = battery("manpad", BR.MANPAD)
 	local aaa = battery("aaa", BR.AAA)
@@ -53,7 +53,7 @@ function TestAssetSpatialIndexService:test_routes_networked_and_local_defenses_t
 	lu.assertTrue(contains(self.index:localGeoGrid(), "Aaa", "aaa"))
 end
 
-function TestAssetSpatialIndexService:test_aaa_is_withdrawn_while_capability_and_mode_disagree()
+function TestGeospatialIndexService:test_aaa_is_withdrawn_while_capability_and_mode_disagree()
 	local aaa = battery("aaa", BR.AAA)
 	self.index:syncBattery(aaa)
 
@@ -79,7 +79,7 @@ function TestAssetSpatialIndexService:test_aaa_is_withdrawn_while_capability_and
 	lu.assertTrue(contains(self.index:localGeoGrid(), "Aaa", "aaa"))
 end
 
-function TestAssetSpatialIndexService:test_sync_and_remove_are_idempotent()
+function TestGeospatialIndexService:test_sync_and_remove_are_idempotent()
 	local sam = battery("sam", BR.MR_SAM)
 
 	self.index:syncBattery(sam)

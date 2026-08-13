@@ -3,7 +3,19 @@ require("services.Services")
 require("core.Constants")
 require("entities.Battery")
 
-Medusa.Services.AssetSpatialIndexService = {}
+--[[
+    GEOSPATIAL INDEX SERVICE
+
+    What this service does
+    - Owns the NetworkedGeoGrid and LocalGeoGrid for one IADS network.
+    - Keeps each battery in the grid that matches its current operating mode.
+
+    How others use it
+    - IadsNetwork synchronizes batteries after discovery, movement, damage, and mode changes.
+    - IADS and local-defense services query the appropriate grid through AssetIndex.
+--]]
+
+Medusa.Services.GeospatialIndexService = {}
 
 local BR = Medusa.Constants.BatteryRole
 local AM = Medusa.Constants.Aaa.Mode
@@ -33,33 +45,33 @@ local function placement(battery)
 	return DESTINATION.LOCAL, "Aaa"
 end
 
-function Medusa.Services.AssetSpatialIndexService:new(cellSizeMeters)
+function Medusa.Services.GeospatialIndexService:new(cellSizeMeters)
 	local o = {
 		_networkedGeoGrid = GeoGrid(cellSizeMeters, { "Battery", "Track" }),
 		_localGeoGrid = GeoGrid(cellSizeMeters, { "Manpad", "Aaa" }),
 	}
-	setmetatable(o, { __index = Medusa.Services.AssetSpatialIndexService })
+	setmetatable(o, { __index = Medusa.Services.GeospatialIndexService })
 	return o
 end
 
-function Medusa.Services.AssetSpatialIndexService:networkedGeoGrid()
+function Medusa.Services.GeospatialIndexService:networkedGeoGrid()
 	return self._networkedGeoGrid
 end
 
-function Medusa.Services.AssetSpatialIndexService:localGeoGrid()
+function Medusa.Services.GeospatialIndexService:localGeoGrid()
 	return self._localGeoGrid
 end
 
-function Medusa.Services.AssetSpatialIndexService:isNetworkedBattery(battery)
+function Medusa.Services.GeospatialIndexService:isNetworkedBattery(battery)
 	return placement(battery) == DESTINATION.NETWORKED
 end
 
-function Medusa.Services.AssetSpatialIndexService:withdrawBattery(batteryId)
+function Medusa.Services.GeospatialIndexService:withdrawBattery(batteryId)
 	self._networkedGeoGrid:remove(batteryId)
 	self._localGeoGrid:remove(batteryId)
 end
 
-function Medusa.Services.AssetSpatialIndexService:syncBattery(battery)
+function Medusa.Services.GeospatialIndexService:syncBattery(battery)
 	self:withdrawBattery(battery.BatteryId)
 	if not battery.Position then
 		return false
@@ -73,6 +85,6 @@ function Medusa.Services.AssetSpatialIndexService:syncBattery(battery)
 	return false
 end
 
-function Medusa.Services.AssetSpatialIndexService:removeBattery(batteryId)
+function Medusa.Services.GeospatialIndexService:removeBattery(batteryId)
 	self:withdrawBattery(batteryId)
 end
