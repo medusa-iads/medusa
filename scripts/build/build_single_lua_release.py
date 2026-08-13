@@ -272,7 +272,7 @@ def write_output(config: dict, order: list[Path]) -> None:
     no_wrap = {"_header.lua", "_Entrypoint.lua"}
 
     # Concat sources — wrap each file in do...end to scope locals and avoid
-    # hitting the Lua 5.1 200-local-per-chunk limit (ADR-0011).
+    # hitting the Lua 5.1 200-local-per-chunk limit.
     for f in order:
         rel = f.relative_to(PROJECT_ROOT)
         fname = f.name

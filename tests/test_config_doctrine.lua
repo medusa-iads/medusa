@@ -60,6 +60,8 @@ function TestGetDoctrine:test_inline_table_all_fields_reach_doctrine()
 		EMCON = { LR_SAM = "MINIMIZE" },
 		ScanSec = 45,
 		QuietPeriodSec = 20,
+		MANPADAlertnessDecaySec = 3600,
+		MANPADFieldRadioRangeM = 9000,
 	}
 	local d = Medusa.Config:getDoctrine(input)
 	lu.assertEquals(d.Name, "Test Doctrine")
@@ -78,6 +80,8 @@ function TestGetDoctrine:test_inline_table_all_fields_reach_doctrine()
 	lu.assertEquals(d.EMCON.LR_SAM, "MINIMIZE")
 	lu.assertEquals(d.ScanSec, 45)
 	lu.assertEquals(d.QuietPeriodSec, 20)
+	lu.assertEquals(d.MANPADAlertnessDecaySec, 3600)
+	lu.assertEquals(d.MANPADFieldRadioRangeM, 9000)
 end
 
 function TestGetDoctrine:test_nil_input_uses_defaults()
@@ -86,6 +90,34 @@ function TestGetDoctrine:test_nil_input_uses_defaults()
 	lu.assertEquals(d.ROE, "TIGHT")
 	lu.assertEquals(d.HARMResponse, "AUTO_DEFENSE")
 	lu.assertAlmostEquals(d.PkFloor, 0.25, 0.001)
+	lu.assertEquals(d.MANPADAlertnessDecaySec, 14400)
+	lu.assertEquals(d.MANPADFieldRadioRangeM, 5000)
+end
+
+function TestGetDoctrine:test_manpad_field_radio_range_zero_disables_and_negative_clamps_to_zero()
+	Medusa.Config:initialize()
+	local disabled = Medusa.Config:getDoctrine({ MANPADFieldRadioRangeM = 0 })
+	local negative = Medusa.Config:getDoctrine({ MANPADFieldRadioRangeM = -1 })
+	lu.assertEquals(disabled.MANPADFieldRadioRangeM, 0)
+	lu.assertEquals(negative.MANPADFieldRadioRangeM, 0)
+end
+
+function TestGetDoctrine:test_manpad_field_radio_range_is_bounded()
+	Medusa.Config:initialize()
+	local maximum = Medusa.Constants.Manpad.MAX_FIELD_RADIO_RANGE_M
+	local atMaximum = Medusa.Config:getDoctrine({ MANPADFieldRadioRangeM = maximum })
+	local aboveMaximum = Medusa.Config:getDoctrine({ MANPADFieldRadioRangeM = maximum + 1 })
+
+	lu.assertEquals(atMaximum.MANPADFieldRadioRangeM, maximum)
+	lu.assertEquals(aboveMaximum.MANPADFieldRadioRangeM, maximum)
+end
+
+function TestGetDoctrine:test_manpad_alertness_decay_zero_disables_and_negative_clamps_to_zero()
+	Medusa.Config:initialize()
+	local disabled = Medusa.Config:getDoctrine({ MANPADAlertnessDecaySec = 0 })
+	local negative = Medusa.Config:getDoctrine({ MANPADAlertnessDecaySec = -1 })
+	lu.assertEquals(disabled.MANPADAlertnessDecaySec, 0)
+	lu.assertEquals(negative.MANPADAlertnessDecaySec, 0)
 end
 
 function TestGetDoctrine:test_string_input_resolves_global()
@@ -105,10 +137,17 @@ end
 
 function TestGetDoctrine:test_legacy_global_fallback()
 	Medusa.Config:initialize()
-	Medusa_MM_Doctrine = { ROE = "FREE", ScanSec = 99 }
+	Medusa_MM_Doctrine = {
+		ROE = "FREE",
+		ScanSec = 99,
+		MANPADAlertnessDecaySec = 7200,
+		MANPADFieldRadioRangeM = 6400,
+	}
 	local d = Medusa.Config:getDoctrine(nil)
 	lu.assertEquals(d.ROE, "FREE")
 	lu.assertEquals(d.ScanSec, 99)
+	lu.assertEquals(d.MANPADAlertnessDecaySec, 7200)
+	lu.assertEquals(d.MANPADFieldRadioRangeM, 6400)
 	Medusa_MM_Doctrine = nil
 end
 
@@ -207,8 +246,18 @@ end
 function TestGetNetworksDoctrine:test_multi_network_independent_doctrines()
 	MEDUSA_CONFIG = {
 		Networks = {
-			{ name = "A", coalition = 1, prefix = "a", doctrine = { ROE = "FREE" } },
-			{ name = "B", coalition = 1, prefix = "b", doctrine = { ROE = "HOLD" } },
+			{
+				name = "A",
+				coalition = 1,
+				prefix = "a",
+				doctrine = { ROE = "FREE", MANPADAlertnessDecaySec = 1800, MANPADFieldRadioRangeM = 3500 },
+			},
+			{
+				name = "B",
+				coalition = 1,
+				prefix = "b",
+				doctrine = { ROE = "HOLD", MANPADAlertnessDecaySec = 28800, MANPADFieldRadioRangeM = 12000 },
+			},
 		},
 	}
 	Medusa.Config.Current = nil
@@ -218,5 +267,9 @@ function TestGetNetworksDoctrine:test_multi_network_independent_doctrines()
 	local dB = Medusa.Config:getDoctrine(nets[2].doctrine)
 	lu.assertEquals(dA.ROE, "FREE")
 	lu.assertEquals(dB.ROE, "HOLD")
+	lu.assertEquals(dA.MANPADAlertnessDecaySec, 1800)
+	lu.assertEquals(dB.MANPADAlertnessDecaySec, 28800)
+	lu.assertEquals(dA.MANPADFieldRadioRangeM, 3500)
+	lu.assertEquals(dB.MANPADFieldRadioRangeM, 12000)
 	MEDUSA_CONFIG = nil
 end

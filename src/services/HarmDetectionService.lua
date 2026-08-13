@@ -432,7 +432,18 @@ local function evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, 
 
 	state.prevCpa = feat[F_CPA]
 	state.prevTime = curr.timestamp
-	state.lastFeat = { feat[1], feat[2], feat[3], feat[4], feat[5], feat[6], feat[7], feat[8] }
+	if not state.lastFeat then
+		state.lastFeat = { false, false, false, false, false, false, false, false }
+	end
+	local lf = state.lastFeat
+	lf[1] = feat[1]
+	lf[2] = feat[2]
+	lf[3] = feat[3]
+	lf[4] = feat[4]
+	lf[5] = feat[5]
+	lf[6] = feat[6]
+	lf[7] = feat[7]
+	lf[8] = feat[8]
 
 	local minScans = effectiveMinScans or C.HARM_SPRT_MIN_SCANS
 	if state.scanCount < minScans then

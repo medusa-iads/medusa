@@ -34,6 +34,14 @@ function Medusa.Services.AssetIndex:batteries()
 	return self._stores.batteries
 end
 
+function Medusa.Services.AssetIndex:batteryRepository()
+	return self._stores.batteryRepository
+end
+
+function Medusa.Services.AssetIndex:manpads()
+	return self._stores.manpads
+end
+
 function Medusa.Services.AssetIndex:c2Nodes()
 	return self._stores.c2Nodes
 end

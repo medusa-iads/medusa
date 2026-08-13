@@ -3,6 +3,8 @@
 
 window.MTD = window.MTD || {};
 
+var EARTH_RADIUS_METERS = 6371000;
+
 /* ---- Prometheus API helpers ---- */
 
 MTD.query = async function (expr) {
@@ -39,16 +41,99 @@ MTD.buildInfoMap = function (results, labelKey) {
     return m;
 };
 
+MTD.scopedEntityKey = function (network, name) {
+    return (network || "") + "\u0000" + (name || "");
+};
+
+MTD.buildScopedLabelMap = function (results, labelKey) {
+    var m = {};
+    for (var i = 0; i < results.length; i++) {
+        var r = results[i];
+        var key = MTD.scopedEntityKey(r.metric.network, r.metric[labelKey]);
+        m[key] = parseFloat(r.value[1]);
+    }
+    return m;
+};
+
+MTD.buildScopedInfoMap = function (results, labelKey) {
+    var m = {};
+    for (var i = 0; i < results.length; i++) {
+        var r = results[i];
+        var key = MTD.scopedEntityKey(r.metric.network, r.metric[labelKey]);
+        m[key] = r.metric;
+    }
+    return m;
+};
+
+MTD.buildScopedIndexedValues = function (results, labelKey, indexKey) {
+    var m = {};
+    for (var i = 0; i < results.length; i++) {
+        var r = results[i];
+        var key = MTD.scopedEntityKey(r.metric.network, r.metric[labelKey]);
+        if (!m[key]) m[key] = [];
+        m[key].push({
+            index: parseInt(r.metric[indexKey], 10),
+            value: parseFloat(r.value[1])
+        });
+    }
+    var keys = Object.keys(m);
+    for (var ki = 0; ki < keys.length; ki++) {
+        m[keys[ki]].sort(function (a, b) { return a.index - b.index; });
+    }
+    return m;
+};
+
+MTD.firstMetricValue = function (results) {
+    return results.length > 0 ? parseFloat(results[0].value[1]) : undefined;
+};
+
 /* ---- Haversine distance in meters ---- */
 
 MTD.haversineM = function (lat1, lon1, lat2, lon2) {
-    var R = 6371000;
     var dLat = (lat2 - lat1) * Math.PI / 180;
     var dLon = (lon2 - lon1) * Math.PI / 180;
     var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
             Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
             Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return EARTH_RADIUS_METERS * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+MTD.destinationPoint = function (lat, lon, bearingDegrees, distanceMeters) {
+    var angularDistance = distanceMeters / EARTH_RADIUS_METERS;
+    var bearing = bearingDegrees * Math.PI / 180;
+    var lat1 = lat * Math.PI / 180;
+    var lon1 = lon * Math.PI / 180;
+    var lat2 = Math.asin(
+        Math.sin(lat1) * Math.cos(angularDistance) +
+        Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing)
+    );
+    var lon2 = lon1 + Math.atan2(
+        Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
+        Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2)
+    );
+    var normalizedLon = ((lon2 * 180 / Math.PI + 540) % 360) - 180;
+    return [lat2 * 180 / Math.PI, normalizedLon];
+};
+
+MTD.buildSectorPolygon = function (lat, lon, headingDegrees, rangeMeters, halfAngleDegrees, arcSegments) {
+    var segments = Math.max(1, Math.floor(arcSegments || 12));
+    var points = [[lat, lon]];
+    for (var i = 0; i <= segments; i++) {
+        var bearing = headingDegrees - halfAngleDegrees + (2 * halfAngleDegrees * i / segments);
+        points.push(MTD.destinationPoint(lat, lon, bearing, rangeMeters));
+    }
+    points.push([lat, lon]);
+    return points;
+};
+
+var MANPAD_DETECTION_BY_MODE = {
+    NONE: { narrow: false, wide: false },
+    NARROW: { narrow: true, wide: false },
+    FULL: { narrow: true, wide: true }
+};
+
+MTD.manpadDetectionProfile = function (mode) {
+    return MANPAD_DETECTION_BY_MODE[mode] || MANPAD_DETECTION_BY_MODE.NONE;
 };
 
 /* ---- Altitude color scale ---- */

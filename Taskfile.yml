@@ -26,9 +26,9 @@ tasks:
   format:
     desc: "Format lua source code with Stylua"
     cmds:
-      - cmd: "{{.STYLUA_BIN_CI}} src tests"
+      - cmd: "{{.STYLUA_BIN_CI}} src tests examples"
         platforms: [linux, darwin]
-      - cmd: "{{.STYLUA_BIN_WIN}} src tests"
+      - cmd: "{{.STYLUA_BIN_WIN}} src tests examples"
         platforms: [windows]
 
   format:ci:
@@ -36,9 +36,9 @@ tasks:
     cmds:
       - cmd: "chmod +x {{.STYLUA_BIN_CI}}"
         platforms: [linux, darwin]
-      - cmd: "{{.STYLUA_BIN_CI}} --check src tests"
+      - cmd: "{{.STYLUA_BIN_CI}} --check src tests examples"
         platforms: [linux, darwin]
-      - cmd: "{{.STYLUA_BIN_WIN}} --check src tests"
+      - cmd: "{{.STYLUA_BIN_WIN}} --check src tests examples"
         platforms: [windows]
 
   coverage:
@@ -58,7 +58,7 @@ tasks:
   test:
     desc: "Run tests with LuaUnit"
     cmds:
-      - "lua {{.TEST_DIR}}/runner.lua"
+      - "lua {{.TEST_DIR}}/runner.lua {{.CLI_ARGS}}"
     sources:
       - "{{.SOURCE_DIR}}/**/*.lua"
       - "{{.TEST_DIR}}/**/*.lua"
@@ -89,8 +89,12 @@ tasks:
         ignore_error: true
 
   ci:
-    deps: [format, test, build, lint]
     desc: "Run all CI checks"
+    cmds:
+      - task: format:ci
+      - task: test
+      - task: lint
+      - task: o11y:check
 
   ci:watch:
     deps: [ci]
@@ -99,6 +103,7 @@ tasks:
     sources:
       - "{{.SOURCE_DIR}}/**/*.lua"
       - "{{.TEST_DIR}}/**/*.lua"
+      - "examples/**/*.lua"
 
   bump:major:
     desc: "Bump the major version"
@@ -137,6 +142,26 @@ tasks:
     dir: tools/prometheus
     cmds:
       - docker compose up -d
+
+  o11y:check:
+    desc: "Validate dashboards and tactical JavaScript"
+    dir: tools/prometheus
+    cmds:
+      - '{{.PYTHON_BIN}} -c "import json, pathlib; [json.loads(pathlib.Path(p).read_text()) for p in pathlib.Path(''grafana/provisioning/dashboards'').glob(''*.json'')]"'
+      - node --check tactical/js/utils.js
+      - node --check tactical/js/render.js
+      - node --check tactical/js/ui.js
+      - node --check tactical/js/app.js
+      - node tactical/js/render.test.js
+
+  o11y:check:full:
+    desc: "Validate Prometheus stack configuration, dashboards, and tactical JavaScript"
+    dir: tools/prometheus
+    cmds:
+      - task: o11y:check
+      - docker compose config --quiet
+      - docker compose run --rm --no-deps --entrypoint promtool prometheus check config /etc/prometheus/prometheus.yml
+      - docker compose run --rm --no-deps --entrypoint promtool prometheus check rules /etc/prometheus/rules.yml
 
   prometheus:restart:
     desc: "Restart Prometheus + Grafana stack"

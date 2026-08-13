@@ -73,6 +73,8 @@ Medusa.Constants.BatteryUnitRole = {
 	COMMAND_POST = "COMMAND_POST",
 	TELAR = "TELAR",
 	TLAR = "TLAR",
+	MANPAD = "MANPAD",
+	AAA = "AAA",
 	OTHER = "OTHER",
 }
 
@@ -83,6 +85,7 @@ Medusa.Constants.BatteryRole = {
 	SR_SAM = "SR_SAM",
 	AAA = "AAA",
 	GENERIC_SAM = "GENERIC_SAM",
+	MANPAD = "MANPAD",
 }
 
 Medusa.Constants.VLR_THRESHOLD_M = 250000
@@ -102,6 +105,7 @@ Medusa.Constants.SystemTypeDefaults = {
 	SR_SAM = { DefaultActivationState = "STATE_COLD", AmmoDepletedBehavior = "INOPERATIVE" },
 	AAA = { DefaultActivationState = "STATE_COLD", AmmoDepletedBehavior = "INOPERATIVE" },
 	GENERIC_SAM = { DefaultActivationState = "STATE_COLD", AmmoDepletedBehavior = "INOPERATIVE" },
+	MANPAD = { DefaultActivationState = "STATE_COLD", AmmoDepletedBehavior = "REARMING" },
 }
 
 Medusa.Constants.RadarStatus = {
@@ -211,7 +215,6 @@ Medusa.Constants.TRACK_UPDATE_EXPIRY_BUCKETS = { 1, 2, 3, 5, 10, 20, 50 }
 Medusa.Constants.TRACK_TURN_THRESHOLD_RAD = 0.15
 Medusa.Constants.TRACK_ORBIT_THRESHOLD_RAD = 2.5
 Medusa.Constants.BANDIT_DWELL_SEC = 30
-Medusa.Constants.HEAVY_DWELL_SEC = 180
 Medusa.Constants.ROTARY_WING_SPEED_THRESHOLD = 100
 Medusa.Constants.MISSILE_SPEED_THRESHOLD = 1000
 Medusa.Constants.FIGHTER_MANEUVER_SPEED_THRESHOLD = 200
@@ -411,4 +414,62 @@ Medusa.Constants.InterceptorGroupStatus = {
 	REARMING = "REARMING",
 	AVAILABLE = "AVAILABLE",
 	DESTROYED = "DESTROYED",
+}
+
+-- ── MANPAD ────────────────────────────────────────────────────────
+
+Medusa.Constants.Manpad = {
+	SleepWakeState = {
+		ASLEEP = "ASLEEP",
+		ALERTING = "ALERTING",
+		ALERT = "ALERT",
+		HOT = "HOT",
+		COOLDOWN = "COOLDOWN",
+	},
+	DetectionMode = {
+		NONE = "NONE",
+		NARROW = "NARROW",
+		FULL = "FULL",
+	},
+	WakeReason = {
+		NONE = "NONE",
+		IADS = "IADS",
+		AUDIO = "AUDIO",
+		VISUAL = "VISUAL",
+		NEIGHBOR = "NEIGHBOR",
+		REARM = "REARM",
+		RECOVERY = "RECOVERY",
+	},
+
+	COS_NARROW = 0.866,
+	COS_WIDE = 0.0,
+	NARROW_RANGE_M = 8000,
+	WIDE_RANGE_FACTOR = 0.5,
+
+	AUDIO_RANGE_MIN_M = 0,
+	AUDIO_RANGE_MAX_M = 6000,
+
+	REL_ALT_CEIL_M = 3048,
+
+	FIRST_WAKE_MIN_SEC = 30,
+	FIRST_WAKE_MAX_SEC = 300,
+	WAKE_MIN_SEC = 10,
+	WAKE_MAX_SEC = 30,
+	HOT_MIN_SEC = 300,
+	HOT_MAX_SEC = 900,
+	COOLDOWN_SEC = 900,
+	ALERT_TIMEOUT_SEC = 900,
+
+	DEFAULT_FIELD_RADIO_RANGE_M = 5000,
+	MAX_FIELD_RADIO_RANGE_M = 50000,
+	NEIGHBOR_WAKE_MIN_SEC = 15,
+	NEIGHBOR_WAKE_MAX_SEC = 60,
+
+	GEOGRID_QUERY_RADIUS_M = 10000,
+	AUTONOMOUS_SCAN_QUOTA_PER_SEC = 2,
+	AUTONOMOUS_TARGET_CACHE_TTL_SEC = 3,
+	AUTONOMOUS_TARGET_CACHE_CAPACITY = 8,
+
+	POS_REFRESH_MIN_INTERVAL_SEC = 60,
+	POS_REFRESH_TICK_INTERVAL = 5,
 }

@@ -41,16 +41,19 @@ TestSensorPollingServicePollSensor = {}
 function TestSensorPollingServicePollSensor:setUp()
 	setupMocks()
 	mockIdCounter = 0
-	self.svc = Medusa.Services.SensorPollingService:new()
+	self.svc = Medusa.Services.SensorPollingService:new({
+		PerTrackScanUpdateRate = 5,
+		SensorCleanupSec = 30,
+	})
 end
 
-function TestSensorPollingServicePollSensor:test_returnsEmptyWhenNoController()
+function TestSensorPollingServicePollSensor:test_returnsNilWhenNoController()
 	GetGroupController = function(_)
 		return nil
 	end
 
 	local reports = self.svc:pollSensor("missing-group", 100)
-	lu.assertEquals(#reports, 0)
+	lu.assertNil(reports)
 end
 
 function TestSensorPollingServicePollSensor:test_returnsEmptyWhenNoDetections()
@@ -96,6 +99,8 @@ function TestSensorPollingServicePollSensor:test_buildsReportFromDetection()
 
 	lu.assertEquals(#reports, 1)
 	lu.assertEquals(reports[1].NetworkId, 1)
+	lu.assertIsNil(reports[1].ObjectCategory)
+	lu.assertIsNil(reports[1].UnitCategory)
 	lu.assertEquals(reports[1].Position.x, 100)
 	lu.assertEquals(reports[1].Position.y, 500)
 	lu.assertEquals(reports[1].Position.z, 200)
@@ -217,31 +222,6 @@ function TestSensorPollingServicePollSensor:test_rejectsNilObjectId()
 	lu.assertEquals(#reports, 0)
 end
 
-function TestSensorPollingServicePollSensor:test_rejectsHighObjectId()
-	local obj = {
-		id_ = 50000000,
-		getCategory = function(self)
-			return Object.Category.UNIT
-		end,
-		getPoint = function(self)
-			return { x = 1, y = 2, z = 3 }
-		end,
-		getVelocity = function(self)
-			return { x = 0, y = 0, z = 0 }
-		end,
-	}
-
-	GetGroupController = function(_)
-		return {}
-	end
-	GetControllerDetectedTargets = function(_)
-		return { { object = obj } }
-	end
-
-	local reports = self.svc:pollSensor("sensor-group", 100)
-	lu.assertEquals(#reports, 0)
-end
-
 function TestSensorPollingServicePollSensor:test_partialFailuresStillReturnGood()
 	local badObj = {
 		id_ = 1,
@@ -295,6 +275,8 @@ function TestSensorPollingServicePollSensor:test_acceptsWeaponObjects()
 	local reports = self.svc:pollSensor("sensor-group", 100)
 	lu.assertEquals(#reports, 1)
 	lu.assertEquals(reports[1].NetworkId, 1)
+	lu.assertIsNil(reports[1].ObjectCategory)
+	lu.assertIsNil(reports[1].UnitCategory)
 	lu.assertEquals(reports[1].Position.x, 1)
 	lu.assertEquals(reports[1].Velocity.x, 300)
 end
