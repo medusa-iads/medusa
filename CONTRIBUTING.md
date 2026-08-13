@@ -36,13 +36,24 @@ Medusa uses [keep a changelog](https://keepachangelog.com/en/1.1.0/) format for 
 - DCS World for integration testing
 - Lua 5.1
 - Python 3.13+ (build scripts)
+- [uv](https://docs.astral.sh/uv/) 0.10.12 (Python quality tools)
 - [Task](https://taskfile.dev) v3+ (build runner and local automated workflows)
 
 **Verify your setup:**
 ```bash
 task test          # 278 tests, 0 failures
 task build         # produces dist/medusa.lua and dist/medusa-thin.lua
+task complexity:check  # reports Lua complexity warnings
 ```
+
+## Lua complexity
+
+`task complexity:check` analyzes production code in `src/`. It reports cyclomatic
+complexity, function NLOC, parameter count, and duplicate-code percentage.
+
+The check is advisory. It warns when cyclomatic complexity exceeds 17, function
+NLOC exceeds 100, or a function has more than 8 parameters. CI annotates only
+changed functions and includes the repository summary in its pull request comment.
 
 ## How to write code for Medusa
 
