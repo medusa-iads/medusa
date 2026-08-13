@@ -139,7 +139,7 @@ local function releaseBarrageParticipant(state, battery)
 end
 
 local function cancelPendingInfection(battery)
-	return NeighborPropagationService.cancel(battery, "Aaa", "InfectionTimerId")
+	return NeighborPropagationService.cancelDelivery(battery, "Aaa", "InfectionTimerId")
 end
 
 local function currentMode(battery)
@@ -465,6 +465,19 @@ local function receiveBarrageInfection(battery, payload, now)
 	logger:debug(string.format("AAA %s joined barrage fire", battery.GroupName))
 end
 
+local function scheduleBarrageInfection(ctx, neighbor, message)
+	return NeighborPropagationService.scheduleDelivery({
+		recipient = neighbor,
+		recipientStore = ctx.batteryStore,
+		recipientStateField = "Aaa",
+		pendingTimerField = "InfectionTimerId",
+		delayMinSec = AC.BARRAGE_PROPAGATION_DELAY_MIN_SEC,
+		delayMaxSec = AC.BARRAGE_PROPAGATION_DELAY_MAX_SEC,
+		message = message,
+		onDelivery = receiveBarrageInfection,
+	})
+end
+
 local function sourceAimTarget(ctx, battery)
 	local aaa = battery.Aaa
 	local firePoint = aaa.FireTaskActive and aaa.LastFirePoint or nil
@@ -532,19 +545,7 @@ function Medusa.Services.AaaService.onShot(ctx, battery, unit, now)
 	local scheduled = 0
 	for i = 1, #neighbors do
 		local neighbor = neighbors[i]
-		if
-			isInfectionEligible(neighbor)
-			and NeighborPropagationService.schedule({
-				recipient = neighbor,
-				repository = ctx.batteryStore,
-				stateField = "Aaa",
-				timerField = "InfectionTimerId",
-				minDelaySec = AC.BARRAGE_PROPAGATION_DELAY_MIN_SEC,
-				maxDelaySec = AC.BARRAGE_PROPAGATION_DELAY_MAX_SEC,
-				payload = payload,
-				receive = receiveBarrageInfection,
-			})
-		then
+		if isInfectionEligible(neighbor) and scheduleBarrageInfection(ctx, neighbor, payload) then
 			scheduled = scheduled + 1
 		end
 	end

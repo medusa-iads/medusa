@@ -36,40 +36,40 @@ function Medusa.Services.NeighborPropagationService.findRecipients(
 	return recipientBuffer
 end
 
-function Medusa.Services.NeighborPropagationService.schedule(spec)
-	local state = spec.recipient[spec.stateField]
-	if state[spec.timerField] then
+function Medusa.Services.NeighborPropagationService.scheduleDelivery(delivery)
+	local state = delivery.recipient[delivery.recipientStateField]
+	if state[delivery.pendingTimerField] then
 		return false
 	end
-	local delay = spec.minDelaySec
-	if spec.maxDelaySec > spec.minDelaySec then
-		delay = spec.minDelaySec + math.random() * (spec.maxDelaySec - spec.minDelaySec)
+	local delay = delivery.delayMinSec
+	if delivery.delayMaxSec > delivery.delayMinSec then
+		delay = delivery.delayMinSec + math.random() * (delivery.delayMaxSec - delivery.delayMinSec)
 	end
-	local recipientId = spec.recipient.BatteryId
+	local recipientId = delivery.recipient.BatteryId
 	local timerId
 	timerId = ScheduleOnce(function()
-		local recipient = spec.repository:get(recipientId)
-		local currentState = recipient and recipient[spec.stateField]
-		if not currentState or currentState[spec.timerField] ~= timerId then
+		local recipient = delivery.recipientStore:get(recipientId)
+		local currentState = recipient and recipient[delivery.recipientStateField]
+		if not currentState or currentState[delivery.pendingTimerField] ~= timerId then
 			return
 		end
-		currentState[spec.timerField] = nil
-		spec.receive(recipient, spec.payload, GetTime())
+		currentState[delivery.pendingTimerField] = nil
+		delivery.onDelivery(recipient, delivery.message, GetTime())
 	end, nil, delay)
 	if not timerId then
 		return false
 	end
-	state[spec.timerField] = timerId
+	state[delivery.pendingTimerField] = timerId
 	return true
 end
 
-function Medusa.Services.NeighborPropagationService.cancel(recipient, stateField, timerField)
-	local state = recipient[stateField]
-	local timerId = state and state[timerField]
+function Medusa.Services.NeighborPropagationService.cancelDelivery(recipient, recipientStateField, pendingTimerField)
+	local state = recipient[recipientStateField]
+	local timerId = state and state[pendingTimerField]
 	if not timerId then
 		return false
 	end
 	CancelSchedule(timerId)
-	state[timerField] = nil
+	state[pendingTimerField] = nil
 	return true
 end

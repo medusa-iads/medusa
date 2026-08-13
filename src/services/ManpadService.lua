@@ -111,15 +111,15 @@ local function scheduleWake(ctx, battery, wakeReason, minSec, maxSec)
 	manpad.SleepWakeState = MSWS.ALERTING
 	manpad.WakeReason = wakeReason
 	if
-		not NeighborPropagationService.schedule({
+		not NeighborPropagationService.scheduleDelivery({
 			recipient = battery,
-			repository = ctx.manpadStore,
-			stateField = "Manpad",
-			timerField = "WakeTimerId",
-			minDelaySec = minSec,
-			maxDelaySec = maxSec,
-			payload = wakeReason,
-			receive = receiveScheduledWake,
+			recipientStore = ctx.manpadStore,
+			recipientStateField = "Manpad",
+			pendingTimerField = "WakeTimerId",
+			delayMinSec = minSec,
+			delayMaxSec = maxSec,
+			message = wakeReason,
+			onDelivery = receiveScheduledWake,
 		})
 	then
 		manpad.SleepWakeState = MSWS.ASLEEP
@@ -203,7 +203,7 @@ end
 function Medusa.Services.ManpadService.cancelPendingWake(battery)
 	if battery.Manpad and battery.Manpad.WakeTimerId then
 		local wasAlerting = battery.Manpad.SleepWakeState == MSWS.ALERTING
-		NeighborPropagationService.cancel(battery, "Manpad", "WakeTimerId")
+		NeighborPropagationService.cancelDelivery(battery, "Manpad", "WakeTimerId")
 		if wasAlerting then
 			battery.Manpad.SleepWakeState = MSWS.ASLEEP
 			battery.Manpad.WakeReason = MWR.NONE

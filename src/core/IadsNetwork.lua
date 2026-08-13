@@ -160,6 +160,7 @@ function Medusa.Core.IadsNetwork:new(opts)
 		_manpadCtx = {},
 		_aaaInterval = 10,
 		_aaaPosRefreshInterval = Medusa.Constants.LocalAircraftDetection.POSITION_REFRESH_TICK_INTERVAL,
+		-- IadsNetwork fills this table before each AaaService operation.
 		_aaaCtx = {},
 		_aaaBarrageState = opts and opts.aaaBarrageState or Medusa.Services.AaaService.newBarrageState(),
 		_assignmentPhase = 0,
