@@ -202,7 +202,7 @@ jobs:
                     LICENSE
 
             - name: Upload to R2 (versioned)
-              uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65 # v3.14.1
+              uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
               with:
                 apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                 accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -212,7 +212,7 @@ jobs:
                     r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/SHA256SUMS.txt --file=${{ env.BUILD_DIR }}/SHA256SUMS.txt
 
             - name: Upload to R2 (latest)
-              uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65 # v3.14.1
+              uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
               with:
                 apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                 accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
