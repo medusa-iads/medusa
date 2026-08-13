@@ -167,6 +167,101 @@ MTD.renderManpads = function (data) {
     return { bounds: bounds };
 };
 
+var AAA_STYLES = {
+    idle: "#6d7f8b",
+    alert: "#ffbf47",
+    areaFire: "#ff7043",
+    barrageFire: "#e53935",
+    barragePause: "#ab47bc",
+    hot: "#4caf50",
+    radarCold: "#4a90d9",
+    visual: { color: "#ffbf47", fillColor: "#ffbf47", weight: 0.8, opacity: 0.3, fillOpacity: 0.06 },
+    acoustic: { color: "#42a5f5", weight: 0.8, opacity: 0.25, dashArray: "5 5" }
+};
+
+MTD.aaaMarkerColor = function (mode, responseState, activationState) {
+    if (mode === "RADAR_DIRECTED") {
+        return activationState === "STATE_HOT" ? AAA_STYLES.hot : AAA_STYLES.radarCold;
+    }
+    if (responseState === "LOCAL_ACQUISITION") return AAA_STYLES.hot;
+    if (responseState === "BARRAGE_FIRE") return AAA_STYLES.barrageFire;
+    if (responseState === "BARRAGE_PAUSE") return AAA_STYLES.barragePause;
+    if (responseState === "AREA_FIRE") return AAA_STYLES.areaFire;
+    if (responseState === "ALERT") return AAA_STYLES.alert;
+    return AAA_STYLES.idle;
+};
+
+MTD.aaaTooltip = function (name, mode, responseState, network) {
+    var state = String(responseState || "UNKNOWN").replace(/_/g, " ");
+    var tooltip = _escapeHtml(name) + "<br>" + _escapeHtml(mode || "UNKNOWN") + "<br>" + _escapeHtml(state);
+    if (network) tooltip += "<br>" + _escapeHtml(network);
+    return tooltip;
+};
+
+MTD.isValidAaaGeometry = function (heading, rangeMeters, halfAngleDegrees) {
+    return Number.isFinite(heading) &&
+        Number.isFinite(rangeMeters) && rangeMeters > 0 &&
+        Number.isFinite(halfAngleDegrees) && halfAngleDegrees > 0;
+};
+
+MTD.renderAaaDetection = function (data) {
+    MTD.aaaDetectionLayer.clearLayers();
+    if (!MTD.opt("opt-aaa-detection")) return;
+
+    var infoMap = data.aaaInfoMap || {};
+    var headingsByAaa = data.aaaHeadingMap || {};
+    var geometry = data.aaaGeometry || {};
+    var keys = Object.keys(infoMap);
+    for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+        var info = infoMap[key];
+        if (info.mode !== "INDEPENDENT") continue;
+
+        var name = info.aaa;
+        var lat = data.batLatMap[name];
+        var lon = data.batLonMap[name];
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+        var position = [lat, lon];
+        var acousticRange = (data.aaaAcousticRangeMap || {})[info.network];
+        if (Number.isFinite(acousticRange) && acousticRange > 0) {
+            L.circle(position, {
+                radius: acousticRange,
+                color: AAA_STYLES.acoustic.color,
+                fill: false,
+                weight: AAA_STYLES.acoustic.weight,
+                opacity: AAA_STYLES.acoustic.opacity,
+                dashArray: AAA_STYLES.acoustic.dashArray,
+                interactive: false
+            }).addTo(MTD.aaaDetectionLayer);
+        }
+
+        var headings = headingsByAaa[key] || [];
+        for (var hi = 0; hi < headings.length; hi++) {
+            var heading = headings[hi].value;
+            if (!MTD.isValidAaaGeometry(heading, geometry.rangeMeters, geometry.halfAngleDegrees)) continue;
+            L.polygon(
+                MTD.buildSectorPolygon(
+                    lat,
+                    lon,
+                    heading,
+                    geometry.rangeMeters,
+                    geometry.halfAngleDegrees,
+                    18
+                ),
+                {
+                    color: AAA_STYLES.visual.color,
+                    fillColor: AAA_STYLES.visual.fillColor,
+                    weight: AAA_STYLES.visual.weight,
+                    opacity: AAA_STYLES.visual.opacity,
+                    fillOpacity: AAA_STYLES.visual.fillOpacity,
+                    interactive: false
+                }
+            ).addTo(MTD.aaaDetectionLayer);
+        }
+    }
+};
+
 /* ---- Batteries ---- */
 
 MTD.renderBatteries = function (data) {
@@ -178,6 +273,7 @@ MTD.renderBatteries = function (data) {
     var batInfoMap    = data.batInfoMap;
     var batRangeMap   = data.batRangeMap;
     var batShotsMap   = data.batShotsMap;
+    var aaaInfoMap    = data.aaaInfoMap || {};
     var showThreatRings = MTD.opt("opt-threat-rings");
     var showBatLabels   = MTD.opt("opt-bat-labels");
 
@@ -205,6 +301,7 @@ MTD.renderBatteries = function (data) {
         var state  = info.state || "COLD";
         var system = info.system || "unknown";
         var target = info.target || "";
+        var aaaInfo = aaaInfoMap[MTD.scopedEntityKey(info.network, bName)];
 
         var isHot = state === "STATE_HOT";
         if (isHot) hotCount++;
@@ -212,7 +309,9 @@ MTD.renderBatteries = function (data) {
         var status = info.status || "ACTIVE";
         var isInop = status !== "ACTIVE";
         var radius = isHot ? 7 : 4;
-        var color  = isHot ? "#4caf50" : "#4a90d9";
+        var color  = aaaInfo
+            ? MTD.aaaMarkerColor(aaaInfo.mode, aaaInfo.state, state)
+            : (isHot ? "#4caf50" : "#4a90d9");
 
         var tooltip = bName + "\n" + system;
         if (isInop) {
@@ -221,6 +320,9 @@ MTD.renderBatteries = function (data) {
         if (isHot && target) {
             tooltip += "\nTarget: " + target;
         }
+        var tooltipHtml = aaaInfo
+            ? MTD.aaaTooltip(bName, aaaInfo.mode, aaaInfo.state, info.network) + "<br>" + _escapeHtml(system)
+            : tooltip.replace(/\n/g, "<br>");
 
         var existing = batteryMarkers[bName];
 
@@ -246,7 +348,6 @@ MTD.renderBatteries = function (data) {
             } else {
                 existing.dot.setIcon(_inopIcon(color));
             }
-            var tooltipHtml = tooltip.replace(/\n/g, "<br>");
             if (existing._lastTooltip !== tooltipHtml) {
                 existing.dot.unbindTooltip();
                 existing.dot.bindTooltip(tooltipHtml);
@@ -258,7 +359,7 @@ MTD.renderBatteries = function (data) {
             /* Create new battery marker */
             var batMarker;
             if (isInop) {
-                batMarker = L.marker(bPos, { icon: _inopIcon(color) }).bindTooltip(tooltip.replace(/\n/g, "<br>")).addTo(batteryLayer);
+                batMarker = L.marker(bPos, { icon: _inopIcon(color) }).bindTooltip(tooltipHtml).addTo(batteryLayer);
             } else {
                 batMarker = L.circleMarker(bPos, {
                     radius: radius,
@@ -266,7 +367,7 @@ MTD.renderBatteries = function (data) {
                     fillColor: color,
                     fillOpacity: 0.8,
                     weight: 1
-                }).bindTooltip(tooltip.replace(/\n/g, "<br>")).addTo(batteryLayer);
+                }).bindTooltip(tooltipHtml).addTo(batteryLayer);
             }
 
             /* Click + right-click handlers */
@@ -280,7 +381,7 @@ MTD.renderBatteries = function (data) {
                 });
             })(bName);
 
-            existing = { dot: batMarker, ring: null, label: null, isInop: isInop };
+            existing = { dot: batMarker, ring: null, label: null, isInop: isInop, _lastTooltip: tooltipHtml };
             batteryMarkers[bName] = existing;
         }
 

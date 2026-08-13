@@ -171,6 +171,106 @@ local function makeTrackStoreMock(tracks)
 	}
 end
 
+TestIndependentAaaEmcon = {}
+
+function TestIndependentAaaEmcon:setUp()
+	setupMocks()
+end
+
+function TestIndependentAaaEmcon:test_policy_does_not_activate_independent_aaa()
+	local battery = makeBattery({
+		Role = Medusa.Constants.BatteryRole.AAA,
+		ActivationState = AS.STATE_COLD,
+	})
+	local sensorStore = {
+		count = function()
+			return 0
+		end,
+		getUniqueGroupNames = function()
+			return {}
+		end,
+	}
+
+	local transitions = ES.applyPolicy({
+		batteryStore = makeBatteryStoreMock({ battery }),
+		sensorStore = sensorStore,
+		doctrine = {
+			EMCON = { [Medusa.Constants.BatteryRole.AAA] = Medusa.Constants.EmissionControlPolicy.ALWAYS_ON },
+			SAMAsEWR = "DISABLED",
+		},
+		now = 1000,
+	})
+
+	lu.assertEquals(transitions, 0)
+	lu.assertEquals(battery.ActivationState, AS.STATE_COLD)
+end
+
+TestSensorGroupEmcon = {}
+
+function TestSensorGroupEmcon:setUp()
+	setupMocks()
+	self.originalRoe = ControllerSetROE
+	self.originalAlarm = ControllerSetAlarmState
+	self.originalOnOff = SetControllerOnOff
+	self.roe = nil
+	self.alarm = nil
+	self.onOff = nil
+	ControllerSetROE = function(_, value)
+		self.roe = value
+	end
+	ControllerSetAlarmState = function(_, value)
+		self.alarm = value
+	end
+	SetControllerOnOff = function(_, value)
+		self.onOff = value
+	end
+	Medusa.Services.EmconService._sensorGroupState["mixed-ewr"] = nil
+end
+
+function TestSensorGroupEmcon:tearDown()
+	ControllerSetROE = self.originalRoe
+	ControllerSetAlarmState = self.originalAlarm
+	SetControllerOnOff = self.originalOnOff
+	Medusa.Services.EmconService._sensorGroupState["mixed-ewr"] = nil
+end
+
+function TestSensorGroupEmcon:test_active_ground_sensor_group_is_weapons_free_and_red()
+	local sensor = {
+		GroupName = "mixed-ewr",
+		SensorType = "EWR",
+		IsAirborne = false,
+		RadarStatus = "DARK",
+	}
+	local sensorStore = {
+		count = function()
+			return 1
+		end,
+		getUniqueGroupNames = function()
+			return { "mixed-ewr" }
+		end,
+		getByGroupName = function(_, _, output)
+			output[1] = sensor
+			return output
+		end,
+	}
+
+	local transitions = ES.applyPolicy({
+		batteryStore = makeBatteryStoreMock({}),
+		sensorStore = sensorStore,
+		doctrine = {
+			EMCON = { EWR = Medusa.Constants.EmissionControlPolicy.ALWAYS_ON },
+			SAMAsEWR = "DISABLED",
+		},
+		now = 1000,
+	})
+
+	lu.assertEquals(transitions, 1)
+	lu.assertTrue(self.onOff)
+	lu.assertEquals(self.roe, "OPEN_FIRE")
+	lu.assertEquals(self.alarm, "RED")
+	lu.assertEquals(sensor.RadarStatus, "ACTIVE")
+end
+
 -- ============================================================
 -- Contract 1: batteryDetectsTrack
 -- Accessed via checkDeactivations (hold-down-expired-detected branch).

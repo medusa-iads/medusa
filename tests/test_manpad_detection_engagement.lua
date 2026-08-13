@@ -757,7 +757,7 @@ function TestAutonomousAcquisition:test_cachedCandidates_areBoundedAndContainNoD
 	Medusa.Services.ManpadService.evaluate(ctx)
 
 	lu.assertEquals(visited, Medusa.Constants.Manpad.AUTONOMOUS_TARGET_CACHE_CAPACITY)
-	local cache = ctx.autonomousTargetCache[bat.BatteryId]
+	local cache = ctx.localSearch.cacheByBatteryId[bat.BatteryId]
 	lu.assertEquals(cache.Targets:size(), Medusa.Constants.Manpad.AUTONOMOUS_TARGET_CACHE_CAPACITY)
 	for i = 1, cache.Targets:size() do
 		local snapshot = cache.Targets:get(i)
@@ -775,13 +775,13 @@ function TestAutonomousAcquisition:test_removedGroup_isRemovedFromQueueAndCache(
 	local ctx = makeAutonomousContext(store, 0)
 
 	Medusa.Services.ManpadService.evaluate(ctx)
-	lu.assertNotNil(ctx.autonomousTargetCache[bat.BatteryId])
+	lu.assertNotNil(ctx.localSearch.cacheByBatteryId[bat.BatteryId])
 	store:remove(bat.BatteryId)
 	ctx.now = 1
 	Medusa.Services.ManpadService.evaluate(ctx)
 
-	lu.assertEquals(ctx.autonomousScanQueue:size(), 0)
-	lu.assertNil(ctx.autonomousTargetCache[bat.BatteryId])
+	lu.assertEquals(ctx.localSearch.queue:size(), 0)
+	lu.assertNil(ctx.localSearch.cacheByBatteryId[bat.BatteryId])
 end
 
 -- ============================================================

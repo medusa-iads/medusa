@@ -280,6 +280,30 @@
         { "expr": "rate(medusa_manpad_autonomous_scans_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} World Searches/min" },
         { "expr": "rate(medusa_manpad_autonomous_cache_reuses_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Cache Reuses/min" }
       ]
+    },
+    {
+      "title": "AAA Groups by Response State",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
+      "targets": [
+        { "expr": "medusa_aaa_state{network=~\"$network\"} and on() medusa:live", "legendFormat": "{{network}} {{mode}} {{state}}" }
+      ],
+      "fieldConfig": { "defaults": { "min": 0 } }
+    },
+    {
+      "title": "AAA Activity",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
+      "targets": [
+        { "expr": "rate(medusa_aaa_visual_detections_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Visual Detections/min" },
+        { "expr": "rate(medusa_aaa_acoustic_detections_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Acoustic Detections/min" },
+        { "expr": "rate(medusa_aaa_area_fire_responses_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Area Fire/min" },
+        { "expr": "rate(medusa_aaa_barrage_responses_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Barrages/min" },
+        { "expr": "rate(medusa_aaa_barrage_bursts_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Barrage Bursts/min" },
+        { "expr": "rate(medusa_aaa_barrage_infections_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Barrage Infections/min" },
+        { "expr": "rate(medusa_aaa_local_acquisition_responses_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} Local Acquisition/min" },
+        { "expr": "rate(medusa_aaa_local_searches_total{network=~\"$network\"}[$__rate_interval]) * 60 and on() medusa:live", "legendFormat": "{{network}} World Searches/min" }
+      ]
     }
   ],
   "refresh": "10s",

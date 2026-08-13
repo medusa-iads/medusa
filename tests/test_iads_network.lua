@@ -34,14 +34,32 @@ TestIadsNetwork = {}
 
 function TestIadsNetwork:setUp()
 	origGetUnitDesc = GetUnitDesc
-	-- Return launcher attributes so batteries are not skipped by the hasLauncher guard.
-	GetUnitDesc = function()
+	GetUnitDesc = function(unit)
+		local name = unit and unit.getName and unit:getName() or ""
+		if string.find(name, ".gci.", 1, true) or string.find(name, ".ewr.", 1, true) then
+			return { attributes = { ["SAM SR"] = true } }
+		end
 		return { attributes = { ["SAM LL"] = true } }
 	end
 end
 
 function TestIadsNetwork:tearDown()
 	GetUnitDesc = origGetUnitDesc
+end
+
+function TestIadsNetwork:test_initialize_registers_barrage_limit_before_start()
+	local barrageState = Medusa.Services.AaaService.newBarrageState()
+	local iads = Medusa.Core.IadsNetwork:new({
+		id = "limit-net",
+		coalitionId = COAL_RED,
+		prefix = "iads",
+		doctrine = { AAA = { MaxBarrageGroups = 7 } },
+		aaaBarrageState = barrageState,
+	})
+
+	iads:initialize()
+
+	lu.assertEquals(barrageState.limitsByNetwork["limit-net"], 7)
 end
 
 function TestIadsNetwork:test_initialize_and_tick_wires_discovery_to_hierarchy()
@@ -134,6 +152,22 @@ function TestIadsNetwork:test_discovery_routes_ewr_to_sensors()
 	local sensorNames = iads:getAssetIndex():sensors():getUniqueGroupNames()
 	lu.assertEquals(#sensorNames, 1)
 	lu.assertEquals(sensorNames[1], "iads.alpha.ewr.bigbird")
+end
+
+function TestIadsNetwork:test_battery_datalink_excludes_independent_aaa()
+	local iads = makeIads()
+	iads:initialize()
+	iads._doctrine = { BatteryTargetDatalink = true }
+	local battery = Medusa.Entities.Battery.new({
+		NetworkId = "T",
+		GroupId = 202,
+		GroupName = "iads.alpha.aaa.site1",
+		Role = Medusa.Constants.BatteryRole.AAA,
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+	})
+	iads:getAssetIndex():batteries():add(battery)
+
+	lu.assertEquals(iads:_buildPollList(), {})
 end
 
 function TestIadsNetwork:test_discovery_routes_hq_to_c2nodes()

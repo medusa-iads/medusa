@@ -14,10 +14,9 @@ require("services.stores.SensorUnitStore")
 require("services.stores.C2NodeStore")
 require("services.EntityFactory")
 
--- == Helpers ==
-
 local ulidCounter = 0
-local origGetGroupUnits, origGetUnitDesc, origGetUnitID, origGetUnitType, origGetUnitPosition, origGetUnitAmmo
+local origGetGroupUnits, origGetUnitDesc, origGetUnitID, origGetUnitType, origGetUnitPosition, origGetUnitHeading
+local origGetUnitAmmo
 
 local function makeMockUnit(id, name)
 	return {
@@ -34,51 +33,61 @@ local function makeMockUnit(id, name)
 end
 
 local function makeStores()
+	local repository = Medusa.Services.BatteryStore:new()
 	return {
-		batteries = Medusa.Services.BatteryStore:new(),
+		batteries = repository:batteries(),
+		manpads = repository:manpads(),
 		sensors = Medusa.Services.SensorUnitStore:new(),
 		c2Nodes = Medusa.Services.C2NodeStore:new(),
 	}
 end
 
-local function makeDTO()
+local function makeDTO(roles)
 	return {
 		groupId = 1,
 		groupName = "test.group",
-		parsed = { roles = {}, echelonPath = {}, isHQ = false },
+		parsed = { roles = roles or {}, echelonPath = {}, isHQ = false },
 	}
 end
 
-local launcherUnit = makeMockUnit(2, "launcher-unit")
-
-local function setupClassificationTest(attributes)
-	local testUnit = makeMockUnit(1, "test-unit")
+local function setupInventoryTest(attributeSets)
+	local units = {}
+	local attributesByUnit = {}
+	for i = 1, #attributeSets do
+		local unit = makeMockUnit(i, "unit-" .. i)
+		units[i] = unit
+		attributesByUnit[unit] = attributeSets[i]
+	end
 	GetGroupUnits = function()
-		return { testUnit, launcherUnit }
+		return units
 	end
-	local nextId = 0
-	GetUnitID = function()
-		nextId = nextId + 1
-		return nextId
+	GetUnitID = function(unit)
+		return unit:getID()
 	end
-	GetUnitType = function()
-		return "TestType"
+	GetUnitType = function(value)
+		return type(value) == "table" and value:getName() or value
 	end
 	GetUnitPosition = function()
 		return { x = 100, y = 0, z = 200 }
+	end
+	GetUnitHeading = function()
+		return 0
 	end
 	GetUnitAmmo = function()
 		return {}
 	end
 	GetUnitDesc = function(unit)
-		if unit == launcherUnit then
-			return { attributes = { ["SAM LL"] = true } }
-		end
-		return { attributes = attributes }
+		return { displayName = unit:getName(), attributes = attributesByUnit[unit] }
 	end
 end
 
--- == Tests ==
+local function setupClassificationTest(attributes, includeLauncher)
+	local attributeSets = { attributes }
+	if includeLauncher ~= false then
+		attributeSets[2] = { ["SAM LL"] = true }
+	end
+	setupInventoryTest(attributeSets)
+end
 
 TestUnitClassification = {}
 
@@ -93,6 +102,7 @@ function TestUnitClassification:setUp()
 	origGetUnitID = GetUnitID
 	origGetUnitType = GetUnitType
 	origGetUnitPosition = GetUnitPosition
+	origGetUnitHeading = GetUnitHeading
 	origGetUnitAmmo = GetUnitAmmo
 end
 
@@ -102,6 +112,7 @@ function TestUnitClassification:tearDown()
 	GetUnitID = origGetUnitID
 	GetUnitType = origGetUnitType
 	GetUnitPosition = origGetUnitPosition
+	GetUnitHeading = origGetUnitHeading
 	GetUnitAmmo = origGetUnitAmmo
 end
 
@@ -194,7 +205,7 @@ function TestUnitClassification:test_battery_role_sr_sam()
 end
 
 function TestUnitClassification:test_battery_role_aaa()
-	setupClassificationTest({ ["AAA"] = true })
+	setupClassificationTest({ ["AAA"] = true }, false)
 	local stores = makeStores()
 	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
 	local battery = stores.batteries:getAll()[1]
@@ -207,4 +218,82 @@ function TestUnitClassification:test_battery_role_defaults_generic()
 	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
 	local battery = stores.batteries:getAll()[1]
 	lu.assertEquals(battery.Role, "GENERIC_SAM")
+end
+
+function TestUnitClassification:test_aaa_search_ratio_is_independent_of_unit_order()
+	local arrangements = {
+		{ { AAA = true }, { AAA = true }, { ["SAM SR"] = true } },
+		{ { ["SAM SR"] = true }, { AAA = true }, { AAA = true } },
+	}
+	for i = 1, #arrangements do
+		setupInventoryTest(arrangements[i])
+		local stores = makeStores()
+		local kind = Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
+		lu.assertEquals(kind, "battery")
+		lu.assertEquals(stores.batteries:getAll()[1].Role, Medusa.Constants.BatteryRole.AAA)
+	end
+end
+
+function TestUnitClassification:test_aaa_group_below_search_ratio_is_ewr()
+	setupInventoryTest({
+		{ AAA = true },
+		{ AAA = true },
+		{ AAA = true },
+		{ ["SAM SR"] = true },
+		{ EWR = true },
+	})
+	local stores = makeStores()
+	local kind = Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
+	lu.assertEquals(kind, "sensor")
+	lu.assertEquals(stores.sensors:count(), 2)
+end
+
+function TestUnitClassification:test_manpad_wins_tie_with_aaa()
+	setupInventoryTest({ { MANPADS = true }, { AAA = true } })
+	local stores = makeStores()
+	local kind = Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
+	lu.assertEquals(kind, "manpad")
+	lu.assertEquals(stores.manpads:count(), 1)
+end
+
+function TestUnitClassification:test_aaa_wins_when_it_outnumbers_manpads()
+	setupInventoryTest({ { MANPADS = true }, { AAA = true }, { AAA = true } })
+	local stores = makeStores()
+	local kind = Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
+	lu.assertEquals(kind, "battery")
+	lu.assertEquals(stores.batteries:getAll()[1].Role, Medusa.Constants.BatteryRole.AAA)
+end
+
+function TestUnitClassification:test_track_radar_does_not_count_as_search_radar()
+	setupInventoryTest({ { AAA = true }, { ["SAM TR"] = true } })
+	local stores = makeStores()
+	local kind = Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
+	lu.assertEquals(kind, "battery")
+	lu.assertEquals(stores.batteries:getAll()[1].Role, Medusa.Constants.BatteryRole.AAA)
+end
+
+function TestUnitClassification:test_launcher_takes_precedence_over_aaa_inventory()
+	setupInventoryTest({
+		{ AAA = true },
+		{ AAA = true },
+		{ ["SAM LL"] = true, ["SR SAM"] = true },
+	})
+	local stores = makeStores()
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO({ "EWR" }), stores, "net1")
+	lu.assertEquals(stores.batteries:getAll()[1].Role, Medusa.Constants.BatteryRole.SR_SAM)
+end
+
+function TestUnitClassification:test_multi_role_unit_retains_aaa_and_search_roles()
+	setupInventoryTest({ { AAA = true, ["SAM SR"] = true }, { AAA = true } })
+	local stores = makeStores()
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
+	local battery = stores.batteries:getAll()[1]
+	local roles = battery.Units[1].Roles
+	local present = {}
+	for i = 1, #roles do
+		present[roles[i]] = true
+	end
+	lu.assertTrue(present[Medusa.Constants.BatteryUnitRole.AAA])
+	lu.assertTrue(present[Medusa.Constants.BatteryUnitRole.SEARCH_RADAR])
+	lu.assertEquals(battery.SystemType, "UNKNOWN")
 end

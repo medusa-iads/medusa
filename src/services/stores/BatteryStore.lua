@@ -114,6 +114,7 @@ end
 
 function Medusa.Services.BatteryStore:add(battery)
 	Medusa.Entities.Battery.validateManpadState(battery.Role, battery.Manpad)
+	Medusa.Entities.Battery.validateAaaState(battery.Role, battery.Aaa)
 	if self._byId[battery.BatteryId] then
 		error(string.format("duplicate BatteryId: %s", battery.BatteryId))
 	end

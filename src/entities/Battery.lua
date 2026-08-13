@@ -32,6 +32,7 @@ local TRACKER_ROLES = { [BUR.TRACK_RADAR] = true, [BUR.TELAR] = true, [BUR.TLAR]
 local LAUNCHER_ROLES = Medusa.Constants.LAUNCHER_ROLES
 local MANPAD_ROLES = { [BUR.MANPAD] = true }
 local SEARCH_ROLES = { [BUR.SEARCH_RADAR] = true, [BUR.TLAR] = true }
+local AAA_ROLES = { [BUR.AAA] = true }
 local RDP = Medusa.Constants.BatteryRadarDependencyPolicy
 local MANPAD_STATES = {}
 for _, state in pairs(MC.SleepWakeState) do
@@ -40,6 +41,10 @@ end
 local MANPAD_WAKE_REASONS = {}
 for _, reason in pairs(MC.WakeReason) do
 	MANPAD_WAKE_REASONS[reason] = true
+end
+local AAA_RESPONSE_STATES = {}
+for _, state in pairs(Medusa.Constants.Aaa.ResponseState) do
+	AAA_RESPONSE_STATES[state] = true
 end
 
 local function isNonNegativeInteger(value)
@@ -102,6 +107,33 @@ function Medusa.Entities.Battery.prepareManpadState(role, manpad)
 	Medusa.Entities.Battery.validateManpadState(role, manpad)
 end
 
+function Medusa.Entities.Battery.newAaaState()
+	return {
+		ResponseState = Medusa.Constants.Aaa.ResponseState.IDLE,
+		UnitHeadings = {},
+		UnitHeadingCount = 0,
+		FireTaskActive = false,
+	}
+end
+
+function Medusa.Entities.Battery.validateAaaState(role, aaa)
+	if role ~= BR.AAA then
+		if aaa ~= nil then
+			error("non-AAA battery cannot have Aaa state")
+		end
+		return
+	end
+	if type(aaa) ~= "table" or not AAA_RESPONSE_STATES[aaa.ResponseState] then
+		error("AAA battery requires valid Aaa response state")
+	end
+	if type(aaa.UnitHeadings) ~= "table" then
+		error("AAA UnitHeadings must be a table")
+	end
+	if not isNonNegativeInteger(aaa.UnitHeadingCount) or aaa.UnitHeadingCount ~= #aaa.UnitHeadings then
+		error("AAA UnitHeadingCount must match UnitHeadings")
+	end
+end
+
 function Medusa.Entities.Battery.new(data)
 	if not data then
 		error("data table is required")
@@ -117,6 +149,11 @@ function Medusa.Entities.Battery.new(data)
 	end
 	local role = data.Role or BR.GENERIC_SAM
 	Medusa.Entities.Battery.prepareManpadState(role, data.Manpad)
+	local aaa = data.Aaa
+	if role == BR.AAA and aaa == nil then
+		aaa = Medusa.Entities.Battery.newAaaState()
+	end
+	Medusa.Entities.Battery.validateAaaState(role, aaa)
 
 	local o = {
 		BatteryId = data.BatteryId or NewULID(),
@@ -158,6 +195,7 @@ function Medusa.Entities.Battery.new(data)
 		LastShotTime = data.LastShotTime,
 		ShotsFired = 0,
 		Manpad = data.Manpad,
+		Aaa = aaa,
 		RearmCheckTime = nil,
 	}
 
@@ -275,11 +313,29 @@ function Medusa.Entities.Battery.hasLauncherRole(unit, launcherRoles)
 	return false
 end
 
+function Medusa.Entities.Battery.unitHasRole(unit, role)
+	if not unit.Roles then
+		return false
+	end
+	for i = 1, #unit.Roles do
+		if unit.Roles[i] == role then
+			return true
+		end
+	end
+	return false
+end
+
 function Medusa.Entities.Battery.isAmmoBearingRole(batteryRole, unitRole)
 	if batteryRole == BR.MANPAD then
 		return MANPAD_ROLES[unitRole] == true
+	elseif batteryRole == BR.AAA then
+		return AAA_ROLES[unitRole] == true
 	end
 	return LAUNCHER_ROLES[unitRole] == true
+end
+
+function Medusa.Entities.Battery.canSupplyDetectionRange(battery, unit)
+	return battery.Role ~= BR.AAA or Medusa.Entities.Battery.unitHasRole(unit, BUR.SEARCH_RADAR)
 end
 
 function Medusa.Entities.Battery.isAmmoBearingUnit(battery, unit)
@@ -451,6 +507,16 @@ function Medusa.Entities.Battery.recomputeOperationalStatus(battery)
 		end
 		return battery.OperationalStatus
 	end
+	if battery.Role == BR.AAA then
+		if not Medusa.Entities.Battery.hasRoleAlive(battery, AAA_ROLES) then
+			battery.OperationalStatus = BOS.DESTROYED
+		elseif battery.TotalAmmoStatus <= 0 then
+			battery.OperationalStatus = battery.AmmoDepletedBehavior or BOS.INOPERATIVE
+		else
+			battery.OperationalStatus = BOS.ACTIVE
+		end
+		return battery.OperationalStatus
+	end
 
 	local hasTracker = false
 	local hasLauncher = false
@@ -497,6 +563,12 @@ function Medusa.Entities.Battery.computeEffectiveRanges(battery)
 		battery.EngagementRangeMax = battery.WeaponRangeMax
 		return
 	end
+	if battery.Role == BR.AAA and not Medusa.Entities.Battery.isRadarDirectedAaa(battery) then
+		battery.EffectiveDetectionRangeMax = 0
+		battery.EffectiveReactionDelaySec = battery.ReactionDelaySec
+		battery.EngagementRangeMax = battery.WeaponRangeMax
+		return
+	end
 	local searchDown = not Medusa.Entities.Battery.hasRoleAlive(battery, SEARCH_ROLES)
 
 	if searchDown and battery.RadarDependencyPolicy == RDP.OPTIONAL_DEGRADED then
@@ -521,4 +593,14 @@ function Medusa.Entities.Battery.computeEffectiveRanges(battery)
 	elseif effDet then
 		battery.EngagementRangeMax = effDet
 	end
+end
+
+function Medusa.Entities.Battery.isRadarDirectedAaa(battery)
+	return battery.Role == BR.AAA
+		and (battery.DetectionRangeMax or 0) > 0
+		and Medusa.Entities.Battery.hasRoleAlive(battery, SEARCH_ROLES)
+end
+
+function Medusa.Entities.Battery.isIndependentAaa(battery)
+	return battery.Role == BR.AAA and not Medusa.Entities.Battery.isRadarDirectedAaa(battery)
 end

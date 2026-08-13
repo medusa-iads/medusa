@@ -169,6 +169,22 @@ local function injectBattery(iads, unitIds)
 	return bat
 end
 
+local function injectIndependentAaa(iads, unitId)
+	local batteryStore = iads:getAssetIndex():batteries()
+	local id = nextSeq()
+	local bat = Medusa.Entities.Battery.new({
+		NetworkId = "test-net",
+		GroupId = id * 100,
+		GroupName = string.format("aaa-group-%d", id),
+		Role = Medusa.Constants.BatteryRole.AAA,
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+	})
+	bat.Units = { makeUnit(unitId, Medusa.Constants.BatteryUnitRole.AAA, "ZU-23") }
+	Medusa.Entities.Battery.recomputeState(bat)
+	batteryStore:add(bat)
+	return bat
+end
+
 -- ============================================================
 -- 1. ManpadService.onShot — MANPAD policy hook
 -- ============================================================
@@ -317,6 +333,36 @@ function TestIadsNetworkHandleShot:test_handleShot_regularBattery_doesNotCallOnS
 	lu.assertEquals(iads._rollingPkBuffer[1], 0)
 end
 
+function TestIadsNetworkHandleShot:test_independentAaaShotDoesNotAffectRollingPk()
+	local iads = makeIads()
+	local bat = injectIndependentAaa(iads, 305)
+
+	iads:_handleShot(305, "ZU-23")
+
+	lu.assertEquals(bat.ShotsFired, 1)
+	lu.assertEquals(bat.TotalAmmoStatus, 1)
+	lu.assertEquals(iads._rollingPkCount, 0)
+end
+
+function TestIadsNetworkHandleShot:test_aaaShotDispatchesNeighborPropagation()
+	local iads = makeIads()
+	local bat = injectIndependentAaa(iads, 306)
+	local received
+	local originalOnShot = Medusa.Services.AaaService.onShot
+	Medusa.Services.AaaService.onShot = function(ctx, battery, unit, now)
+		received = { ctx = ctx, battery = battery, unit = unit, now = now }
+	end
+
+	iads:_handleShot(306, "ZU-23")
+
+	Medusa.Services.AaaService.onShot = originalOnShot
+	lu.assertEquals(received.battery, bat)
+	lu.assertEquals(received.unit, bat.Units[1])
+	lu.assertEquals(received.now, 1000)
+	lu.assertEquals(received.ctx.batteryStore, iads:getAssetIndex():batteries())
+	lu.assertEquals(received.ctx.geoGrid, iads:getAssetIndex():geoGrid())
+end
+
 function TestIadsNetworkHandleShot:test_handleShot_nonManpadCompanionDoesNotTriggerMissilePolicy()
 	local iads = makeIads()
 	local store = iads:getAssetIndex():manpads()
@@ -460,6 +506,19 @@ function TestIadsNetworkHandleShot:test_manpadKillDoesNotCompleteRegularBatteryS
 	iads:_processKillEvents(1)
 
 	lu.assertEquals(iads._rollingPkBuffer[1], 1)
+end
+
+function TestIadsNetworkHandleShot:test_independentAaaKillDoesNotCompleteRegularBatteryShot()
+	local iads = makeIads()
+	injectBattery(iads, { 322 })
+	injectIndependentAaa(iads, 323)
+	iads:_handleShot(322, "SA-6")
+
+	iads._killQueue:enqueue({ _unitId = 323 })
+	iads:_processKillEvents(1)
+
+	lu.assertEquals(iads._rollingPkCount, 1)
+	lu.assertEquals(iads._rollingPkBuffer[1], 0)
 end
 
 -- ============================================================

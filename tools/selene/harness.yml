@@ -496,6 +496,19 @@ globals:
       required: false
     - type: number
       required: false
+  CreateFireAtPointTask:
+    args:
+    - type: table
+    - type: number
+      required: false
+    - type: number
+      required: false
+    - type: bool
+      required: false
+    - type: number
+      required: false
+    - type: bool
+      required: false
   CreateBombingRunwayTask:
     args:
     - type: number
