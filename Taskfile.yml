@@ -77,6 +77,19 @@ tasks:
       - "{{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
       - "{{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}"
 
+  diagrams:build:
+    desc: "Render documentation diagrams"
+    preconditions:
+      - sh: command -v d2
+        msg: "D2 is required to render documentation diagrams"
+    cmds:
+      - for: sources
+        cmd: 'd2 --layout=elk --pad=24 --omit-version "{{.ITEM}}" "{{trimSuffix ".d2" .ITEM}}.svg"'
+    sources:
+      - "docs/diagrams/**/*.d2"
+    generates:
+      - "docs/diagrams/**/*.svg"
+
   delete:artifact:
     desc: "Delete the build artifact"
     internal: true

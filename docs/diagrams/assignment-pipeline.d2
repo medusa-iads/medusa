@@ -1,0 +1,104 @@
+grid-columns: 1
+
+title: Medusa assignment pipeline {
+  shape: text
+  near: top-center
+  style: {
+    font-size: 28
+    bold: true
+  }
+}
+
+phases: {
+  label: IadsNetwork · phases repeat, one per assignment tick
+  direction: right
+  style: {
+    fill: "#eaf2ff"
+    stroke: "#3767a6"
+    border-radius: 6
+  }
+
+  classify: "0 · Classification\nTrackClassifier updates TrackStore"
+  harm: "1 · HARM and point defense\nHarmDetectionService reads TrackStore"
+  assign: "2 · Assignment [A1]\nEMCON self-assign, WTA, and HOT retry\nActivate batteries and cue MANPAD groups"
+  maintain: "3 · Maintenance [M1]\nHandoff, deactivation, and HARM cleanup"
+  emcon: "4 · EMCON\nEmconService updates BatteryStore\nApply policy and decay effective Pk floor"
+
+  classify -> harm
+  harm -> assign
+  assign -> maintain
+  maintain -> emcon
+}
+
+detail: {
+  label: Assignment Flow
+  direction: down
+  style: {
+    fill: "#fffdf5"
+    stroke: "#8a7a42"
+    border-radius: 6
+  }
+
+  inputs: {
+    label: Injected context
+    direction: down
+    style: {
+      fill: "#f5f5f5"
+      stroke: "#666666"
+      border-radius: 6
+    }
+
+    a1: "A1 · Assignment phase" { shape: hexagon }
+    m1: "M1 · Maintenance phase" { shape: hexagon }
+    tracks: TrackStore
+    batteries: BatteryStore
+    grid: NetworkedGeoGrid
+    doctrine: Doctrine
+  }
+
+  tactics: "EngageTactics missile-slot policy\nSLS: one standard missile battery\nSID: one standard missile battery per role\nSS: two standard missile batteries\nSSF: two LR, MR, or generic; SR floods\nVLR: one separate slot\nAAA uses no missile slot; MANPAD is excluded" {
+    style.fill: "#f3f8f1"
+    style.stroke: "#5f7956"
+  }
+
+  work: {
+    label: Candidate selection and commit
+    direction: right
+
+    spatial: SpatialQuery
+    target: TargetAssigner
+    track: Battery.assignTrack
+
+    spatial -> target: nearby candidates
+    target -> track: commit assignment
+  }
+
+  inputs.a1 -> work.target: assign targets {
+    style.stroke: "#3767a6"
+    style.stroke-width: 3
+  }
+  inputs.m1 -> work.target: evaluate handoff and deactivation {
+    style.stroke: "#3767a6"
+    style.stroke-width: 3
+  }
+  inputs.tracks -> work.target: active tracks {
+    style.stroke: "#666666"
+    style.stroke-width: 3
+  }
+  inputs.batteries -> work.spatial: resolve battery IDs {
+    style.stroke: "#666666"
+    style.stroke-width: 3
+  }
+  inputs.grid -> work.spatial: radius queries {
+    style.stroke: "#76508c"
+    style.stroke-width: 3
+  }
+  inputs.doctrine -> tactics: selected tactic {
+    style.stroke: "#5f7956"
+    style.stroke-width: 3
+  }
+  tactics -> work.target: accept or reject slot {
+    style.stroke: "#5f7956"
+    style.stroke-width: 3
+  }
+}
