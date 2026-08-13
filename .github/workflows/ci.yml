@@ -1,6 +1,20 @@
 name: Medusa CI
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.lua"
+      - "**/*.py"
+      - "scripts/ci/**/*.js"
+      - ".github/workflows/ci.yml"
+      - ".buildrc"
+      - "**/*.toml"
+      - "**/.python-version"
+      - "**/Taskfile.yml"
+      - "tools/prometheus/**"
+      - "uv.lock"
   pull_request:
     branches:
       - main
@@ -8,12 +22,14 @@ on:
     paths:
       - "**/*.lua"
       - "**/*.py"
+      - "scripts/ci/**/*.js"
       - ".github/workflows/ci.yml"
       - ".buildrc"
       - "**/*.toml"
       - "**/.python-version"
       - "**/Taskfile.yml"
       - "tools/prometheus/**"
+      - "uv.lock"
   workflow_dispatch:
 
 permissions: {}
@@ -33,6 +49,7 @@ jobs:
   ci:
     name: CI
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: write
@@ -46,6 +63,13 @@ jobs:
       - name: Setup Python
         id: setup-python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+
+      - name: Setup uv
+        id: setup-uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.10.12"
+          enable-cache: false
 
       - name: Setup Task
         id: setup-task
@@ -73,6 +97,17 @@ jobs:
       - name: Test
         id: test
         run: task test
+
+      - name: Lua complexity
+        id: complexity
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          task complexity:check -- \
+            --base-ref "$BASE_SHA" \
+            --github-annotations \
+            --markdown-report "$RUNNER_TEMP/lua-complexity.md" \
+            --json-report "$RUNNER_TEMP/lua-complexity.json"
 
       - name: Observability checks
         id: o11y-check
@@ -145,54 +180,25 @@ jobs:
           selene-args: "--display-style Json"
           working-directory: "."
 
+      - name: Test CI PR comment
+        id: ci-comment-test
+        run: task ci:comment:test
+
       - name: Comment PR with results
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request'
+        env:
+          TEST_RESULT: ${{ steps.test.outcome }}
+          COMPLEXITY_RESULT: ${{ steps.complexity.outcome }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
+          SYNTAX_RESULT: ${{ steps.syntax-check.outcome }}
+          STAMP_RESULT: ${{ steps.version-stamp-check.outcome }}
+          LINT_THIN_RESULT: ${{ steps.lint-thin.outcome }}
+          LINT_BUNDLED_RESULT: ${{ steps.lint-bundled.outcome }}
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
         with:
           script: |
-            const testResult = '${{ steps.test.outcome }}';
-            const buildResult = '${{ steps.build.outcome }}';
-            const syntaxResult = '${{ steps.syntax-check.outcome }}';
-            const stampResult = '${{ steps.version-stamp-check.outcome }}';
-            const lintThinResult = '${{ steps.lint-thin.outcome }}';
-            const lintBundledResult = '${{ steps.lint-bundled.outcome }}';
-
-            const icon = (r) => r === 'success' ? '✅' : '❌';
-
-            let body = `## CI Results\n\n`;
-            body += `| Check | Result |\n|-------|--------|\n`;
-            body += `| Tests | ${icon(testResult)} ${testResult} |\n`;
-            body += `| Build | ${icon(buildResult)} ${buildResult} |\n`;
-            body += `| Syntax | ${icon(syntaxResult)} ${syntaxResult} |\n`;
-            body += `| Version stamp | ${icon(stampResult)} ${stampResult} |\n`;
-            body += `| Lint (thin) | ${icon(lintThinResult)} ${lintThinResult} |\n`;
-            body += `| Lint (bundled) | ${icon(lintBundledResult)} ${lintBundledResult} |\n`;
-
-            // Find and update existing CI comment or create new
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            const botComment = comments.find(c =>
-              c.user.type === 'Bot' && c.body.includes('## CI Results')
-            );
-
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: body,
-              });
-            }
+            const commentPrResults = require('./scripts/ci/comment_pr_results.js');
+            await commentPrResults({ github, context, env: process.env });
 
       - name: Compute artifact names
         id: compute-artifact-name

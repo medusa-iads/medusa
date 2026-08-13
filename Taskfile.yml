@@ -63,6 +63,22 @@ tasks:
       - "{{.SOURCE_DIR}}/**/*.lua"
       - "{{.TEST_DIR}}/**/*.lua"
 
+  complexity:check:
+    desc: "Report Lua complexity warnings"
+    preconditions:
+      - sh: command -v uv
+        msg: "uv 0.10.12 is required to run complexity checks"
+    cmds:
+      - uv run --locked --only-group quality python scripts/ci/lua_complexity.py {{.SOURCE_DIR}} {{.CLI_ARGS}}
+
+  ci:comment:test:
+    desc: "Test CI pull request comment reporting"
+    preconditions:
+      - sh: command -v node
+        msg: "Node.js is required to test CI pull request comment reporting"
+    cmds:
+      - node --test scripts/ci/comment_pr_results.test.js
+
   build:
     deps: [format, delete:artifact]
     desc: "Build the {{.PROJECT_NAME}} artifact"
@@ -93,6 +109,8 @@ tasks:
     cmds:
       - task: format:ci
       - task: test
+      - task: complexity:check
+      - task: ci:comment:test
       - task: lint
       - task: o11y:check
 
@@ -104,6 +122,10 @@ tasks:
       - "{{.SOURCE_DIR}}/**/*.lua"
       - "{{.TEST_DIR}}/**/*.lua"
       - "examples/**/*.lua"
+      - "scripts/ci/**/*.py"
+      - "scripts/ci/**/*.js"
+      - "pyproject.toml"
+      - "uv.lock"
 
   bump:major:
     desc: "Bump the major version"
