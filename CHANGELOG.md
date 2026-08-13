@@ -9,6 +9,18 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+### Deprecated
+
+
+## [1.2.0] - 2026-08-12
+### Added
+
 - Managed MANPAD groups with autonomous detection and engagement, coordinated wake behavior, ammunition and rearm handling, and tactical-map and Prometheus observability.
 
 ### Changed
@@ -95,7 +107,8 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Added
 	- Initial Release
 
-[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/medusa-iads/medusa/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/medusa-iads/medusa/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/medusa-iads/medusa/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/medusa-iads/medusa/compare/v1.1.0...v1.1.1
