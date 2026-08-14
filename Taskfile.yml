@@ -13,6 +13,8 @@ vars:
   STYLUA_BIN_WIN: ./tools/stylua/stylua.exe
   SELENE_BIN: ./tools/selene/selene
   SELENE_BIN_WIN: ./tools/selene/selene.exe
+  SELENE_BUNDLED_CONFIG: selene-bundled.toml
+  SELENE_CONFIG: selene.toml
   LUAUNIT_BIN: ./tools/luaunit/luaunit.lua
   TEST_DIR: ./tests
   PYTHON_BIN: python
@@ -48,12 +50,37 @@ tasks:
 
   lint:
     deps: [build]
-    desc: "Run Selene on build artifact"
+    desc: "Run Selene on build artifacts"
     cmds:
-      - cmd: "{{.SELENE_BIN}} --allow-warnings --config selene.toml {{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
+      - task: lint:artifacts
+
+  lint:artifacts:
+    desc: "Run Selene on existing build artifacts"
+    cmds:
+      - task: lint:thin
+      - task: lint:bundled
+
+  lint:thin:
+    desc: "Run Selene on the thin build artifact"
+    cmds:
+      - cmd: "{{.SELENE_BIN}} --allow-warnings --config {{.SELENE_CONFIG}} {{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
         platforms: [linux, darwin]
-      - cmd: "{{.SELENE_BIN_WIN}} --allow-warnings --config selene.toml {{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
+      - cmd: "{{.SELENE_BIN_WIN}} --allow-warnings --config {{.SELENE_CONFIG}} {{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
         platforms: [windows]
+
+  lint:bundled:
+    desc: "Run Selene on the bundled build artifact"
+    cmds:
+      - cmd: "{{.SELENE_BIN}} --allow-warnings --config {{.SELENE_BUNDLED_CONFIG}} {{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}"
+        platforms: [linux, darwin]
+      - cmd: "{{.SELENE_BIN_WIN}} --allow-warnings --config {{.SELENE_BUNDLED_CONFIG}} {{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}"
+        platforms: [windows]
+
+  syntax:check:
+    desc: "Parse build artifacts with Lua 5.1"
+    cmds:
+      - 'luac -p "{{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"'
+      - 'luac -p "{{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}"'
 
   test:
     desc: "Run tests with LuaUnit"
@@ -124,7 +151,9 @@ tasks:
       - task: test
       - task: complexity:check
       - task: ci:comment:test
-      - task: lint
+      - task: build
+      - task: syntax:check
+      - task: lint:artifacts
       - task: o11y:check
 
   ci:watch:

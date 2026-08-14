@@ -561,7 +561,12 @@ local function makeWorldTarget(coalitionId, category, active, position, unitName
 			return active
 		end,
 		getPosition = function()
-			return { p = position, x = { x = 1, y = 0, z = 0 } }
+			return {
+				p = position,
+				x = { x = 1, y = 0, z = 0 },
+				y = { x = 0, y = 1, z = 0 },
+				z = { x = 0, y = 0, z = 1 },
+			}
 		end,
 	}
 end

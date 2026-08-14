@@ -129,6 +129,60 @@ globals:
     - type: table
       required: false
     - type: number
+  GetReciprocalRunwayName:
+    args:
+    - type: any
+  NormalizeDirectionalRunways:
+    args:
+    - type: string
+    - type: table
+    - type: number
+      required: false
+  GetDirectionalRunways:
+    args:
+    - type: table
+    - type: number
+      required: false
+  GetRunwayRelativePosition:
+    args:
+    - type: table
+    - type: table
+  GetRunwayRelativeVelocity:
+    args:
+    - type: table
+    - type: table
+  GetRunwayLineupError:
+    args:
+    - type: table
+    - type: table
+    - type: number
+      required: false
+  GetRunwayGlidepathAngle:
+    args:
+    - type: table
+    - type: table
+    - type: number
+    - type: number
+      required: false
+  GetHeadwindComponent:
+    args:
+    - type: table
+    - type: number
+  SelectRunwayByHeadwind:
+    args:
+    - type: table
+    - type: table
+  FindNearestRunway:
+    args:
+    - type: table
+    - type: table
+  GetAllAirbases:
+    args: []
+  FindAirbasesWithin:
+    args:
+    - type: table
+    - type: table
+    - type: number
   GetWind:
     args:
     - type: table
@@ -141,6 +195,21 @@ globals:
     args:
     - type: table
       required: false
+  CalculateIsaAtmosphere:
+    args:
+    - type: number
+  GetAirData:
+    args:
+    - type: table
+  MachFromTrueAirspeed:
+    args:
+    - type: number
+    - type: number
+  TrueAirspeedToCalibratedAirspeed:
+    args:
+    - type: number
+    - type: number
+    - type: number
   GetWindKnots:
     args:
     - type: table
@@ -157,6 +226,12 @@ globals:
     args:
     - type: table
   GetPressurehPa:
+    args:
+    - type: table
+  GetWindHeading:
+    args:
+    - type: table
+  GetWindSpeed:
     args:
     - type: table
   ClearAllCaches:
@@ -229,6 +304,8 @@ globals:
   GetCoalitionPlayers:
     args:
     - type: any
+  GetAllPlayerUnits:
+    args: []
   GetCoalitionGroups:
     args:
     - type: number
@@ -273,6 +350,21 @@ globals:
     args:
     - type: any
     - type: any
+  GetAllShips:
+    args: []
+  GetAllAircraftGroups:
+    args: []
+  BuildGroundWaypoint:
+    args:
+    - type: table
+    - type: string
+      required: false
+    - type: number
+      required: false
+  GoRoute:
+    args:
+    - type: string
+    - type: table
   GetControllerDomain:
     args:
     - type: table
@@ -496,19 +588,6 @@ globals:
       required: false
     - type: number
       required: false
-  CreateFireAtPointTask:
-    args:
-    - type: table
-    - type: number
-      required: false
-    - type: number
-      required: false
-    - type: bool
-      required: false
-    - type: number
-      required: false
-    - type: bool
-      required: false
   CreateBombingRunwayTask:
     args:
     - type: number
@@ -531,6 +610,34 @@ globals:
       required: false
   CreateRefuelingTask:
     args: []
+  CreateFACAttackGroupTask:
+    args:
+    - type: number
+    - type: number
+      required: false
+    - type: any
+      required: false
+    - type: bool
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+    - type: number
+      required: false
+  CreateFireAtPointTask:
+    args:
+    - type: table
+    - type: number
+      required: false
+    - type: number
+      required: false
+    - type: bool
+      required: false
+    - type: number
+      required: false
+    - type: bool
+      required: false
   CreateHoldTask:
     args:
     - type: any
@@ -626,6 +733,26 @@ globals:
         display: number|string
     - type: string
     - type: string
+  GetTacanFrequency:
+    args:
+    - type: number
+    - type: string
+  ConvertKiasToGroundSpeed:
+    args:
+    - type: number
+    - type: number
+    - type: table
+      required: false
+    - type: number
+      required: false
+  ConvertKiasToMps:
+    args:
+    - type: number
+    - type: number
+    - type: table
+      required: false
+    - type: number
+      required: false
   LOtoLL:
     args:
     - type: table
@@ -641,7 +768,22 @@ globals:
   MGRStoLO:
     args:
     - type: string
+  DecimalToDMS:
+    args:
+    - type: number
+  GetLatLonOrientation:
+    args:
+    - type: number
+    - type: number
+  CoordToMGRS:
+    args:
+    - type: number
+    - type: number
+    - type: number
+      required: false
   Queue:
+    args: []
+  TimeWeightedStats:
     args: []
   Stack:
     args: []
@@ -712,7 +854,7 @@ globals:
     args: []
   EventBus:
     args:
-    - type: any
+    - type: function
       required: false
   CreateHarnessWorldEventBus:
     args: []
@@ -776,10 +918,21 @@ globals:
   ClearFlags:
     args:
     - type: table
+  AirRelativeVelocity:
+    args:
+    - type: table
+    - type: table
+  GetAerodynamicAngles:
+    args:
+    - type: table
+    - type: table
+    - type: number
+      required: false
   GeoGrid:
     args:
-    - type: any
-    - type: any
+    - type: number
+      required: false
+    - type: table
   DegToRad:
     args:
     - type: number
@@ -814,6 +967,26 @@ globals:
         display: table|Vec2|Vec3
     - type: number
     - type: number
+  HeadingVector2D:
+    args:
+    - type: number
+  GroundTrackFromVelocity:
+    args:
+    - type: table
+    - type: number
+      required: false
+  HeadingFrame2D:
+    args:
+    - type: table
+    - type: number
+  ProjectPointToHeadingFrame2D:
+    args:
+    - type: table
+    - type: table
+  ProjectVectorToHeadingFrame2D:
+    args:
+    - type: table
+    - type: table
   MidPoint:
     args:
     - type:
@@ -830,7 +1003,7 @@ globals:
   NormalizeVector2D:
     args:
     - type:
-        display: table|Vec2
+        display: table|Vec2|Vec3
   NormalizeVector3D:
     args:
     - type:
@@ -1097,6 +1270,9 @@ globals:
   NormalizeAngle:
     args:
     - type: number
+  InverseHeading:
+    args:
+    - type: number
   AngleDiff:
     args:
     - type: number
@@ -1179,6 +1355,26 @@ globals:
   CreateMenuPath:
     args:
     - type: any
+  GetMissionFileCapabilities:
+    args: []
+  SanitizeFilenameComponent:
+    args:
+    - type: any
+    - type: number
+      required: false
+  EnsureMissionDirectory:
+    args:
+    - type: string
+  WriteMissionTextFile:
+    args:
+    - type: string
+    - type: string
+  WriteUniqueMissionTextFile:
+    args:
+    - type: string
+    - type: string
+    - type: number
+      required: false
   SendChat:
     args:
     - type: string
@@ -1189,8 +1385,15 @@ globals:
     - type: number
     - type: number
       required: false
-  GetPlayers:
+  GetPlayerIds:
     args: []
+  GetPlayerInfos:
+    args: []
+  FindPlayerInfosByName:
+    args:
+    - type: string
+    - type: table
+      required: false
   GetPlayerInfo:
     args:
     - type: number
@@ -1566,7 +1769,8 @@ globals:
       required: false
   OutTextForUnit:
     args:
-    - type: number
+    - type:
+        display: number|string
     - type: string
     - type: number
       required: false
@@ -1689,6 +1893,96 @@ globals:
       required: false
     - type: string
       required: false
+  LineToAll:
+    args:
+    - type: number
+    - type: table
+    - type: table
+    - type: table
+      required: false
+    - type: number
+      required: false
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  CircleToAll:
+    args:
+    - type: number
+    - type: table
+    - type: number
+    - type: table
+      required: false
+    - type: table
+      required: false
+    - type: number
+      required: false
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  RectToAll:
+    args:
+    - type: number
+    - type: table
+    - type: table
+    - type: table
+      required: false
+    - type: table
+      required: false
+    - type: number
+      required: false
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  QuadToAll:
+    args:
+    - type: number
+    - type: table
+    - type: table
+    - type: table
+    - type: table
+    - type: table
+      required: false
+    - type: table
+      required: false
+    - type: number
+      required: false
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  TextToAll:
+    args:
+    - type: number
+    - type: string
+    - type: table
+    - type: table
+      required: false
+    - type: table
+      required: false
+    - type: number
+      required: false
+    - type: bool
+      required: false
+    - type: string
+      required: false
+  ArrowToAll:
+    args:
+    - type: number
+    - type: table
+    - type: table
+    - type: table
+      required: false
+    - type: table
+      required: false
+    - type: number
+      required: false
+    - type: bool
+      required: false
+    - type: string
+      required: false
   SetAITask:
     args:
     - type: table
@@ -1728,16 +2022,32 @@ globals:
   UnitExists:
     args:
     - type: string
+  GetUnitPosition3:
+    args:
+    - type:
+        display: string|table
+  GetAttitudeFromPosition3:
+    args:
+    - type: table
   GetUnitPosition:
     args:
     - type:
         display: string|table
   GetUnitHeading:
     args:
+    - type:
+        display: string|table
+  GetUnitOrientation:
+    args:
+    - type:
+        display: string|table
+  GetUnitPositionAndHeading:
+    args:
     - type: string
   GetUnitVelocity:
     args:
-    - type: string
+    - type:
+        display: string|table
   GetUnitSpeedMps:
     args:
     - type: string
@@ -1786,7 +2096,8 @@ globals:
     - type: string
   GetUnitID:
     args:
-    - type: table
+    - type:
+        display: string|table
   GetUnitNumber:
     args:
     - type: table
@@ -1873,6 +2184,9 @@ globals:
   UnitHasCarrier:
     args:
     - type: table
+  IsSuperCarrier:
+    args:
+    - type: table
   GetUnitNearestCargosForAircraft:
     args:
     - type: table
@@ -1884,8 +2198,14 @@ globals:
     - type: table
   GetUnitDrawArgument:
     args:
-    - type: table
+    - type:
+        display: string|table
     - type: number
+  GetUnitDrawArguments:
+    args:
+    - type:
+        display: string|table
+    - type: table
   GetUnitCommunicator:
     args:
     - type: table
@@ -1909,6 +2229,9 @@ globals:
     - type: number
       required: false
   IsVec3:
+    args:
+    - type: any
+  IsNotAtMapOrigin:
     args:
     - type: any
   IsVec2:
@@ -2110,6 +2433,9 @@ globals:
     args: []
   GetWorldAirbases:
     args: []
+  GetWorldEventUnit:
+    args:
+    - type: table
   SearchWorldObjects:
     args:
     - type: number
@@ -2245,3 +2571,5 @@ globals:
     args: []
   HarnessWorldEventBus:
     property: new-fields
+  HarnessConstants:
+    property: read-only

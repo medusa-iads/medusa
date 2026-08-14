@@ -43,8 +43,8 @@ end
 --- Test whether a position is inside any of the given border zone polygons.
 --- Uses the harness PointInPolygon2D ray-casting algorithm (odd crossings = inside).
 --- Returns true on first match.
---- @param borderPolygons table[] List of polygon tables, each a list of {x, z} points
---- @param pos table Position with .x and .z fields
+--- @param borderPolygons table[] List of polygon tables, each a list of ground Vec3 points
+--- @param pos table Vec3 position
 --- @return boolean inside True if pos is inside any border polygon
 function Medusa.Services.SpatialQuery.pointInBorderZones(borderPolygons, pos)
 	for i = 1, #borderPolygons do

@@ -28,7 +28,12 @@ local function makeMockUnit(id, name, desc)
 			return name
 		end,
 		getPosition = function()
-			return { p = { x = 100, y = 50, z = 200 } }
+			return {
+				p = { x = 100, y = 50, z = 200 },
+				x = { x = 1, y = 0, z = 0 },
+				y = { x = 0, y = 1, z = 0 },
+				z = { x = 0, y = 0, z = 1 },
+			}
 		end,
 		getDesc = function()
 			return desc or {}

@@ -71,8 +71,8 @@ function Medusa.Services.PkModel.computePkAspect(track, batteryPos)
 	if speed < 0.1 then
 		return 1.0
 	end
-	local dir = { x = track.Position.x - batteryPos.x, z = track.Position.z - batteryPos.z }
-	local velXZ = { x = vel.x, z = vel.z }
+	local dir = { x = track.Position.x - batteryPos.x, y = 0, z = track.Position.z - batteryPos.z }
+	local velXZ = { x = vel.x, y = 0, z = vel.z }
 	local normDir = NormalizeVector2D(dir)
 	local normVel = NormalizeVector2D(velXZ)
 	-- cosAngle: +1 = head-on, 0 = beam/crossing, -1 = tail-chase

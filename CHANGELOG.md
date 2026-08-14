@@ -15,6 +15,7 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Updated the bundled dcs-harness dependency to 1.0.0-rc2 and migrated ground-plane geometry to its DCS Vec2 and Vec3 contracts.
 - `EngageTactics` limits now count missile batteries only; AAA assignments do not consume or block missile-battery slots.
 - Local MANPAD and independent AAA groups now use a separate spatial index so they do not enlarge long-range IADS candidate queries.
 - Radar-directed AAA that loses its search radar now releases its target and point-defense assignments before switching to independent behavior.
