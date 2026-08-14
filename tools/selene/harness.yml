@@ -419,8 +419,7 @@ globals:
   ControllerSetReactionOnThreat:
     args:
     - type: table
-    - type:
-        display: integer|ReactionOnThreat
+    - type: any
   ControllerSetRadarUsing:
     args:
     - type: table
@@ -480,8 +479,7 @@ globals:
   ControllerSetMissileAttack:
     args:
     - type: table
-    - type:
-        display: integer|MissileAttackMode
+    - type: any
   GetControllerDetectedTargets:
     args:
     - type: table
@@ -653,84 +651,67 @@ globals:
       required: false
   CtoK:
     args:
-    - type:
-        display: number|string
+    - type: any
   KtoC:
     args:
-    - type:
-        display: number|string
+    - type: any
   CtoF:
     args:
-    - type:
-        display: number|string
+    - type: any
   FtoC:
     args:
-    - type:
-        display: number|string
+    - type: any
   KtoF:
     args:
-    - type:
-        display: number|string
+    - type: any
   FtoK:
     args:
-    - type:
-        display: number|string
+    - type: any
   PaToInHg:
     args:
-    - type:
-        display: number|string
+    - type: any
   InHgToPa:
     args:
-    - type:
-        display: number|string
+    - type: any
   PaTohPa:
     args:
-    - type:
-        display: number|string
+    - type: any
   hPaToPa:
     args:
-    - type:
-        display: number|string
+    - type: any
   MetersToFeet:
     args:
-    - type: number
+    - type: any
   FeetToMeters:
     args:
-    - type: number
+    - type: any
   MpsToKnots:
     args:
-    - type:
-        display: number|string
+    - type: any
   KnotsToMps:
     args:
-    - type:
-        display: number|string
+    - type: any
   GetSpeedIAS:
     args:
-    - type:
-        display: number|string
+    - type: any
   ConvertTemperature:
     args:
-    - type:
-        display: number|string
+    - type: any
     - type: string
     - type: string
   ConvertPressure:
     args:
-    - type:
-        display: number|string
+    - type: any
     - type: string
     - type: string
   ConvertDistance:
     args:
-    - type:
-        display: number|string
+    - type: any
     - type: string
     - type: string
   ConvertSpeed:
     args:
-    - type:
-        display: number|string
+    - type: any
     - type: string
     - type: string
   GetTacanFrequency:
@@ -945,26 +926,17 @@ globals:
   MetersToNauticalMiles:
     args:
     - type: number
-  Distance2D:
-    args:
-    - type: table
-    - type: table
   Distance3D:
     args:
-    - type:
-        display: table|Vec3
-    - type:
-        display: table|Vec3
+    - type: any
+    - type: any
   BearingBetween:
     args:
-    - type:
-        display: table|Vec2|Vec3
-    - type:
-        display: table|Vec2|Vec3
+    - type: any
+    - type: any
   DisplacePoint2D:
     args:
-    - type:
-        display: table|Vec2|Vec3
+    - type: any
     - type: number
     - type: number
   HeadingVector2D:
@@ -989,49 +961,35 @@ globals:
     - type: table
   MidPoint:
     args:
-    - type:
-        display: table|Vec2|Vec3
-    - type:
-        display: table|Vec2|Vec3
+    - type: any
+    - type: any
   RotatePoint2D:
     args:
-    - type:
-        display: table|Vec2|Vec3
-    - type:
-        display: table|Vec2|Vec3
+    - type: any
+    - type: any
     - type: number
   NormalizeVector2D:
     args:
-    - type:
-        display: table|Vec2|Vec3
+    - type: any
   NormalizeVector3D:
     args:
-    - type:
-        display: table|Vec3
+    - type: any
   DotProduct2D:
     args:
-    - type:
-        display: table|Vec2
-    - type:
-        display: table|Vec2
+    - type: any
+    - type: any
   DotProduct3D:
     args:
-    - type:
-        display: table|Vec3
-    - type:
-        display: table|Vec3
+    - type: any
+    - type: any
   CrossProduct3D:
     args:
-    - type:
-        display: table|Vec3
-    - type:
-        display: table|Vec3
+    - type: any
+    - type: any
   AngleBetweenVectors2D:
     args:
-    - type:
-        display: table|Vec2
-    - type:
-        display: table|Vec2
+    - type: any
+    - type: any
   PointInPolygon2D:
     args:
     - type: any
@@ -1769,8 +1727,7 @@ globals:
       required: false
   OutTextForUnit:
     args:
-    - type:
-        display: number|string
+    - type: any
     - type: string
     - type: number
       required: false
@@ -2024,30 +1981,25 @@ globals:
     - type: string
   GetUnitPosition3:
     args:
-    - type:
-        display: string|table
+    - type: any
   GetAttitudeFromPosition3:
     args:
     - type: table
   GetUnitPosition:
     args:
-    - type:
-        display: string|table
+    - type: any
   GetUnitHeading:
     args:
-    - type:
-        display: string|table
+    - type: any
   GetUnitOrientation:
     args:
-    - type:
-        display: string|table
+    - type: any
   GetUnitPositionAndHeading:
     args:
     - type: string
   GetUnitVelocity:
     args:
-    - type:
-        display: string|table
+    - type: any
   GetUnitSpeedMps:
     args:
     - type: string
@@ -2068,8 +2020,7 @@ globals:
     - type: string
   GetUnitCoalition:
     args:
-    - type:
-        display: string|table
+    - type: any
   GetUnitCountry:
     args:
     - type: string
@@ -2096,8 +2047,7 @@ globals:
     - type: string
   GetUnitID:
     args:
-    - type:
-        display: string|table
+    - type: any
   GetUnitNumber:
     args:
     - type: table
@@ -2198,13 +2148,11 @@ globals:
     - type: table
   GetUnitDrawArgument:
     args:
-    - type:
-        display: string|table
+    - type: any
     - type: number
   GetUnitDrawArguments:
     args:
-    - type:
-        display: string|table
+    - type: any
     - type: table
   GetUnitCommunicator:
     args:
@@ -2214,15 +2162,13 @@ globals:
     - type: table
   Vec2:
     args:
-    - type:
-        display: number|table
+    - type: any
       required: false
     - type: number
       required: false
   Vec3:
     args:
-    - type:
-        display: number|table
+    - type: any
       required: false
     - type: number
       required: false
@@ -2282,6 +2228,10 @@ globals:
     - type: table
     - type: table
   Distance:
+    args:
+    - type: table
+    - type: table
+  Distance2D:
     args:
     - type: table
     - type: table
