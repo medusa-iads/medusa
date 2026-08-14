@@ -28,7 +28,7 @@ local _logger = Medusa.Logger:ns("AirspaceService")
 
 --- Discover border zone polygons from ME trigger zones and drawings.
 --- @param zoneNames string[] List of zone/drawing names to find
---- @return table[] polygons List of polygon tables, each a list of {x, z} points
+--- @return table[] polygons List of polygon tables, each a list of ground Vec3 points
 function Medusa.Services.AirspaceService.discover(zoneNames)
 	local polygons = {}
 	if not zoneNames or #zoneNames == 0 then
@@ -56,7 +56,7 @@ function Medusa.Services.AirspaceService.discover(zoneNames)
 						local poly = {}
 						for s = 0, 31 do
 							local angle = (s / 32) * 2 * math.pi
-							poly[#poly + 1] = { x = cx + r * math.cos(angle), z = cz + r * math.sin(angle) }
+							poly[#poly + 1] = { x = cx + r * math.cos(angle), y = 0, z = cz + r * math.sin(angle) }
 						end
 						polygons[#polygons + 1] = poly
 						found[zone.name] = true
@@ -67,7 +67,7 @@ function Medusa.Services.AirspaceService.discover(zoneNames)
 					if verts and #verts > 0 then
 						local poly = {}
 						for v = 1, #verts do
-							poly[#poly + 1] = { x = verts[v].x, z = verts[v].y }
+							poly[#poly + 1] = { x = verts[v].x, y = 0, z = verts[v].y }
 						end
 						polygons[#polygons + 1] = poly
 						found[zone.name] = true
@@ -95,7 +95,11 @@ function Medusa.Services.AirspaceService.discover(zoneNames)
 						if pts and #pts >= 3 then
 							local poly = {}
 							for p = 1, #pts do
-								poly[#poly + 1] = { x = mapX + (pts[p].x or 0), z = mapY + (pts[p].y or 0) }
+								poly[#poly + 1] = {
+									x = mapX + (pts[p].x or 0),
+									y = 0,
+									z = mapY + (pts[p].y or 0),
+								}
 							end
 							polygons[#polygons + 1] = poly
 							found[obj.name] = true
@@ -149,10 +153,10 @@ function Medusa.Services.AirspaceService.computeADIZ(borderPolygons, bufferNm)
 		local dz = allPoints[i].z - cz
 		local dist = math.sqrt(dx * dx + dz * dz)
 		if dist < 1 then
-			expanded[#expanded + 1] = { x = allPoints[i].x + bufferM, z = allPoints[i].z }
+			expanded[#expanded + 1] = { x = allPoints[i].x + bufferM, y = 0, z = allPoints[i].z }
 		else
 			local scale = (dist + bufferM) / dist
-			expanded[#expanded + 1] = { x = cx + dx * scale, z = cz + dz * scale }
+			expanded[#expanded + 1] = { x = cx + dx * scale, y = 0, z = cz + dz * scale }
 		end
 	end
 
@@ -165,7 +169,7 @@ end
 
 --- Pre-convert border polygon vertices from DCS world coords to lat/lon.
 --- Called once at init to avoid repeated pcall(coord.LOtoLL) in metrics export.
---- @param borderPolygons table[] List of border polygon vertex lists in DCS {x, z} coords
+--- @param borderPolygons table[] List of border polygon vertex lists in DCS Vec3 coordinates
 --- @return table[] latLonPolygons Parallel list of polygons with {lat, lon} vertices
 function Medusa.Services.AirspaceService.convertToLatLon(borderPolygons)
 	local result = {}

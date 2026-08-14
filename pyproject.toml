@@ -5,3 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
+
+[dependency-groups]
+quality = [
+    "lizard==1.23.0",
+]
+
+[tool.uv]
+required-version = "==0.10.12"

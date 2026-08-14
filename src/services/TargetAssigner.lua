@@ -2,6 +2,7 @@ require("_header")
 require("services.Services")
 require("services.PkModel")
 require("services.SpatialQuery")
+require("entities.Battery")
 require("core.Constants")
 require("core.Logger")
 
@@ -35,8 +36,8 @@ Medusa.Services.TargetAssigner._survive = {}
 local _survive = Medusa.Services.TargetAssigner._survive
 Medusa.Services.TargetAssigner._assigned = {}
 local _assigned = Medusa.Services.TargetAssigner._assigned
-Medusa.Services.TargetAssigner._trackRoleTiers = {}
-local _trackRoleTiers = Medusa.Services.TargetAssigner._trackRoleTiers
+Medusa.Services.TargetAssigner._trackRoleCounts = {}
+local _trackRoleCounts = Medusa.Services.TargetAssigner._trackRoleCounts
 Medusa.Services.TargetAssigner._saturationPairsByBattery = {}
 local _saturationPairsByBattery = Medusa.Services.TargetAssigner._saturationPairsByBattery
 local computePk = Medusa.Services.PkModel.computePk
@@ -44,6 +45,13 @@ local computePk = Medusa.Services.PkModel.computePk
 local ROE = Medusa.Constants.ROEState
 local TI = Medusa.Constants.TrackIdentification
 local ECP = Medusa.Constants.EmissionControlPolicy
+local BR = Medusa.Constants.BatteryRole
+local STANDARD_MISSILE_SLOT_ROLES = {
+	[BR.LR_SAM] = true,
+	[BR.MR_SAM] = true,
+	[BR.SR_SAM] = true,
+	[BR.GENERIC_SAM] = true,
+}
 
 local function clearTable(t)
 	for k in pairs(t) do
@@ -76,6 +84,8 @@ local function isBatteryEligible(battery)
 	local AS = Medusa.Constants.ActivationState
 	local BOS = Medusa.Constants.BatteryOperationalStatus
 	return (battery.ActivationState == AS.STATE_COLD or battery.ActivationState == AS.STATE_WARM)
+		and battery.Role ~= BR.MANPAD
+		and not Medusa.Entities.Battery.isIndependentAaa(battery)
 		and battery.OperationalStatus == BOS.ACTIVE
 		and battery.Position
 		and battery.EngagementRangeMax
@@ -195,41 +205,59 @@ end
 --- Builds sparse battery-track candidate pairs via GeoGrid spatial queries.
 local CET = Medusa.Constants.CoordinatedEngagementTactics
 
-local BR = Medusa.Constants.BatteryRole
+local function roleCount(trackId, role)
+	local counts = _trackRoleCounts[trackId]
+	return counts and counts[role] or 0
+end
+
+local function standardMissileSlotCount(trackId)
+	local count = 0
+	for role in pairs(STANDARD_MISSILE_SLOT_ROLES) do
+		count = count + roleCount(trackId, role)
+	end
+	return count
+end
+
+local function recordRoleAssignment(trackId, role)
+	if role == BR.AAA or role == BR.MANPAD then
+		return
+	end
+	local counts = _trackRoleCounts[trackId]
+	if not counts then
+		counts = {}
+		_trackRoleCounts[trackId] = counts
+	end
+	counts[role] = (counts[role] or 0) + 1
+end
 
 local function trackAcceptsBattery(track, batteryRole, ctx)
-	if not track.AssignedBatteryIds or track.AssignedBatteryIds:isEmpty() then
+	if batteryRole == BR.AAA then
 		return true
 	end
+	if batteryRole == BR.MANPAD then
+		return false
+	end
 	local tactics = ctx.doctrine.EngageTactics or CET.SHOOT_LOOK_SHOOT
-	-- VLR_SAMs always SHOOT_LOOK_SHOOT among themselves, independent of doctrine tactic
 	if batteryRole == BR.VLR_SAM then
-		local tiers = _trackRoleTiers[track.TrackId]
-		return not tiers or not tiers[BR.VLR_SAM]
+		return roleCount(track.TrackId, BR.VLR_SAM) == 0
+	end
+	if tactics == CET.SHOOT_LOOK_SHOOT then
+		return standardMissileSlotCount(track.TrackId) == 0
 	end
 	if tactics == CET.SHOOT_IN_DEPTH then
-		local tiers = _trackRoleTiers[track.TrackId]
-		return not tiers or not tiers[batteryRole]
+		return roleCount(track.TrackId, batteryRole) == 0
 	end
 	if tactics == CET.SHOOT_SHOOT then
-		return track.AssignedBatteryIds:size() < 2
+		return standardMissileSlotCount(track.TrackId) < 2
 	end
 	if tactics == CET.SHOOT_SHOOT_FLOOD then
-		if batteryRole == BR.SR_SAM or batteryRole == BR.AAA then
+		if batteryRole == BR.SR_SAM then
 			return true
 		end
-		-- LR/MR capped at 2, counted separately from SR/AAA
-		local lrMrCount = 0
-		local tiers = _trackRoleTiers[track.TrackId]
-		if tiers then
-			if tiers[BR.LR_SAM] then
-				lrMrCount = lrMrCount + 1
-			end
-			if tiers[BR.MR_SAM] then
-				lrMrCount = lrMrCount + 1
-			end
-		end
-		return lrMrCount < 2
+		return roleCount(track.TrackId, BR.LR_SAM)
+				+ roleCount(track.TrackId, BR.MR_SAM)
+				+ roleCount(track.TrackId, BR.GENERIC_SAM)
+			< 2
 	end
 	return false
 end
@@ -239,7 +267,6 @@ local function buildCandidatePairs(tracks, ctx, minId)
 		_pairBuffer[i] = nil
 	end
 	local LS = Medusa.Constants.TrackLifecycleState
-	local tactics = ctx.doctrine.EngageTactics or CET.SHOOT_LOOK_SHOOT
 	local n = 0
 
 	local AAT = Medusa.Constants.AssessedAircraftType
@@ -248,7 +275,6 @@ local function buildCandidatePairs(tracks, ctx, minId)
 		if track.AssessedAircraftType == AAT.HARM then
 			-- HARMs are handled by HarmResponseService + PointDefenseService, not WTA
 		elseif track.LifecycleState == LS.ACTIVE and meetsMinIdentification(track.TrackIdentification, minId) then
-			local hasRoom = tactics ~= CET.SHOOT_LOOK_SHOOT or track.AssignedBatteryIds:isEmpty()
 			local threatValue = computeThreatValue(track, ctx)
 			local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(
 				ctx.geoGrid,
@@ -257,9 +283,7 @@ local function buildCandidatePairs(tracks, ctx, minId)
 				ctx.maxRange
 			)
 			for j = 1, #batteries do
-				if
-					(hasRoom or batteries[j].Role == BR.VLR_SAM) and trackAcceptsBattery(track, batteries[j].Role, ctx)
-				then
+				if trackAcceptsBattery(track, batteries[j].Role, ctx) then
 					n = tryAddPair(batteries[j], track, threatValue, n, ctx)
 				end
 			end
@@ -349,7 +373,6 @@ function Medusa.Services.TargetAssigner.emconSelfAssign(ctx)
 	local emcon = doctrine.EMCON
 	local batteries = ctx.batteryStore:getAll(_batteryBuffer)
 	local AS = Medusa.Constants.ActivationState
-	local BOS = Medusa.Constants.BatteryOperationalStatus
 	local assignments = {}
 
 	for i = 1, #batteries do
@@ -377,18 +400,13 @@ function Medusa.Services.TargetAssigner.emconSelfAssign(ctx)
 	return assignments
 end
 
-local function _buildRoleTierMap(batteryStore)
-	clearTable(_trackRoleTiers)
+local function _buildRoleCounts(batteryStore)
+	clearTable(_trackRoleCounts)
 	local allBatts = batteryStore:getAll(_batteryBuffer)
 	for i = 1, #allBatts do
 		local b = allBatts[i]
 		if b.CurrentTargetTrackId then
-			local tiers = _trackRoleTiers[b.CurrentTargetTrackId]
-			if not tiers then
-				tiers = {}
-				_trackRoleTiers[b.CurrentTargetTrackId] = tiers
-			end
-			tiers[b.Role] = true
+			recordRoleAssignment(b.CurrentTargetTrackId, b.Role)
 		end
 	end
 end
@@ -396,6 +414,18 @@ end
 local function _initGreedyState()
 	clearTable(_survive)
 	clearTable(_assigned)
+end
+
+local function commitAssignment(battery, track, pk, now, assignments, affectsSurvival)
+	Medusa.Entities.Battery.assignTrack(battery, track, now)
+	recordRoleAssignment(track.TrackId, battery.Role)
+	track.AssignmentTime = now
+	_assigned[battery.BatteryId] = true
+	if affectsSurvival then
+		local survival = _survive[track.TrackId] or 1.0
+		_survive[track.TrackId] = survival * (1 - pk)
+	end
+	assignments[#assignments + 1] = { batteryId = battery.BatteryId, trackId = track.TrackId }
 end
 
 --- SEAD priority: force-assign best-Pk battery to HARM/SEAD threats before greedy loop.
@@ -410,7 +440,7 @@ local function _assignSeadPriority(tracks, ctx, minId, assignments)
 			track.LifecycleState == LS.ACTIVE
 			and (track.AssessedAircraftType == AAT.HARM or track.IsSeadThreat)
 			and meetsMinIdentification(track.TrackIdentification, minId)
-			and (not track.AssignedBatteryIds or track.AssignedBatteryIds:isEmpty())
+			and standardMissileSlotCount(track.TrackId) == 0
 		then
 			local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(
 				ctx.geoGrid,
@@ -439,14 +469,7 @@ local function _assignSeadPriority(tracks, ctx, minId, assignments)
 				end
 			end
 			if bestBat and bestPk >= pkFloor then
-				-- Set target before timestamp: handoff dwell checks read LastAssignmentChangeTime
-				Medusa.Entities.Battery.assignTrack(bestBat, track, ctx.now)
-				track.AssignmentTime = ctx.now
-				_assigned[bestBat.BatteryId] = true
-				-- Cumulative survival: P(survives) = product of (1 - Pk) across all assigned batteries
-				local surv = _survive[track.TrackId] or 1.0
-				_survive[track.TrackId] = surv * (1 - bestPk)
-				assignments[#assignments + 1] = { batteryId = bestBat.BatteryId, trackId = track.TrackId }
+				commitAssignment(bestBat, track, bestPk, ctx.now, assignments, bestBat.Role ~= BR.AAA)
 				_logger:info(
 					string.format(
 						"SEAD priority: battery %s to track %s (pk=%.2f)",
@@ -481,24 +504,9 @@ local function _greedyAssign(pairCount, ctx, assignments)
 			break
 		end
 		local best = _pairBuffer[bestIdx]
-		_assigned[best.battery.BatteryId] = true
-		Medusa.Entities.Battery.assignTrack(best.battery, best.track, ctx.now)
-		best.track.AssignmentTime = ctx.now
-		local surv = _survive[best.track.TrackId] or 1.0
-		-- FLOOD: SR/AAA don't reduce survival (they all engage regardless of diminishing returns)
-		if tactics ~= CET.SHOOT_SHOOT_FLOOD or (best.battery.Role ~= BR.SR_SAM and best.battery.Role ~= BR.AAA) then
-			_survive[best.track.TrackId] = surv * (1 - best.pk)
-		end
-		-- Record role tier for SHOOT_IN_DEPTH, SHOOT_SHOOT_FLOOD LR/MR cap, and VLR_SAM (always)
-		if tactics == CET.SHOOT_IN_DEPTH or tactics == CET.SHOOT_SHOOT_FLOOD or best.battery.Role == BR.VLR_SAM then
-			local tiers = _trackRoleTiers[best.track.TrackId]
-			if not tiers then
-				tiers = {}
-				_trackRoleTiers[best.track.TrackId] = tiers
-			end
-			tiers[best.battery.Role] = true
-		end
-		assignments[#assignments + 1] = { batteryId = best.battery.BatteryId, trackId = best.track.TrackId }
+		local affectsSurvival = best.battery.Role ~= BR.AAA
+			and (tactics ~= CET.SHOOT_SHOOT_FLOOD or best.battery.Role ~= BR.SR_SAM)
+		commitAssignment(best.battery, best.track, best.pk, ctx.now, assignments, affectsSurvival)
 		_logger:info(
 			string.format(
 				"assigned battery %s to track %s (pk=%.2f, threat=%d)",
@@ -519,7 +527,7 @@ function Medusa.Services.TargetAssigner.assignTargets(ctx)
 		return {}
 	end
 
-	_buildRoleTierMap(ctx.batteryStore)
+	_buildRoleCounts(ctx.batteryStore)
 
 	local minId = roe == ROE.TIGHT and TI.HOSTILE or TI.BANDIT
 	local tracks = ctx.trackStore:getAll(_trackBuffer)
@@ -542,7 +550,7 @@ end
 --- Returns true if a HOT battery is eligible for handoff evaluation.
 local function isHandoffEligible(battery, now)
 	local AS = Medusa.Constants.ActivationState
-	if battery.ActivationState ~= AS.STATE_HOT then
+	if battery.ActivationState ~= AS.STATE_HOT or Medusa.Entities.Battery.isIndependentAaa(battery) then
 		return false
 	end
 	if not battery.CurrentTargetTrackId or not battery.Position then
@@ -694,6 +702,9 @@ function Medusa.Services.TargetAssigner.checkSingleDeactivation(battery, ctx)
 	local holdDownSec = ctx.doctrine and ctx.doctrine.HoldDownSec or 15
 
 	if battery.ActivationState ~= AS.STATE_HOT then
+		return nil
+	end
+	if Medusa.Entities.Battery.isIndependentAaa(battery) then
 		return nil
 	end
 

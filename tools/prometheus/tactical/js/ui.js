@@ -176,6 +176,7 @@ MTD.setupKeyboardShortcuts = function (debouncedRefresh) {
         else if (key === "Z") { toggle("opt-border-zones"); toggled = true; }
         else if (key === "S") { toggle("opt-sensors"); toggled = true; }
         else if (key === "M") { toggle("opt-manpad-lobes"); toggled = true; }
+        else if (key === "A") { toggle("opt-aaa-detection"); toggled = true; }
         else if (key === "F") {
             /* Fit map to all visible entity bounds */
             var allBounds = [];
@@ -210,7 +211,7 @@ MTD.setupSettingsListeners = function (debouncedRefresh) {
         MTD.prevFilter = "__force_zoom__"; /* force zoom on next refresh */
         debouncedRefresh();
     });
-    ["opt-threat-rings", "opt-manpad-lobes", "opt-best-pk", "opt-second-pk", "opt-pk-labels", "opt-track-labels", "opt-bat-labels", "opt-border-zones", "opt-sensors"].forEach(function(id) {
+    ["opt-threat-rings", "opt-manpad-lobes", "opt-aaa-detection", "opt-best-pk", "opt-second-pk", "opt-pk-labels", "opt-track-labels", "opt-bat-labels", "opt-border-zones", "opt-sensors"].forEach(function(id) {
         document.getElementById(id).addEventListener("change", debouncedRefresh);
     });
 };

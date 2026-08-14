@@ -8,9 +8,8 @@ on:
 env:
     ARTIFACT_NAME: medusa-thin.lua
     BUNDLED_ARTIFACT_NAME: medusa.lua
-    ARTIFACT_ZIP: medusa-thin.zip
-    BUNDLED_ARTIFACT_ZIP: medusa.zip
     BUILD_DIR: ./dist
+    RELEASE_DIR: ./dist/release
 
 permissions: {}
 
@@ -24,7 +23,7 @@ jobs:
             on_main: ${{ steps.check.outputs.on_main }}
         steps:
             - name: Checkout
-              uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
               with:
                   fetch-depth: 0
             - name: Determine if tag commit is on main
@@ -47,7 +46,7 @@ jobs:
             contents: read
         steps:
             - name: Checkout
-              uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
               with:
                   fetch-depth: 0
 
@@ -60,7 +59,7 @@ jobs:
                 GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Set up Lua ${{ env.LUA_VERSION }}
-              uses: leafo/gh-actions-lua@35bcb06abec04ec87df82e08caa84d545348536e # v10
+              uses: leafo/gh-actions-lua@6919171ccf181b826f44b9bca76307b577217377 # v13.0.0
               with:
                 luaVersion: "5.1"
 
@@ -115,9 +114,7 @@ jobs:
               run: task build
 
             - name: Syntax check
-              run: |
-                luac -p '${{ env.BUILD_DIR }}/${{ env.ARTIFACT_NAME }}'
-                luac -p '${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}'
+              run: task syntax:check
 
             - name: Verify version stamped
               run: |
@@ -130,12 +127,22 @@ jobs:
                   exit 1
                 fi
 
-            - name: Lint
+            - name: Lint thin
               uses: YoloWingPixie/selene-lua-linter-action@24ecf180fd5bb4d3b40b4296de61b32179cb79d1 # v1
               with:
                 config-path: 'selene.toml'
                 lint-path: '${{ env.BUILD_DIR }}/${{ env.ARTIFACT_NAME }}'
                 report-as-annotations: 'true'
+                selene-args: '--allow-warnings'
+                working-directory: '.'
+
+            - name: Lint bundled
+              uses: YoloWingPixie/selene-lua-linter-action@24ecf180fd5bb4d3b40b4296de61b32179cb79d1 # v1
+              with:
+                config-path: 'selene-bundled.toml'
+                lint-path: '${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}'
+                report-as-annotations: 'true'
+                selene-args: '--allow-warnings'
                 working-directory: '.'
 
     release:
@@ -147,7 +154,7 @@ jobs:
         steps:
             - name: Checkout
               id: checkout
-              uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
               with:
                   fetch-depth: 0
 
@@ -161,22 +168,15 @@ jobs:
               env:
                 GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Build
-              id: build
-              run: task build
-
-            - name: Zip artifacts
-              id: zip
+            - name: Prepare release artifacts
+              id: package
+              env:
+                REF_NAME: ${{ github.ref_name }}
               run: |
-                  cd '${{ env.BUILD_DIR }}'
-                  zip '${{ env.ARTIFACT_ZIP }}' '${{ env.ARTIFACT_NAME }}'
-                  zip '${{ env.BUNDLED_ARTIFACT_ZIP }}' '${{ env.BUNDLED_ARTIFACT_NAME }}'
-
-            - name: Generate checksums
-              id: checksums
-              run: |
-                  cd '${{ env.BUILD_DIR }}'
-                  sha256sum '${{ env.ARTIFACT_ZIP }}' '${{ env.BUNDLED_ARTIFACT_ZIP }}' > SHA256SUMS.txt
+                  task release:package
+                  VERSION="${REF_NAME#v}"
+                  echo "bundled=medusa-${VERSION}.lua" >> "$GITHUB_OUTPUT"
+                  echo "thin=medusa-thin-${VERSION}.lua" >> "$GITHUB_OUTPUT"
 
             - name: Extract release notes
               id: notes
@@ -196,27 +196,27 @@ jobs:
                 body_path: RELEASE_NOTES.md
                 fail_on_unmatched_files: true
                 files: |
-                    ${{ env.BUILD_DIR }}/${{ env.ARTIFACT_ZIP }}
-                    ${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }}
-                    ${{ env.BUILD_DIR }}/SHA256SUMS.txt
+                    ${{ env.RELEASE_DIR }}/${{ steps.package.outputs.bundled }}
+                    ${{ env.RELEASE_DIR }}/${{ steps.package.outputs.thin }}
+                    ${{ env.RELEASE_DIR }}/SHA256SUMS.txt
                     LICENSE
 
             - name: Upload to R2 (versioned)
-              uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65 # v3.14.1
+              uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
               with:
                 apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                 accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
                 command: |
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/SHA256SUMS.txt --file=${{ env.BUILD_DIR }}/SHA256SUMS.txt
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ steps.package.outputs.bundled }} --file=${{ env.RELEASE_DIR }}/${{ steps.package.outputs.bundled }} --content-type=text/plain --content-disposition='attachment; filename="${{ steps.package.outputs.bundled }}"'
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ steps.package.outputs.thin }} --file=${{ env.RELEASE_DIR }}/${{ steps.package.outputs.thin }} --content-type=text/plain --content-disposition='attachment; filename="${{ steps.package.outputs.thin }}"'
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/SHA256SUMS.txt --file=${{ env.RELEASE_DIR }}/SHA256SUMS.txt
 
             - name: Upload to R2 (latest)
-              uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65 # v3.14.1
+              uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
               with:
                 apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                 accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
                 command: |
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/SHA256SUMS.txt --file=${{ env.BUILD_DIR }}/SHA256SUMS.txt
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/medusa.lua --file=${{ env.RELEASE_DIR }}/${{ steps.package.outputs.bundled }} --content-type=text/plain --content-disposition='attachment; filename="${{ steps.package.outputs.bundled }}"'
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/medusa-thin.lua --file=${{ env.RELEASE_DIR }}/${{ steps.package.outputs.thin }} --content-type=text/plain --content-disposition='attachment; filename="${{ steps.package.outputs.thin }}"'
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/SHA256SUMS.txt --file=${{ env.RELEASE_DIR }}/SHA256SUMS.txt

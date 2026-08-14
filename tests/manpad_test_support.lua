@@ -31,7 +31,7 @@ function Support.evaluateSingle(battery, trackStore, geoGrid, now, posture, deca
 	Medusa.Services.ManpadService.evaluate({
 		manpadStore = store,
 		trackStore = trackStore,
-		geoGrid = geoGrid,
+		networkedGeoGrid = geoGrid,
 		now = now,
 		posture = posture,
 		doctrine = {

@@ -6,6 +6,7 @@ require("core.Logger")
 require("services.BatteryActivationService")
 require("services.PointDefenseService")
 require("services.HarmDetectionService")
+require("entities.Battery")
 
 --[[
             ██╗  ██╗ █████╗ ██████╗ ███╗   ███╗    ██████╗ ███████╗███████╗██████╗  ██████╗ ███╗   ██╗███████╗███████╗
@@ -59,6 +60,9 @@ end
 
 --- Is the battery eligible to be evaluated for HARM response?
 local function isEligible(battery)
+	if Medusa.Entities.Battery.isIndependentAaa(battery) then
+		return false
+	end
 	if battery.IsPointDefense then
 		return false
 	end

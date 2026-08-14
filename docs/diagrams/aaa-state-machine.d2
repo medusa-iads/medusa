@@ -1,0 +1,100 @@
+grid-columns: 2
+
+title: Independent AAA response state machine {
+  shape: text
+  near: top-center
+  style: {
+    font-size: 28
+    bold: true
+  }
+}
+
+normal: {
+  label: Detection and response · matching connector IDs continue in the barrage panel
+  direction: down
+  style: {
+    fill: "#f3f8f1"
+    stroke: "#5f7956"
+    border-radius: 6
+  }
+
+  r1: "R1 · Detection during barrage" { shape: hexagon }
+  idle: IDLE {
+    style.fill: "#f5f5f5"
+    style.stroke: "#666666"
+    style.stroke-width: 3
+  }
+  alert: ALERT {
+    style.fill: "#fff0db"
+    style.stroke: "#d97706"
+    style.stroke-width: 3
+  }
+  choose: "Choose response\nArea-fire chance uses day or night"
+  area: "AREA_FIRE\n30 seconds\nArea-fire roll succeeds"
+  local: "LOCAL_ACQUISITION\n180 seconds\nOtherwise"
+  b1: "B1 · Start barrage" { shape: hexagon }
+  f1: "F1 · Barrage deadline" { shape: hexagon }
+  finish: "Response ends\nROE HOLD and cleanup stop fire tasks\nGo COLD and reset to IDLE"
+
+  idle -> alert: visual or audio detection
+  alert -> choose: 15-second reaction delay
+  r1 -> choose: select response again
+  choose -> area
+  choose -> local
+  area -> b1: escalation roll succeeds
+  area -> finish: no barrage
+  local -> finish: response expires
+  f1 -> finish: go COLD and reset
+}
+
+barrage: {
+  label: Barrage and propagation · 10-minute deadline
+  direction: down
+  style: {
+    fill: "#fff0db"
+    stroke: "#d97706"
+    border-radius: 6
+  }
+
+  infection: {
+    label: Propagation
+    direction: down
+    style: {
+      fill: "#f6effa"
+      stroke: "#76508c"
+      border-radius: 6
+    }
+
+    shot: Nearby AAA fires
+    delivery: "NeighborPropagationService\n10–20-second delay"
+    gate: "Recipient is independent, active, armed,\nIDLE or ALERT, and below the map-wide cap\nInherit source fire point and deadline"
+
+    shot -> delivery: within 5 NM
+    delivery -> gate: revalidate on delivery
+  }
+
+  cycle: {
+    label: Barrage cycle
+    direction: right
+
+    b1: "B1 · From AREA_FIRE" { shape: hexagon }
+    entry: Begin or resume barrage
+    pause: "BARRAGE_PAUSE\n10–15 seconds"
+    fire: "BARRAGE_FIRE\n10–15 seconds"
+    r1: "R1 · Return to response selection" { shape: hexagon }
+    f1: "F1 · Finish response" { shape: hexagon }
+
+    b1 -> entry
+    entry -> pause
+    pause <-> fire: pause ends / burst ends at a new plausible point
+    pause -> r1: new visual or audio detection
+    fire -> r1: new visual or audio detection
+    pause -> f1: deadline expires
+    fire -> f1: deadline expires
+  }
+
+  infection.gate -> cycle.fire: begin at inherited fire point {
+    style.stroke: "#76508c"
+    style.stroke-width: 3
+  }
+}

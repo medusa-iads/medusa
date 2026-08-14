@@ -18,3 +18,27 @@ function TestComputePkRange:test_rOptimal_equals_rMin_no_nan()
 	lu.assertFalse(math.abs(result) == math.huge, "inf")
 	lu.assertTrue(result >= 0.0 and result <= 1.0)
 end
+
+TestComputePkAspect = {}
+
+function TestComputePkAspect:test_headOn_returnsFullFactor()
+	local track = {
+		Position = { x = 1000, y = 500, z = 0 },
+		Velocity = { x = -100, y = 0, z = 0 },
+	}
+
+	local result = Medusa.Services.PkModel.computePkAspect(track, { x = 0, y = 0, z = 0 })
+
+	lu.assertAlmostEquals(result, 1, 0.0001)
+end
+
+function TestComputePkAspect:test_beam_returnsConfiguredFloor()
+	local track = {
+		Position = { x = 1000, y = 500, z = 0 },
+		Velocity = { x = 0, y = 0, z = 100 },
+	}
+
+	local result = Medusa.Services.PkModel.computePkAspect(track, { x = 0, y = 0, z = 0 })
+
+	lu.assertAlmostEquals(result, Medusa.Constants.PK_ASPECT_BEAM_FLOOR, 0.0001)
+end

@@ -4,8 +4,10 @@ require("services.MetricsService")
 require("services.BlackBoxService")
 require("services.HarmDetectionService")
 require("services.ManpadService")
+require("services.CrewPerceptionService")
 require("services.PkModel")
 require("core.Constants")
+require("entities.Battery")
 
 --[[
             ███╗   ███╗███████╗████████╗██████╗ ██╗ ██████╗███████╗    ███████╗███╗   ██╗ █████╗ ██████╗ ███████╗██╗  ██╗ ██████╗ ████████╗
@@ -27,6 +29,7 @@ require("core.Constants")
 Medusa.Services.MetricsSnapshotService = {}
 Medusa.Services.MetricsSnapshotService._prevSnapshotMemKb = 0
 Medusa.Services.MetricsSnapshotService._manpadStateLabel = { network = nil, state = nil }
+Medusa.Services.MetricsSnapshotService._aaaStateLabel = { network = nil, mode = nil, state = nil }
 
 local MANPAD_COUNTERS = {
 	{ "medusa_manpad_activations_total", "MANPAD ALERT to HOT transitions" },
@@ -47,6 +50,37 @@ local MANPAD_STATES = {
 	Medusa.Constants.Manpad.SleepWakeState.COOLDOWN,
 }
 local _manpadStateCounts = {}
+
+local AAA_COUNTERS = {
+	{ "medusa_aaa_visual_detections_total", "AAA visual detections" },
+	{ "medusa_aaa_audio_attempts_total", "AAA audio detection rolls" },
+	{ "medusa_aaa_audio_detections_total", "Successful AAA audio detections" },
+	{ "medusa_aaa_area_fire_responses_total", "AAA area-fire responses" },
+	{ "medusa_aaa_barrage_responses_total", "AAA barrage responses started" },
+	{ "medusa_aaa_barrage_bursts_total", "AAA barrage bursts started" },
+	{ "medusa_aaa_barrage_infections_total", "AAA groups activated by nearby barrage fire" },
+	{ "medusa_aaa_local_acquisition_responses_total", "AAA local-acquisition responses" },
+	{ "medusa_aaa_position_refreshes_total", "AAA position and heading refreshes" },
+	{ "medusa_aaa_local_searches_total", "AAA local DCS world searches" },
+	{ "medusa_aaa_local_search_cache_reuses_total", "AAA cached local-search results reused" },
+}
+
+local AAA_MODES = {
+	Medusa.Constants.Aaa.Mode.INDEPENDENT,
+	Medusa.Constants.Aaa.Mode.RADAR_DIRECTED,
+}
+local AAA_STATES = {
+	Medusa.Constants.Aaa.ResponseState.IDLE,
+	Medusa.Constants.Aaa.ResponseState.ALERT,
+	Medusa.Constants.Aaa.ResponseState.AREA_FIRE,
+	Medusa.Constants.Aaa.ResponseState.BARRAGE_FIRE,
+	Medusa.Constants.Aaa.ResponseState.BARRAGE_PAUSE,
+	Medusa.Constants.Aaa.ResponseState.LOCAL_ACQUISITION,
+}
+local _aaaStateCounts = {}
+for i = 1, #AAA_MODES do
+	_aaaStateCounts[AAA_MODES[i]] = {}
+end
 
 local function escapePrometheusLabel(value)
 	local escaped = tostring(value or "")
@@ -220,6 +254,31 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 		netLabel
 	)
 
+	MetricsService.gauge("medusa_aaa_state", "AAA groups by operating mode and response state", {
+		"network",
+		"mode",
+		"state",
+	})
+	for i = 1, #AAA_COUNTERS do
+		local definition = AAA_COUNTERS[i]
+		MetricsService.counter(definition[1], definition[2], netLabel)
+	end
+	MetricsService.gauge("medusa_aaa_local_search_queue_depth", "AAA groups in the local-search rotation", netLabel)
+	MetricsService.summary(
+		"medusa_aaa_local_search_duration_seconds",
+		"AAA local DCS world search time",
+		defaultQuantiles,
+		nil,
+		netLabel
+	)
+	MetricsService.summary(
+		"medusa_aaa_eval_duration_seconds",
+		"AaaService.evaluate step time",
+		defaultQuantiles,
+		nil,
+		netLabel
+	)
+
 	-- Serialize duration stays unlabeled: it spans all networks in a single operation
 	MetricsService.summary("medusa_serialize_duration_seconds", "Time to serialize all metrics", defaultQuantiles)
 end
@@ -269,6 +328,9 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 			for i = 1, #MANPAD_COUNTERS do
 				ms.inc(MANPAD_COUNTERS[i][1], 0, labels)
 			end
+			for i = 1, #AAA_COUNTERS do
+				ms.inc(AAA_COUNTERS[i][1], 0, labels)
+			end
 			local ai = iads:getAssetIndex()
 			if ai then
 				ms.set("medusa_batteries_total", ai:batteries():count(), labels)
@@ -303,7 +365,9 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 						shutdownCount = shutdownCount + 1
 						allShutdownNames[#allShutdownNames + 1] = b.GroupName
 					end
-					totalAmmo = totalAmmo + (b.TotalAmmoStatus or 0)
+					if b.Role ~= Medusa.Constants.BatteryRole.AAA then
+						totalAmmo = totalAmmo + (b.TotalAmmoStatus or 0)
+					end
 					if b.RearmCheckTime then
 						rearmingCount = rearmingCount + 1
 					end
@@ -345,6 +409,36 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 					local manpadState = MANPAD_STATES[i]
 					labelBuf.state = manpadState
 					ms.set("medusa_manpad_state", _manpadStateCounts[manpadState], labelBuf)
+				end
+
+				for mi = 1, #AAA_MODES do
+					local counts = _aaaStateCounts[AAA_MODES[mi]]
+					for si = 1, #AAA_STATES do
+						counts[AAA_STATES[si]] = 0
+					end
+				end
+				for i = 1, #batteries do
+					local battery = batteries[i]
+					if battery.Role == Medusa.Constants.BatteryRole.AAA and battery.Aaa then
+						local mode = Medusa.Entities.Battery.isRadarDirectedAaa(battery)
+								and Medusa.Constants.Aaa.Mode.RADAR_DIRECTED
+							or Medusa.Constants.Aaa.Mode.INDEPENDENT
+						local state = battery.Aaa.ResponseState
+						if _aaaStateCounts[mode][state] ~= nil then
+							_aaaStateCounts[mode][state] = _aaaStateCounts[mode][state] + 1
+						end
+					end
+				end
+				local aaaLabelBuf = Medusa.Services.MetricsSnapshotService._aaaStateLabel
+				aaaLabelBuf.network = id
+				for mi = 1, #AAA_MODES do
+					local mode = AAA_MODES[mi]
+					aaaLabelBuf.mode = mode
+					for si = 1, #AAA_STATES do
+						local state = AAA_STATES[si]
+						aaaLabelBuf.state = state
+						ms.set("medusa_aaa_state", _aaaStateCounts[mode][state], aaaLabelBuf)
+					end
 				end
 
 				local rpkVal = 0
@@ -796,6 +890,84 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 							bname,
 							b.TotalAmmoStatus or 0
 						)
+					end
+				end
+			end
+
+			en = en + 1
+			extLines[en] = "# HELP medusa_aaa_info AAA operating mode and response state"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_aaa_info gauge"
+			en = en + 1
+			extLines[en] = "# HELP medusa_aaa_heading_degrees Cached AAA gun heading in degrees clockwise from north"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_aaa_heading_degrees gauge"
+			en = en + 1
+			extLines[en] = "# HELP medusa_aaa_visual_detection_range_meters AAA visual detection range in meters"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_aaa_visual_detection_range_meters gauge"
+			en = en + 1
+			extLines[en] =
+				"# HELP medusa_aaa_visual_detection_half_angle_degrees AAA visual detection half-angle in degrees"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_aaa_visual_detection_half_angle_degrees gauge"
+			en = en + 1
+			extLines[en] = "# HELP medusa_aaa_audio_range_meters Configured AAA audio detection range in meters"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_aaa_audio_range_meters gauge"
+
+			local aaaVisualRange = Medusa.Constants.LocalAircraftDetection.PRIMARY_RANGE_M
+			local aaaVisualHalfAngle =
+				math.deg(math.acos(Medusa.Constants.LocalAircraftDetection.PRIMARY_COS_HALF_ANGLE))
+			en = en + 1
+			extLines[en] = string.format("medusa_aaa_visual_detection_range_meters %.0f", aaaVisualRange)
+			en = en + 1
+			extLines[en] = string.format("medusa_aaa_visual_detection_half_angle_degrees %.1f", aaaVisualHalfAngle)
+
+			for id, iads in pairs(iadsById) do
+				local ai = iads:getAssetIndex()
+				if ai then
+					local networkLabel = escapePrometheusLabel(id)
+					local doctrine = iads:getDoctrine() or {}
+					local aaaDoctrine = doctrine.AAA or {}
+					en = en + 1
+					extLines[en] = string.format(
+						'medusa_aaa_audio_range_meters{network="%s"} %.0f',
+						networkLabel,
+						aaaDoctrine.AudioRangeM or 0
+					)
+					local batteries = ai:batteries():getAll()
+					for i = 1, #batteries do
+						local battery = batteries[i]
+						if battery.Role == Medusa.Constants.BatteryRole.AAA and battery.Aaa then
+							local aaaLabel = escapePrometheusLabel(battery.GroupName or battery.BatteryId)
+							local mode = Medusa.Entities.Battery.isRadarDirectedAaa(battery)
+									and Medusa.Constants.Aaa.Mode.RADAR_DIRECTED
+								or Medusa.Constants.Aaa.Mode.INDEPENDENT
+							en = en + 1
+							extLines[en] = string.format(
+								'medusa_aaa_info{network="%s",aaa="%s",mode="%s",state="%s"} 1',
+								networkLabel,
+								aaaLabel,
+								escapePrometheusLabel(mode),
+								escapePrometheusLabel(battery.Aaa.ResponseState)
+							)
+							local headings = battery.Aaa.UnitHeadings or {}
+							local headingCount = battery.Aaa.UnitHeadingCount or 0
+							for headingIndex = 1, headingCount do
+								local heading = headings[headingIndex]
+								if heading then
+									en = en + 1
+									extLines[en] = string.format(
+										'medusa_aaa_heading_degrees{network="%s",aaa="%s",heading_index="%d"} %.1f',
+										networkLabel,
+										aaaLabel,
+										headingIndex,
+										Medusa.Services.CrewPerceptionService.headingBearingDegrees(heading)
+									)
+								end
+							end
+						end
 					end
 				end
 			end

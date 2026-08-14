@@ -17,6 +17,7 @@ require("services.PointDefenseService")
 local AS = Medusa.Constants.ActivationState
 local BOS = Medusa.Constants.BatteryOperationalStatus
 local BR = Medusa.Constants.BatteryRole
+local BUR = Medusa.Constants.BatteryUnitRole
 local LS = Medusa.Constants.TrackLifecycleState
 local PDS = Medusa.Services.PointDefenseService
 
@@ -66,6 +67,21 @@ local function makeBattery(overrides)
 		end
 	end
 	return Medusa.Entities.Battery.new(data)
+end
+
+local function makeRadarDirectedAaa(overrides)
+	local aaaOverrides = {}
+	for key, value in pairs(overrides or {}) do
+		aaaOverrides[key] = value
+	end
+	aaaOverrides.Role = BR.AAA
+	aaaOverrides.DetectionRangeMax = aaaOverrides.DetectionRangeMax or 10000
+	local aaa = makeBattery(aaaOverrides)
+	aaa.Units = {
+		Medusa.Entities.Battery.newUnit({ UnitId = 1, Roles = { BUR.AAA } }),
+		Medusa.Entities.Battery.newUnit({ UnitId = 2, Roles = { BUR.SEARCH_RADAR } }),
+	}
+	return aaa
 end
 
 local function makeTrack(overrides)
@@ -197,6 +213,67 @@ function TestAutoAssignShorad:test_assigns_sr_sam_to_nearby_lr_sam()
 	lu.assertTrue(sr.IsPointDefense)
 	lu.assertEquals(sr.PointDefenseTargetId, "LR-1")
 	lu.assertEquals(lr.PointDefenseProviderId, "SR-1")
+end
+
+function TestAutoAssignShorad:test_skips_independent_aaa()
+	local aaa = makeBattery({
+		BatteryId = "AAA-1",
+		Role = BR.AAA,
+		Position = { x = 1000, y = 0, z = 1000 },
+	})
+	local lr = makeBattery({
+		BatteryId = "LR-1",
+		Role = BR.LR_SAM,
+		Position = { x = 5000, y = 0, z = 5000 },
+	})
+	self.batteryStore:add(aaa)
+	self.batteryStore:add(lr)
+	self.geoGrid:add("Battery", aaa.BatteryId, aaa.Position)
+	self.geoGrid:add("Battery", lr.BatteryId, lr.Position)
+
+	local count = PDS.autoAssignShorad(makeCtx({ batteryStore = self.batteryStore, geoGrid = self.geoGrid }))
+
+	lu.assertEquals(count, 0)
+	lu.assertFalse(aaa.IsPointDefense)
+end
+
+function TestAutoAssignShorad:test_assigns_radar_directed_aaa()
+	local aaa = makeRadarDirectedAaa({
+		BatteryId = "AAA-1",
+		Position = { x = 1000, y = 0, z = 1000 },
+	})
+	local lr = makeBattery({
+		BatteryId = "LR-1",
+		Role = BR.LR_SAM,
+		Position = { x = 5000, y = 0, z = 5000 },
+	})
+	self.batteryStore:add(aaa)
+	self.batteryStore:add(lr)
+	self.geoGrid:add("Battery", aaa.BatteryId, aaa.Position)
+	self.geoGrid:add("Battery", lr.BatteryId, lr.Position)
+
+	local count = PDS.autoAssignShorad(makeCtx({ batteryStore = self.batteryStore, geoGrid = self.geoGrid }))
+
+	lu.assertEquals(count, 1)
+	lu.assertTrue(aaa.IsPointDefense)
+end
+
+function TestAutoAssignShorad:test_releases_aaa_point_defense_after_radar_loss()
+	local aaa = makeRadarDirectedAaa({
+		BatteryId = "AAA-1",
+		TotalAmmoStatus = 10,
+	})
+	local lr = makeBattery({ BatteryId = "LR-1", Role = BR.LR_SAM, TotalAmmoStatus = 10 })
+	self.batteryStore:add(aaa)
+	self.batteryStore:add(lr)
+	PDS.setAssignment(aaa.BatteryId, lr.BatteryId, self.batteryStore)
+	table.remove(aaa.Units, 2)
+
+	local released = PDS.releaseOrphanedDefenders(makeCtx({ batteryStore = self.batteryStore }))
+
+	lu.assertEquals(released, 1)
+	lu.assertFalse(aaa.IsPointDefense)
+	lu.assertNil(lr.PointDefenseProviderId)
 end
 
 function TestAutoAssignShorad:test_ignores_distant_shorad()

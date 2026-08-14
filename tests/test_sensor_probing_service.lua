@@ -200,4 +200,35 @@ function TestSensorProbingService:test_applyBatteryRanges_takes_max_across_units
 	lu.assertEquals(battery.EngagementRangeMax, 75000)
 end
 
+function TestSensorProbingService:test_aaa_detection_range_comes_from_search_radar()
+	self.service._cache["AAA Gun"] = { detectionRangeMax = 90000 }
+	self.service._cache["AAA Search Radar"] = { detectionRangeMax = 30000 }
+
+	local store = Medusa.Services.BatteryStore:new()
+	local battery = Medusa.Entities.Battery.new({
+		NetworkId = "net1",
+		GroupId = 10,
+		GroupName = "aaa1",
+		Role = Medusa.Constants.BatteryRole.AAA,
+	})
+	battery.Units = {
+		Medusa.Entities.Battery.newUnit({
+			UnitId = 1,
+			UnitTypeName = "AAA Gun",
+			Roles = { Medusa.Constants.BatteryUnitRole.AAA },
+		}),
+		Medusa.Entities.Battery.newUnit({
+			UnitId = 2,
+			UnitTypeName = "AAA Search Radar",
+			Roles = { Medusa.Constants.BatteryUnitRole.SEARCH_RADAR },
+		}),
+	}
+	store:add(battery)
+
+	local updated = self.service:applyBatteryRanges(store)
+
+	lu.assertEquals(updated, 1)
+	lu.assertEquals(battery.DetectionRangeMax, 30000)
+end
+
 -- getCapabilities tests

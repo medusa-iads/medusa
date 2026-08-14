@@ -6,6 +6,8 @@ require("core.Logger")
 require("core.Constants")
 require("entities.Entities")
 require("entities.Battery")
+require("services.Services")
+require("services.EntityFactory")
 
 -- == Helpers ==
 
@@ -42,6 +44,131 @@ end
 -- == Tests ==
 
 TestAmmoExtraction = {}
+
+function TestAmmoExtraction:setUp()
+	self.originalGetUnitAmmo = GetUnitAmmo
+end
+
+function TestAmmoExtraction:tearDown()
+	GetUnitAmmo = self.originalGetUnitAmmo
+end
+
+function TestAmmoExtraction:test_aaa_tracks_gun_ammunition_instead_of_missiles()
+	GetUnitAmmo = function()
+		return {
+			{
+				count = 4,
+				desc = {
+					typeName = "AAA Missile",
+					displayName = "AAA Missile",
+					missileCategory = 1,
+					rangeMaxAltMax = 8000,
+				},
+			},
+			{
+				count = 200,
+				desc = {
+					typeName = "weapons.shells.AAA_Gun",
+					displayName = "AAA Gun",
+					rangeMaxAltMax = 4000,
+				},
+			},
+		}
+	end
+
+	local ammo, count = Medusa.Services.EntityFactory.extractAmmo("aaa-unit", Medusa.Constants.BatteryRole.AAA)
+
+	lu.assertEquals(count, 200)
+	lu.assertEquals(#ammo, 1)
+	lu.assertEquals(ammo[1].WeaponTypeName, "weapons.shells.AAA_Gun")
+end
+
+function TestAmmoExtraction:test_aaa_ignores_non_shell_weapon_categories()
+	GetUnitAmmo = function()
+		return {
+			{ count = 4, desc = { typeName = "weapons.missiles.AAA", missileCategory = 1 } },
+			{ count = 8, desc = { typeName = "weapons.nurs.Rocket" } },
+			{ count = 2, desc = { typeName = "weapons.bombs.Bomb" } },
+			{ count = 120, desc = { typeName = "weapons.shells.HE" } },
+			{ count = 30, desc = { typeName = "weapons.shells.AP" } },
+		}
+	end
+
+	local ammo, count = Medusa.Services.EntityFactory.extractAmmo("aaa-unit", Medusa.Constants.BatteryRole.AAA)
+
+	lu.assertEquals(count, 150)
+	lu.assertEquals(#ammo, 2)
+	lu.assertEquals(ammo[1].WeaponTypeName, "weapons.shells.HE")
+	lu.assertEquals(ammo[2].WeaponTypeName, "weapons.shells.AP")
+end
+
+function TestAmmoExtraction:test_aaa_tracks_shell_ammunition_without_missile_range_fields()
+	GetUnitAmmo = function()
+		return {
+			{
+				count = 120,
+				desc = {
+					category = Weapon.Category.SHELL,
+					typeName = "weapons.shells.KS19_100HE",
+					displayName = "KS-19 100 mm HE",
+					warhead = { caliber = 100 },
+				},
+			},
+		}
+	end
+
+	local ammo, count = Medusa.Services.EntityFactory.extractAmmo("aaa-unit", Medusa.Constants.BatteryRole.AAA)
+
+	lu.assertEquals(count, 120)
+	lu.assertEquals(#ammo, 1)
+	lu.assertEquals(ammo[1].WeaponTypeName, "weapons.shells.KS19_100HE")
+	lu.assertEquals(ammo[1].RangeMax, 12000)
+end
+
+function TestAmmoExtraction:test_aaa_missing_range_uses_same_fallback_for_all_shells()
+	local cases = {
+		{ name = "small", caliber = 20 },
+		{ name = "large", caliber = 130 },
+		{ name = "unknown" },
+	}
+
+	for i = 1, #cases do
+		local case = cases[i]
+		GetUnitAmmo = function()
+			return {
+				{
+					count = 1,
+					desc = {
+						typeName = "weapons.shells." .. case.name,
+						warhead = { caliber = case.caliber },
+					},
+				},
+			}
+		end
+
+		local ammo = Medusa.Services.EntityFactory.extractAmmo("aaa-unit", Medusa.Constants.BatteryRole.AAA)
+		lu.assertEquals(ammo[1].RangeMax, 12000, case.name)
+	end
+end
+
+function TestAmmoExtraction:test_aaa_prefers_reported_shell_range_over_fallback()
+	GetUnitAmmo = function()
+		return {
+			{
+				count = 1,
+				desc = {
+					typeName = "weapons.shells.KS19_100HE",
+					rangeMaxAltMax = 20000,
+					warhead = { caliber = 100 },
+				},
+			},
+		}
+	end
+
+	local ammo = Medusa.Services.EntityFactory.extractAmmo("aaa-unit", Medusa.Constants.BatteryRole.AAA)
+
+	lu.assertEquals(ammo[1].RangeMax, 20000)
+end
 
 function TestAmmoExtraction:test_recompute_single_launcher()
 	local battery = makeBattery({

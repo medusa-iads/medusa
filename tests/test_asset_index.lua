@@ -18,7 +18,9 @@ function TestAssetIndex:test_accessors_return_stores()
 		airbases = { name = "airbases" },
 		interceptors = { name = "interceptors" },
 		tracks = { name = "tracks" },
-		geoGrid = { name = "geoGrid" },
+		networkedGeoGrid = { name = "networkedGeoGrid" },
+		localGeoGrid = { name = "localGeoGrid" },
+		spatialIndex = { name = "spatialIndex" },
 	}
 
 	local index = Medusa.Services.AssetIndex.new(mockStores)
@@ -30,7 +32,10 @@ function TestAssetIndex:test_accessors_return_stores()
 	lu.assertIs(index:airbases(), mockStores.airbases)
 	lu.assertIs(index:interceptors(), mockStores.interceptors)
 	lu.assertIs(index:tracks(), mockStores.tracks)
-	lu.assertIs(index:geoGrid(), mockStores.geoGrid)
+	lu.assertIs(index:geoGrid(), mockStores.networkedGeoGrid)
+	lu.assertIs(index:networkedGeoGrid(), mockStores.networkedGeoGrid)
+	lu.assertIs(index:localGeoGrid(), mockStores.localGeoGrid)
+	lu.assertIs(index:spatialIndex(), mockStores.spatialIndex)
 end
 
 function TestAssetIndex:test_nil_store_returns_nil()

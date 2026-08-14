@@ -1,0 +1,137 @@
+direction: down
+
+title: Medusa local-defense module relationships {
+  shape: text
+  near: top-center
+  style: {
+    font-size: 28
+    bold: true
+  }
+}
+
+orchestration: {
+  label: Orchestration
+  direction: down
+  style: {
+    fill: "#eaf2ff"
+    stroke: "#3767a6"
+    border-radius: 6
+  }
+
+  iads: IadsNetwork
+  assignment: TargetAssigner
+}
+
+local_defense: {
+  label: Local defense policy
+  direction: down
+  style: {
+    fill: "#fffdf5"
+    stroke: "#8a7a42"
+    border-radius: 6
+  }
+
+  aaa: AaaService {
+    style: {
+      fill: "#fff0db"
+      stroke: "#d97706"
+      stroke-width: 3
+    }
+  }
+  manpad: ManpadService {
+    style: {
+      fill: "#e8f6e8"
+      stroke: "#39814a"
+      stroke-width: 3
+    }
+  }
+}
+
+shared: {
+  label: Shared capabilities
+  direction: down
+  style: {
+    fill: "#f3f8f1"
+    stroke: "#5f7956"
+    border-radius: 6
+  }
+
+  search: LocalSearchService
+  perception: CrewPerceptionService
+  propagation: NeighborPropagationService
+  activation: BatteryActivationService
+}
+
+spatial: {
+  label: Spatial indexes
+  direction: down
+  style: {
+    fill: "#f6effa"
+    stroke: "#76508c"
+    border-radius: 6
+  }
+
+  index: GeospatialIndexService
+  networked: NetworkedGeoGrid
+  local: LocalGeoGrid
+}
+
+boundaries: {
+  label: State and DCS boundary
+  direction: down
+  style: {
+    fill: "#f5f5f5"
+    stroke: "#666666"
+    border-radius: 6
+  }
+
+  battery: Battery
+  dcs: DCS World API
+}
+
+orchestration.iads -> local_defense.aaa: AAA lifecycle and shots {
+  style.stroke: "#3767a6"
+  style.stroke-width: 3
+}
+orchestration.iads -> local_defense.manpad: MANPAD lifecycle and cueing {
+  style.stroke: "#3767a6"
+  style.stroke-width: 3
+}
+orchestration.iads -> orchestration.assignment: injects assignment context {
+  style.stroke: "#3767a6"
+  style.stroke-width: 3
+}
+orchestration.iads -> spatial.index: synchronize assets {
+  style.stroke: "#3767a6"
+  style.stroke-width: 3
+}
+
+local_defense -> shared: uses shared capabilities {
+  style.stroke: "#8a7a42"
+  style.stroke-width: 3
+}
+local_defense -> spatial.local: local spatial queries {
+  style.stroke: "#8a7a42"
+  style.stroke-width: 3
+}
+local_defense -> boundaries.battery: owns local-defense state {
+  style.stroke: "#8a7a42"
+  style.stroke-width: 3
+}
+
+orchestration.assignment -> spatial.networked: queries injected grid {
+  style.stroke: "#3767a6"
+  style.stroke-width: 3
+}
+spatial.index -> spatial.networked: networked batteries and tracks {
+  style.stroke: "#76508c"
+  style.stroke-width: 3
+}
+spatial.index -> spatial.local: AAA and MANPAD {
+  style.stroke: "#76508c"
+  style.stroke-width: 3
+}
+shared -> boundaries.dcs: DCS access {
+  style.stroke: "#5f7956"
+  style.stroke-width: 3
+}

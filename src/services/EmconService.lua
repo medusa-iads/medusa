@@ -3,6 +3,7 @@ require("services.Services")
 require("core.Constants")
 require("core.Logger")
 require("services.BatteryActivationService")
+require("entities.Battery")
 
 --[[
             ███████╗███╗   ███╗ ██████╗ ██████╗ ███╗   ██╗    ███████╗███████╗██████╗ ██╗   ██╗██╗ ██████╗███████╗
@@ -106,6 +107,9 @@ function Medusa.Services.EmconService.getDesiredState(batteryIndex, _batteryCoun
 end
 
 local function _shouldSkip(battery)
+	if Medusa.Entities.Battery.isIndependentAaa(battery) then
+		return true
+	end
 	if battery.CurrentTargetTrackId then
 		return true
 	end
@@ -287,20 +291,28 @@ function Medusa.Services.EmconService.applyPolicy(ctx, network)
 		else
 			local sensorType = sensors and sensors[1] and sensors[1].SensorType or "EWR"
 			local desired = Medusa.Services.EmconService.getDesiredState(i, #sensorGroups, doctrine, now, sensorType)
-			local currentState = _sensorGroupState[groupName] or AS.STATE_WARM
-			if desired ~= currentState then
+			local currentState = _sensorGroupState[groupName]
+			if currentState == nil or desired ~= currentState then
 				local controller = GetGroupController(groupName)
 				if controller then
 					if desired == AS.STATE_WARM then
 						SetControllerOnOff(controller, true)
+						ControllerSetROE(controller, "OPEN_FIRE")
+						ControllerSetAlarmState(controller, "RED")
 					else
+						ControllerSetROE(controller, "WEAPON_HOLD")
+						ControllerSetAlarmState(controller, "GREEN")
 						SetControllerOnOff(controller, false)
+					end
+					local group = GetGroup(groupName)
+					if group then
+						EnableGroupEmissions(group, desired == AS.STATE_WARM)
 					end
 					_sensorGroupState[groupName] = desired
 					transitions = transitions + 1
 				end
 			end
-			local effectiveState = _sensorGroupState[groupName] or currentState
+			local effectiveState = _sensorGroupState[groupName] or AS.STATE_COLD
 			local radarStatus = (effectiveState == AS.STATE_WARM) and "ACTIVE" or "DARK"
 			for si = 1, #sensors do
 				sensors[si].RadarStatus = radarStatus

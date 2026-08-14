@@ -88,7 +88,7 @@ local function _maxRangeForBattery(battery, cache)
 	local maxRange = nil
 	for j = 1, #battery.Units do
 		local unit = battery.Units[j]
-		if unit.UnitTypeName then
+		if Medusa.Entities.Battery.canSupplyDetectionRange(battery, unit) and unit.UnitTypeName then
 			local caps = cache[unit.UnitTypeName]
 			if caps and caps.detectionRangeMax then
 				if not maxRange or caps.detectionRangeMax > maxRange then

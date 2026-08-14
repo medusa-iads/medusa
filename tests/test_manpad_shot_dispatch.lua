@@ -169,6 +169,22 @@ local function injectBattery(iads, unitIds)
 	return bat
 end
 
+local function injectIndependentAaa(iads, unitId)
+	local batteryStore = iads:getAssetIndex():batteries()
+	local id = nextSeq()
+	local bat = Medusa.Entities.Battery.new({
+		NetworkId = "test-net",
+		GroupId = id * 100,
+		GroupName = string.format("aaa-group-%d", id),
+		Role = Medusa.Constants.BatteryRole.AAA,
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+	})
+	bat.Units = { makeUnit(unitId, Medusa.Constants.BatteryUnitRole.AAA, "ZU-23") }
+	Medusa.Entities.Battery.recomputeState(bat)
+	batteryStore:add(bat)
+	return bat
+end
+
 -- ============================================================
 -- 1. ManpadService.onShot — MANPAD policy hook
 -- ============================================================
@@ -317,6 +333,36 @@ function TestIadsNetworkHandleShot:test_handleShot_regularBattery_doesNotCallOnS
 	lu.assertEquals(iads._rollingPkBuffer[1], 0)
 end
 
+function TestIadsNetworkHandleShot:test_independentAaaShotDoesNotAffectRollingPk()
+	local iads = makeIads()
+	local bat = injectIndependentAaa(iads, 305)
+
+	iads:_handleShot(305, "ZU-23")
+
+	lu.assertEquals(bat.ShotsFired, 1)
+	lu.assertEquals(bat.TotalAmmoStatus, 1)
+	lu.assertEquals(iads._rollingPkCount, 0)
+end
+
+function TestIadsNetworkHandleShot:test_aaaShotDispatchesNeighborPropagation()
+	local iads = makeIads()
+	local bat = injectIndependentAaa(iads, 306)
+	local received
+	local originalOnShot = Medusa.Services.AaaService.onShot
+	Medusa.Services.AaaService.onShot = function(ctx, battery, unit, now)
+		received = { ctx = ctx, battery = battery, unit = unit, now = now }
+	end
+
+	iads:_handleShot(306, "ZU-23")
+
+	Medusa.Services.AaaService.onShot = originalOnShot
+	lu.assertEquals(received.battery, bat)
+	lu.assertEquals(received.unit, bat.Units[1])
+	lu.assertEquals(received.now, 1000)
+	lu.assertEquals(received.ctx.batteryStore, iads:getAssetIndex():batteries())
+	lu.assertEquals(received.ctx.localGeoGrid, iads:getAssetIndex():localGeoGrid())
+end
+
 function TestIadsNetworkHandleShot:test_handleShot_nonManpadCompanionDoesNotTriggerMissilePolicy()
 	local iads = makeIads()
 	local store = iads:getAssetIndex():manpads()
@@ -462,6 +508,19 @@ function TestIadsNetworkHandleShot:test_manpadKillDoesNotCompleteRegularBatteryS
 	lu.assertEquals(iads._rollingPkBuffer[1], 1)
 end
 
+function TestIadsNetworkHandleShot:test_independentAaaKillDoesNotCompleteRegularBatteryShot()
+	local iads = makeIads()
+	injectBattery(iads, { 322 })
+	injectIndependentAaa(iads, 323)
+	iads:_handleShot(322, "SA-6")
+
+	iads._killQueue:enqueue({ _unitId = 323 })
+	iads:_processKillEvents(1)
+
+	lu.assertEquals(iads._rollingPkCount, 1)
+	lu.assertEquals(iads._rollingPkBuffer[1], 0)
+end
+
 -- ============================================================
 -- 3. IadsNetwork._handleUnitDeath MANPAD guard
 -- ============================================================
@@ -510,14 +569,10 @@ function TestIadsNetworkHandleUnitDeathManpad:test_death_manpad_lastSoldier_remo
 	local manpadStore = iads:getAssetIndex():manpads()
 
 	local removedId = nil
-	local origGeoGrid = iads._geoGrid
-	iads._geoGrid = {
-		remove = function(self, id)
+	local originalSpatialIndex = iads._spatialIndex
+	iads._spatialIndex = {
+		removeBattery = function(self, id)
 			removedId = id
-		end,
-		add = function() end,
-		queryRadius = function()
-			return {}
 		end,
 	}
 
@@ -531,11 +586,51 @@ function TestIadsNetworkHandleUnitDeathManpad:test_death_manpad_lastSoldier_remo
 	})
 	iads:_processDeathEvents(2)
 
-	iads._geoGrid = origGeoGrid
+	iads._spatialIndex = originalSpatialIndex
 
 	lu.assertEquals(manpadStore:count(), 0, "MANPAD view must be empty after last soldier dies")
-	lu.assertNotNil(removedId, "geoGrid:remove must be called when last MANPAD soldier dies")
-	lu.assertEquals(removedId, bat.BatteryId, "geoGrid:remove must be called with the MANPAD's BatteryId")
+	lu.assertNotNil(removedId, "spatial index removal must occur when the last MANPAD soldier dies")
+	lu.assertEquals(removedId, bat.BatteryId)
+end
+
+function TestIadsNetworkHandleUnitDeathManpad:test_radar_loss_withdraws_aaa_until_local_mode_is_applied()
+	local iads = makeIads()
+	local site = Medusa.Entities.Battery.new({
+		NetworkId = "test-net",
+		GroupId = 230,
+		GroupName = "radar-aaa",
+		Role = Medusa.Constants.BatteryRole.AAA,
+		Position = { x = 0, y = 0, z = 0 },
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+	})
+	local gun = makeUnit(230, Medusa.Constants.BatteryUnitRole.AAA, "ZU-23")
+	local radar = makeUnit(231, Medusa.Constants.BatteryUnitRole.SEARCH_RADAR, "radar")
+	radar.DetectionRangeMax = 20000
+	site.Units = { gun, radar }
+	Medusa.Entities.Battery.recomputeState(site)
+	site.DetectionRangeMax = 20000
+	site.Aaa.Mode = Medusa.Constants.Aaa.Mode.RADAR_DIRECTED
+	iads:getAssetIndex():batteries():add(site)
+	iads._spatialIndex:syncBattery(site)
+
+	local protected = injectBattery(iads, { 232 })
+	Medusa.Services.PointDefenseService.setAssignment(
+		site.BatteryId,
+		protected.BatteryId,
+		iads:getAssetIndex():batteries()
+	)
+	site.CurrentTargetTrackId = "assigned-track"
+
+	iads:_handleUnitDeath(231)
+
+	local networked = iads:getAssetIndex():networkedGeoGrid():queryRadius(site.Position, 1000, { "Battery" })
+	local localResult = iads:getAssetIndex():localGeoGrid():queryRadius(site.Position, 1000, { "Aaa" })
+	lu.assertNil(networked.BatteryIds[site.BatteryId])
+	lu.assertNil(localResult.AaaIds[site.BatteryId])
+	lu.assertNil(site.CurrentTargetTrackId)
+	lu.assertFalse(site.IsPointDefense)
+	lu.assertNil(protected.PointDefenseProviderId)
+	lu.assertTrue(iads._pdReassignNeeded)
 end
 
 -- ============================================================

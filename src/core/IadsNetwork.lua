@@ -13,10 +13,12 @@ require("services.TrackClassifier")
 require("services.BatteryActivationService")
 require("services.EmconService")
 require("services.ManpadService")
+require("services.AaaService")
 require("services.HarmDetectionService")
 require("services.HarmResponseService")
 require("services.EntityFactory")
 require("services.AssetIndex")
+require("services.GeospatialIndexService")
 require("services.stores.SensorUnitStore")
 require("services.SensorProbingService")
 require("services.stores.C2NodeStore")
@@ -147,6 +149,7 @@ function Medusa.Core.IadsNetwork:new(opts)
 		_running = false,
 		_trackManager = nil,
 		_assetIndex = nil,
+		_spatialIndex = nil,
 		_doctrine = nil,
 		_sensorPollingService = nil,
 		_sensorPollIndex = 1,
@@ -155,6 +158,11 @@ function Medusa.Core.IadsNetwork:new(opts)
 		_manpadInterval = 10,
 		_manpadPosRefreshInterval = Medusa.Constants.Manpad.POS_REFRESH_TICK_INTERVAL,
 		_manpadCtx = {},
+		_aaaInterval = 10,
+		_aaaPosRefreshInterval = Medusa.Constants.LocalAircraftDetection.POSITION_REFRESH_TICK_INTERVAL,
+		-- IadsNetwork fills this table before each AaaService operation.
+		_aaaCtx = {},
+		_aaaBarrageState = opts and opts.aaaBarrageState or Medusa.Services.AaaService.newBarrageState(),
 		_assignmentPhase = 0,
 		_tickCounter = 0,
 		_lastScanTime = 0,
@@ -167,7 +175,7 @@ function Medusa.Core.IadsNetwork:new(opts)
 		_deathQueue = nil,
 		_shotQueue = nil,
 		_killQueue = nil,
-		_geoGrid = nil,
+		_networkedGeoGrid = nil,
 		_maxEngagementRange = 0,
 		_erectComplete = false,
 		_classifyStep = nil,
@@ -221,8 +229,9 @@ function Medusa.Core.IadsNetwork:initialize()
 	local airbaseStore = Medusa.Services.AirbaseStore:new()
 	local interceptorStore = Medusa.Services.InterceptorGroupStore:new()
 
-	self._geoGrid = GeoGrid(10000, { "Battery", "Track", "Manpad" })
-	self._trackManager = Medusa.Services.TrackManager:new({ geoGrid = self._geoGrid })
+	self._spatialIndex = Medusa.Services.GeospatialIndexService:new(10000)
+	self._networkedGeoGrid = self._spatialIndex:networkedGeoGrid()
+	self._trackManager = Medusa.Services.TrackManager:new({ geoGrid = self._networkedGeoGrid })
 
 	self._assetIndex = Medusa.Services.AssetIndex.new({
 		batteryRepository = batteryRepository,
@@ -234,11 +243,21 @@ function Medusa.Core.IadsNetwork:initialize()
 		airbases = airbaseStore,
 		interceptors = interceptorStore,
 		tracks = self._trackManager:getStore(),
-		geoGrid = self._geoGrid,
+		networkedGeoGrid = self._networkedGeoGrid,
+		localGeoGrid = self._spatialIndex:localGeoGrid(),
+		spatialIndex = self._spatialIndex,
 	})
 
 	self._probingService = Medusa.Services.SensorProbingService:new(self._coalitionId)
 	self._doctrine = Medusa.Config:getDoctrine(self._doctrineKey)
+	local network = self
+	self._aaaCtx.onModeChanged = function(battery, mode)
+		if mode == Medusa.Constants.Aaa.Mode.RADAR_DIRECTED then
+			network:_updateMaxEngagementRange(battery)
+		end
+		network._pdReassignNeeded = true
+	end
+	Medusa.Services.AaaService.setBarrageLimit(self._aaaBarrageState, self._id, self._doctrine.AAA.MaxBarrageGroups)
 
 	local cfg = Medusa.Config:get()
 	self._classifyStep = ChunkStep.new(cfg.ChunkBudgetTracks, _isTrackAlive)
@@ -315,12 +334,24 @@ function Medusa.Core.IadsNetwork:start()
 	return true
 end
 
+function Medusa.Core.IadsNetwork:_releaseLocalDefenses()
+	if not self._assetIndex then
+		return
+	end
+	Medusa.Services.ManpadService.cancelPendingWakes(self._assetIndex:manpads())
+	Medusa.Services.AaaService.cleanup({
+		networkId = self._id,
+		barrageState = self._aaaBarrageState,
+		batteryStore = self._assetIndex:batteries(),
+		trackStore = self._trackManager and self._trackManager:getStore() or nil,
+		now = GetTime(),
+	})
+end
+
 function Medusa.Core.IadsNetwork:stop()
 	self._running = false
 	self._logger:info("stopped")
-	if self._assetIndex then
-		Medusa.Services.ManpadService.cancelPendingWakes(self._assetIndex:manpads())
-	end
+	self:_releaseLocalDefenses()
 	if self._timerId then
 		CancelSchedule(self._timerId)
 		self._timerId = nil
@@ -346,7 +377,7 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 	local hierarchy = self._hierarchy
 	local networkId = self._id
 	local logger = self._logger
-	local geoGrid = self._geoGrid
+	local spatialIndex = self._spatialIndex
 	local batteryRepository = self._assetIndex:batteryRepository()
 	local harmSystems = self._harmCapableSystems
 	local doctrine = self._doctrine
@@ -368,9 +399,7 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 			if classification == "battery" then
 				local battery = stores.batteries:getByGroupId(dto.groupId)
 				if battery then
-					if battery.Position and geoGrid then
-						geoGrid:add("Battery", battery.BatteryId, battery.Position)
-					end
+					spatialIndex:syncBattery(battery)
 					iads:_updateMaxEngagementRange(battery)
 					if iads._erectComplete then
 						local BatteryActivationService = Medusa.Services.BatteryActivationService
@@ -393,9 +422,7 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 			elseif classification == "manpad" then
 				local battery = stores.manpads:getByGroupId(dto.groupId)
 				if battery then
-					if battery.Position and geoGrid then
-						geoGrid:add("Manpad", battery.BatteryId, battery.Position)
-					end
+					spatialIndex:syncBattery(battery)
 					local now = GetTime()
 					Medusa.Services.BatteryActivationService.goCold(battery, now, iads._trackManager:getStore())
 					if battery.TotalAmmoStatus <= 0 then
@@ -490,18 +517,18 @@ function Medusa.Core.IadsNetwork:_handleUnitDeath(unitId)
 		return
 	end
 
+	local wasRadarDirectedAaa = Medusa.Entities.Battery.isRadarDirectedAaa(battery)
 	batteryRepository:removeUnit(unitId)
 	if battery.Role == Medusa.Constants.BatteryRole.MANPAD then
 		local newStatus = Medusa.Entities.Battery.recomputeState(battery)
 		if newStatus == Medusa.Constants.BatteryOperationalStatus.DESTROYED then
 			Medusa.Services.ManpadService.cancelPendingWake(battery)
 			batteryRepository:remove(battery.BatteryId)
-			if self._geoGrid then
-				self._geoGrid:remove(battery.BatteryId)
-			end
+			self._spatialIndex:removeBattery(battery.BatteryId)
 			self._logger:info(string.format("manpad destroyed: %s (all MANPAD soldiers dead)", battery.GroupName))
 		else
 			Medusa.Services.ManpadService.rebuildHeadings(battery)
+			self._spatialIndex:syncBattery(battery)
 			self._logger:info(
 				string.format("manpad %s lost unit %d (%d remaining)", battery.GroupName, unitId, #battery.Units)
 			)
@@ -518,12 +545,30 @@ function Medusa.Core.IadsNetwork:_handleUnitDeath(unitId)
 	local newStatus = Medusa.Entities.Battery.recomputeState(battery)
 
 	if newStatus == Medusa.Constants.BatteryOperationalStatus.DESTROYED then
+		if battery.Role == Medusa.Constants.BatteryRole.AAA then
+			Medusa.Services.AaaService.cleanupBattery({
+				barrageState = self._aaaBarrageState,
+				trackStore = self._trackManager:getStore(),
+				now = GetTime(),
+			}, battery)
+		end
 		Medusa.Services.MetricsService.inc("medusa_battery_destroyed_total")
 		Medusa.Entities.Battery.releaseTrack(battery, self._trackManager:getStore())
 		batteryRepository:remove(battery.BatteryId)
-		self._geoGrid:remove(battery.BatteryId)
+		self._spatialIndex:removeBattery(battery.BatteryId)
 		self._logger:info(string.format("battery destroyed: %s (all units dead)", battery.GroupName))
 	else
+		if battery.Role == Medusa.Constants.BatteryRole.AAA then
+			Medusa.Services.AaaService.rebuildHeadings(battery)
+			if wasRadarDirectedAaa and Medusa.Entities.Battery.isIndependentAaa(battery) then
+				Medusa.Entities.Battery.releaseTrack(battery, self._trackManager:getStore())
+				if battery.IsPointDefense then
+					Medusa.Services.PointDefenseService.clearAssignment(battery.BatteryId, self._assetIndex:batteries())
+					self._pdReassignNeeded = true
+				end
+			end
+		end
+		self._spatialIndex:syncBattery(battery)
 		self._logger:info(
 			string.format("battery %s lost unit %d (%d remaining)", battery.GroupName, unitId, #battery.Units)
 		)
@@ -534,7 +579,7 @@ function Medusa.Core.IadsNetwork:_handleUnitDeath(unitId)
 		if degradation then
 			local context = {
 				batteryRepository = batteryRepository,
-				geoGrid = self._geoGrid,
+				geoGrid = self._networkedGeoGrid,
 				trackStore = self._trackManager:getStore(),
 			}
 			local result = Medusa.Entities.Battery.applyDegradedBehavior(battery, degradation, context)
@@ -573,7 +618,10 @@ function Medusa.Core.IadsNetwork:_processKillEvents(limit)
 			local battery = self._assetIndex:batteryRepository():getByUnitId(event._unitId)
 			if battery then
 				Medusa.Services.MetricsService.inc("medusa_kills_total")
-				if battery.Role ~= Medusa.Constants.BatteryRole.MANPAD then
+				if
+					battery.Role ~= Medusa.Constants.BatteryRole.MANPAD
+					and not Medusa.Entities.Battery.isIndependentAaa(battery)
+				then
 					self:_recordKillOutcome()
 				end
 				self._logger:info(string.format("battery %s scored a kill", battery.GroupName))
@@ -615,13 +663,15 @@ function Medusa.Core.IadsNetwork:_handleShot(unitId, weaponTypeName)
 		return
 	end
 	local isManpad = battery.Role == Medusa.Constants.BatteryRole.MANPAD
-	if isManpad and not Medusa.Entities.Battery.isAmmoBearingUnit(battery, unit) then
+	local isIndependentAaa = Medusa.Entities.Battery.isIndependentAaa(battery)
+	local isLocallyManaged = isManpad or isIndependentAaa
+	if isLocallyManaged and not Medusa.Entities.Battery.isAmmoBearingUnit(battery, unit) then
 		return
 	end
 	if not unit.AmmoTypes or #unit.AmmoTypes == 0 then
 		return
 	end
-	if isManpad and not hasMatchingAmmo(unit, weaponTypeName) then
+	if isLocallyManaged and not hasMatchingAmmo(unit, weaponTypeName) then
 		return
 	end
 
@@ -632,11 +682,11 @@ function Medusa.Core.IadsNetwork:_handleShot(unitId, weaponTypeName)
 	Medusa.Services.MetricsService.inc("medusa_shots_fired_total")
 	battery.ShotsFired = battery.ShotsFired + 1
 	battery.LastShotTime = now
-	if not isManpad then
+	if not isLocallyManaged then
 		self:_recordShotOutcome(0)
 	end
 	if
-		not isManpad
+		not isLocallyManaged
 		and battery.LastChanceTrackId
 		and battery.LastChanceShotsRemaining
 		and battery.LastChanceShotsRemaining > 0
@@ -646,7 +696,7 @@ function Medusa.Core.IadsNetwork:_handleShot(unitId, weaponTypeName)
 	end
 
 	local targetAlt = nil
-	if not isManpad and battery.CurrentTargetTrackId then
+	if not isLocallyManaged and battery.CurrentTargetTrackId then
 		local track = self._trackManager:getStore():get(battery.CurrentTargetTrackId)
 		if track and track.Position then
 			targetAlt = track.Position.y
@@ -659,6 +709,15 @@ function Medusa.Core.IadsNetwork:_handleShot(unitId, weaponTypeName)
 	local newStatus = Medusa.Entities.Battery.recomputeState(battery)
 	if isManpad then
 		Medusa.Services.ManpadService.onShot(battery, now)
+	elseif battery.Role == Medusa.Constants.BatteryRole.AAA then
+		Medusa.Services.AaaService.onShot({
+			networkId = self._id,
+			barrageState = self._aaaBarrageState,
+			batteryStore = self._assetIndex:batteries(),
+			trackStore = self._trackManager:getStore(),
+			localGeoGrid = self._assetIndex:localGeoGrid(),
+			doctrine = self._doctrine,
+		}, battery, unit, now)
 	end
 	if previousAmmo > 0 and battery.TotalAmmoStatus <= 0 then
 		battery.RearmCheckTime = now + Medusa.Constants.REARM_CHECK_INTERVAL_SEC
@@ -966,41 +1025,47 @@ function Medusa.Core.IadsNetwork:_populateGeoGrid()
 	local batteries = self._assetIndex:batteries():getAll()
 	local maxRange = 0
 	local maxSpread = 0
+	local networkedCount = 0
+	local localCount = 0
 	for i = 1, #batteries do
 		local b = batteries[i]
-		if b.Position then
-			self._geoGrid:add("Battery", b.BatteryId, b.Position)
-		end
-		local r = b.EngagementRangeMax or 0
-		if r > maxRange then
-			maxRange = r
-		end
-		local s = b.ClusterSpreadRadius or 0
-		if s > maxSpread then
-			maxSpread = s
+		self._spatialIndex:syncBattery(b)
+		if self._spatialIndex:isNetworkedBattery(b) then
+			networkedCount = networkedCount + 1
+			local r = b.EngagementRangeMax or 0
+			if r > maxRange then
+				maxRange = r
+			end
+			local s = b.ClusterSpreadRadius or 0
+			if s > maxSpread then
+				maxSpread = s
+			end
+		else
+			localCount = localCount + 1
 		end
 	end
 	self._maxEngagementRange = math.max(math.ceil((maxRange + maxSpread) / 10000) * 10000, 10000)
 
 	local manpads = self._assetIndex:manpads():getAll()
 	for i = 1, #manpads do
-		local m = manpads[i]
-		if m.Position then
-			self._geoGrid:add("Manpad", m.BatteryId, m.Position)
-		end
+		self._spatialIndex:syncBattery(manpads[i])
 	end
+	localCount = localCount + #manpads
 
 	self._logger:info(
 		string.format(
-			"geogrid: %d batteries, %d manpads indexed, maxEngagementRange=%dm",
-			#batteries,
-			#manpads,
+			"geogrid: %d networked, %d local defenses indexed, maxEngagementRange=%dm",
+			networkedCount,
+			localCount,
 			self._maxEngagementRange
 		)
 	)
 end
 
 function Medusa.Core.IadsNetwork:_updateMaxEngagementRange(battery)
+	if not self._spatialIndex:isNetworkedBattery(battery) then
+		return
+	end
 	local r = battery.EngagementRangeMax or 0
 	local s = battery.ClusterSpreadRadius or 0
 	local effective = math.max(math.ceil((r + s) / 10000) * 10000, 10000)
@@ -1056,7 +1121,10 @@ function Medusa.Core.IadsNetwork:_buildPollList()
 	local batteries = self._assetIndex:batteries():getAll()
 	for i = 1, #batteries do
 		local b = batteries[i]
-		if b.IsActingAsEWR or (datalink and b.ActivationState == AS.STATE_HOT) then
+		if
+			b.IsActingAsEWR
+			or (datalink and b.ActivationState == AS.STATE_HOT and not Medusa.Entities.Battery.isIndependentAaa(b))
+		then
 			list[#list + 1] = b.GroupName
 		end
 	end
@@ -1146,7 +1214,10 @@ function Medusa.Core.IadsNetwork:_runPhase()
 	ctx.batteryStore = self._assetIndex:batteries()
 	ctx.batteryRepository = self._assetIndex:batteryRepository()
 	ctx.manpadStore = self._assetIndex:manpads()
-	ctx.geoGrid = self._assetIndex:geoGrid()
+	ctx.networkedGeoGrid = self._assetIndex:networkedGeoGrid()
+	ctx.localGeoGrid = self._assetIndex:localGeoGrid()
+	ctx.geoGrid = ctx.networkedGeoGrid
+	ctx.spatialIndex = self._spatialIndex
 	ctx.sensorStore = self._assetIndex:sensors()
 	ctx.now = GetTime()
 	ctx.maxRange = self._maxEngagementRange
@@ -1467,7 +1538,8 @@ function Medusa.Core.IadsNetwork:_runManpadPhase()
 	local ctx = self._manpadCtx
 	ctx.manpadStore = self._assetIndex:manpads()
 	ctx.trackStore = self._trackManager:getStore()
-	ctx.geoGrid = self._assetIndex:geoGrid()
+	ctx.networkedGeoGrid = self._assetIndex:networkedGeoGrid()
+	ctx.localGeoGrid = self._assetIndex:localGeoGrid()
 	ctx.now = GetTime()
 	ctx.posture = self._doctrine and self._doctrine.Posture or Medusa.Constants.Posture.HOT_WAR
 	ctx.doctrine = self._doctrine
@@ -1486,11 +1558,45 @@ end
 function Medusa.Core.IadsNetwork:_runManpadPositionRefreshPhase()
 	local ctx = self._manpadCtx
 	ctx.manpadStore = self._assetIndex:manpads()
-	ctx.geoGrid = self._assetIndex:geoGrid()
+	ctx.localGeoGrid = self._assetIndex:localGeoGrid()
 	ctx.now = GetTime()
 	local ok, err = pcall(Medusa.Services.ManpadService.refreshOnePosition, ctx)
 	if not ok then
 		self._logger:error(string.format("manpad pos refresh failed: %s", tostring(err)))
+	end
+end
+
+function Medusa.Core.IadsNetwork:_runAaaPhase()
+	local ctx = self._aaaCtx
+	ctx.networkId = self._id
+	ctx.barrageState = self._aaaBarrageState
+	ctx.batteryStore = self._assetIndex:batteries()
+	ctx.trackStore = self._trackManager:getStore()
+	ctx.localGeoGrid = self._assetIndex:localGeoGrid()
+	ctx.spatialIndex = self._spatialIndex
+	ctx.now = GetTime()
+	ctx.posture = self._doctrine and self._doctrine.Posture or Medusa.Constants.Posture.HOT_WAR
+	ctx.doctrine = self._doctrine
+	ctx.coalitionId = self._coalitionId
+	local MS = Medusa.Services.MetricsService
+	local hpt = Medusa.hpTimer
+	local t1 = hpt()
+	local ok, err = pcall(Medusa.Services.AaaService.evaluate, ctx)
+	if not ok then
+		self._logger:error(string.format("AAA phase failed: %s", tostring(err)))
+	end
+	MS.observe("medusa_aaa_eval_duration_seconds", hpt() - t1)
+end
+
+function Medusa.Core.IadsNetwork:_runAaaPositionRefreshPhase()
+	local ctx = self._aaaCtx
+	ctx.batteryStore = self._assetIndex:batteries()
+	ctx.localGeoGrid = self._assetIndex:localGeoGrid()
+	ctx.spatialIndex = self._spatialIndex
+	ctx.now = GetTime()
+	local ok, err = pcall(Medusa.Services.AaaService.refreshOnePosition, ctx)
+	if not ok then
+		self._logger:error(string.format("AAA position refresh failed: %s", tostring(err)))
 	end
 end
 
@@ -1501,8 +1607,9 @@ function Medusa.Core.IadsNetwork:_applyDynamicBatteryRanges(battery)
 	local uncachedTypes = nil
 	local uncachedCount = 0
 	for i = 1, #battery.Units do
-		local typeName = battery.Units[i].UnitTypeName
-		if typeName then
+		local unit = battery.Units[i]
+		local typeName = unit.UnitTypeName
+		if Medusa.Entities.Battery.canSupplyDetectionRange(battery, unit) and typeName then
 			local caps = probing:getCapabilities(typeName)
 			if caps and caps.detectionRangeMax then
 				if not maxDetRange or caps.detectionRangeMax > maxDetRange then
@@ -1521,6 +1628,7 @@ function Medusa.Core.IadsNetwork:_applyDynamicBatteryRanges(battery)
 	if maxDetRange then
 		battery.DetectionRangeMax = maxDetRange
 		Medusa.Entities.Battery.computeEngagementRange(battery)
+		self._spatialIndex:syncBattery(battery)
 		self:_updateMaxEngagementRange(battery)
 		self._logger:info(
 			string.format("dynamic battery %s: applied cached detection range %.0fm", battery.GroupName, maxDetRange)
@@ -1561,6 +1669,7 @@ function Medusa.Core.IadsNetwork:_onProbingComplete()
 	)
 	local batteries = self._assetIndex:batteries():getAll()
 	for i = 1, #batteries do
+		self._spatialIndex:syncBattery(batteries[i])
 		self:_updateMaxEngagementRange(batteries[i])
 	end
 end
@@ -1602,7 +1711,7 @@ function Medusa.Core.IadsNetwork:tick()
 			local initCtx = {
 				batteryStore = network._assetIndex:batteries(),
 				sensorStore = network._assetIndex:sensors(),
-				geoGrid = network._geoGrid,
+				geoGrid = network._assetIndex:networkedGeoGrid(),
 				doctrine = network._doctrine,
 				now = GetTime(),
 			}
@@ -1639,6 +1748,14 @@ function Medusa.Core.IadsNetwork:tick()
 
 	if self._erectComplete and (self._tickCounter % self._manpadPosRefreshInterval) == 0 then
 		self:_runManpadPositionRefreshPhase()
+	end
+
+	if self._erectComplete and (self._tickCounter % self._aaaInterval) == 0 then
+		self:_runAaaPhase()
+	end
+
+	if self._erectComplete and (self._tickCounter % self._aaaPosRefreshInterval) == 0 then
+		self:_runAaaPositionRefreshPhase()
 	end
 
 	if (self._tickCounter % 4) ~= 0 then
@@ -1697,7 +1814,7 @@ function Medusa.Core.IadsNetwork:_onTick()
 			for i = 1, #batteries do
 				pcall(Medusa.Services.BatteryActivationService.erectGroup, batteries[i].GroupName)
 			end
-			Medusa.Services.ManpadService.cancelPendingWakes(self._assetIndex:manpads())
+			self:_releaseLocalDefenses()
 			self._running = false
 			return
 		end

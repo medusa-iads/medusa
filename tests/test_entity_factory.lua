@@ -28,7 +28,12 @@ local function makeMockUnit(id, name, desc)
 			return name
 		end,
 		getPosition = function()
-			return { p = { x = 100, y = 50, z = 200 } }
+			return {
+				p = { x = 100, y = 50, z = 200 },
+				x = { x = 1, y = 0, z = 0 },
+				y = { x = 0, y = 1, z = 0 },
+				z = { x = 0, y = 0, z = 1 },
+			}
 		end,
 		getDesc = function()
 			return desc or {}
@@ -67,6 +72,14 @@ local function makeDTO(overrides)
 		end
 	end
 	return base
+end
+
+local function useSearchRadarGroup()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "radar-1", { attributes = { ["SAM SR"] = true } }),
+		}
+	end
 end
 
 -- == Tests ==
@@ -131,6 +144,7 @@ function TestEntityFactory:test_battery_fields()
 end
 
 function TestEntityFactory:test_sensor_ewr_classification()
+	useSearchRadarGroup()
 	local stores = makeStores()
 	local dto = makeDTO({ parsed = { roles = { "EWR" } } })
 
@@ -142,6 +156,7 @@ function TestEntityFactory:test_sensor_ewr_classification()
 end
 
 function TestEntityFactory:test_sensor_gci_classification()
+	useSearchRadarGroup()
 	local stores = makeStores()
 	local dto = makeDTO({ parsed = { roles = { "GCI" } } })
 
@@ -155,6 +170,7 @@ function TestEntityFactory:test_sensor_gci_classification()
 end
 
 function TestEntityFactory:test_sensor_ewr_type()
+	useSearchRadarGroup()
 	local stores = makeStores()
 	local dto = makeDTO({ parsed = { roles = { "EWR" } } })
 
@@ -165,6 +181,7 @@ function TestEntityFactory:test_sensor_ewr_type()
 end
 
 function TestEntityFactory:test_sensor_has_hierarchy_path()
+	useSearchRadarGroup()
 	local stores = makeStores()
 	local dto = makeDTO({ parsed = { roles = { "EWR" }, echelonPath = { "Corps", "Div" } } })
 
@@ -212,6 +229,7 @@ function TestEntityFactory:test_hq_empty_echelon_path()
 end
 
 function TestEntityFactory:test_sensor_role_takes_priority_over_hq()
+	useSearchRadarGroup()
 	local stores = makeStores()
 	local dto = makeDTO({ parsed = { roles = { "EWR" }, isHQ = true } })
 
