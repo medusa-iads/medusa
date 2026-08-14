@@ -106,6 +106,11 @@ tasks:
     cmds:
       - node --test scripts/ci/comment_pr_results.test.js
 
+  release:package:test:
+    desc: "Test release artifact packaging"
+    cmds:
+      - '{{.PYTHON_BIN}} -m unittest discover -s {{.SCRIPT_DIR}}/build -p "test_*.py"'
+
   build:
     deps: [format, delete:artifact]
     desc: "Build the {{.PROJECT_NAME}} artifact"
@@ -151,6 +156,7 @@ tasks:
       - task: test
       - task: complexity:check
       - task: ci:comment:test
+      - task: release:package:test
       - task: build
       - task: syntax:check
       - task: lint:artifacts
@@ -262,6 +268,12 @@ tasks:
     cmds:
       - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/tag_version.py"
     silent: false
+
+  release:package:
+    deps: [build]
+    desc: "Create versioned release artifacts and checksums"
+    cmds:
+      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/prepare_release.py"
 
   retag:
     desc: "Delete current version tag locally and remotely, then re-tag HEAD"

@@ -8,9 +8,8 @@ on:
 env:
     ARTIFACT_NAME: medusa-thin.lua
     BUNDLED_ARTIFACT_NAME: medusa.lua
-    ARTIFACT_ZIP: medusa-thin.zip
-    BUNDLED_ARTIFACT_ZIP: medusa.zip
     BUILD_DIR: ./dist
+    RELEASE_DIR: ./dist/release
 
 permissions: {}
 
@@ -169,22 +168,15 @@ jobs:
               env:
                 GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Build
-              id: build
-              run: task build
-
-            - name: Zip artifacts
-              id: zip
+            - name: Prepare release artifacts
+              id: package
+              env:
+                REF_NAME: ${{ github.ref_name }}
               run: |
-                  cd '${{ env.BUILD_DIR }}'
-                  zip '${{ env.ARTIFACT_ZIP }}' '${{ env.ARTIFACT_NAME }}'
-                  zip '${{ env.BUNDLED_ARTIFACT_ZIP }}' '${{ env.BUNDLED_ARTIFACT_NAME }}'
-
-            - name: Generate checksums
-              id: checksums
-              run: |
-                  cd '${{ env.BUILD_DIR }}'
-                  sha256sum '${{ env.ARTIFACT_ZIP }}' '${{ env.BUNDLED_ARTIFACT_ZIP }}' > SHA256SUMS.txt
+                  task release:package
+                  VERSION="${REF_NAME#v}"
+                  echo "bundled=medusa-${VERSION}.lua" >> "$GITHUB_OUTPUT"
+                  echo "thin=medusa-thin-${VERSION}.lua" >> "$GITHUB_OUTPUT"
 
             - name: Extract release notes
               id: notes
@@ -204,9 +196,9 @@ jobs:
                 body_path: RELEASE_NOTES.md
                 fail_on_unmatched_files: true
                 files: |
-                    ${{ env.BUILD_DIR }}/${{ env.ARTIFACT_ZIP }}
-                    ${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }}
-                    ${{ env.BUILD_DIR }}/SHA256SUMS.txt
+                    ${{ env.RELEASE_DIR }}/${{ steps.package.outputs.bundled }}
+                    ${{ env.RELEASE_DIR }}/${{ steps.package.outputs.thin }}
+                    ${{ env.RELEASE_DIR }}/SHA256SUMS.txt
                     LICENSE
 
             - name: Upload to R2 (versioned)
@@ -215,9 +207,9 @@ jobs:
                 apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                 accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
                 command: |
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/SHA256SUMS.txt --file=${{ env.BUILD_DIR }}/SHA256SUMS.txt
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ steps.package.outputs.bundled }} --file=${{ env.RELEASE_DIR }}/${{ steps.package.outputs.bundled }} --content-type=text/plain --content-disposition='attachment; filename="${{ steps.package.outputs.bundled }}"'
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ steps.package.outputs.thin }} --file=${{ env.RELEASE_DIR }}/${{ steps.package.outputs.thin }} --content-type=text/plain --content-disposition='attachment; filename="${{ steps.package.outputs.thin }}"'
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/SHA256SUMS.txt --file=${{ env.RELEASE_DIR }}/SHA256SUMS.txt
 
             - name: Upload to R2 (latest)
               uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
@@ -225,6 +217,6 @@ jobs:
                 apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                 accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
                 command: |
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.BUILD_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/SHA256SUMS.txt --file=${{ env.BUILD_DIR }}/SHA256SUMS.txt
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/medusa.lua --file=${{ env.RELEASE_DIR }}/${{ steps.package.outputs.bundled }} --content-type=text/plain --content-disposition='attachment; filename="${{ steps.package.outputs.bundled }}"'
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/medusa-thin.lua --file=${{ env.RELEASE_DIR }}/${{ steps.package.outputs.thin }} --content-type=text/plain --content-disposition='attachment; filename="${{ steps.package.outputs.thin }}"'
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/SHA256SUMS.txt --file=${{ env.RELEASE_DIR }}/SHA256SUMS.txt

@@ -15,6 +15,7 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Release downloads now use versioned Lua filenames on GitHub and the documentation site.
 - Updated the bundled dcs-harness dependency to 1.0.0-rc2 and migrated ground-plane geometry to its DCS Vec2 and Vec3 contracts.
 - `EngageTactics` limits now count missile batteries only; AAA assignments do not consume or block missile-battery slots.
 - Local MANPAD and independent AAA groups now use a separate spatial index so they do not enlarge long-range IADS candidate queries.
@@ -22,6 +23,7 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Release-tag builds now stamp the exact tag version in generated artifacts.
 - HOT independent AAA is no longer considered an emitter during HARM classification.
 - `SHOOT_LOOK_SHOOT` now permits one VLR and one standard missile battery to engage the same track.
 - Ground sensor groups now receive their configured ROE, alarm, and emissions state on the first EMCON pass.
