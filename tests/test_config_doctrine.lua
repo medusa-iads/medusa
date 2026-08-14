@@ -94,17 +94,21 @@ function TestGetDoctrine:test_nil_input_uses_defaults()
 	lu.assertEquals(d.MANPADFieldRadioRangeM, 5000)
 	lu.assertEquals(d.AAA.AudioRangeM, 6000)
 	lu.assertAlmostEquals(d.AAA.AreaFireChance, 0.20, 0.001)
+	lu.assertAlmostEquals(d.AAA.BarrageChance, 0.25, 0.001)
 	lu.assertEquals(d.AAA.MaxBarrageGroups, 15)
 end
 
 function TestGetDoctrine:test_aaa_overrides_are_validated()
 	Medusa.Config:initialize()
 	local d = Medusa.Config:getDoctrine({
-		AAA = { AudioRangeM = 25000, AreaFireChance = -0.5, MaxBarrageGroups = 101 },
+		AAA = { AudioRangeM = 25000, AreaFireChance = -0.5, BarrageChance = 1.5, MaxBarrageGroups = 101 },
 	})
 	lu.assertEquals(d.AAA.AudioRangeM, 20000)
 	lu.assertEquals(d.AAA.AreaFireChance, 0)
+	lu.assertEquals(d.AAA.BarrageChance, 1)
 	lu.assertEquals(d.AAA.MaxBarrageGroups, 100)
+	local noBarrage = Medusa.Config:getDoctrine({ AAA = { BarrageChance = -0.5 } })
+	lu.assertEquals(noBarrage.AAA.BarrageChance, 0)
 	local disabled = Medusa.Config:getDoctrine({ AAA = { MaxBarrageGroups = -1 } })
 	lu.assertEquals(disabled.AAA.MaxBarrageGroups, 0)
 	local fractional = Medusa.Config:getDoctrine({ AAA = { MaxBarrageGroups = 15.9 } })

@@ -10,7 +10,7 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Added
 
 - Managed AAA groups with local visual and audio detection, area and barrage fire, nearby barrage propagation, and radar-directed operation.
-- AAA doctrine controls for audio range, area-fire chance, and the map-wide barrage group limit.
+- AAA doctrine controls for audio range, area-fire and barrage chances, and the map-wide barrage group limit.
 - AAA shell-ammunition tracking, with a 12 km fallback range when DCS omits shell range data.
 
 ### Changed

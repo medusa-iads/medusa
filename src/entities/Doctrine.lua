@@ -116,6 +116,12 @@ local AAA_SCHEMA = {
 		max = 1,
 	},
 	{
+		name = "BarrageChance",
+		default = Medusa.Constants.Aaa.DEFAULT_BARRAGE_CHANCE,
+		min = 0,
+		max = 1,
+	},
+	{
 		name = "MaxBarrageGroups",
 		default = Medusa.Constants.Aaa.DEFAULT_MAX_BARRAGE_GROUPS,
 		min = 0,

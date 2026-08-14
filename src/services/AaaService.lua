@@ -595,7 +595,7 @@ local function completeAreaFire(ctx, battery)
 		return
 	end
 	if aaa.BarragePending == nil then
-		aaa.BarragePending = math.random() < AC.BARRAGE_ESCALATION_CHANCE
+		aaa.BarragePending = math.random() < ctx.doctrine.AAA.BarrageChance
 	end
 	if aaa.BarragePending then
 		if not beginBarrage(ctx, battery) then

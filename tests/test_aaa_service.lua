@@ -98,7 +98,7 @@ local function context(site, targets, overrides)
 		posture = C.Posture.HOT_WAR,
 		doctrine = {
 			ROE = C.ROEState.TIGHT,
-			AAA = { AudioRangeM = 6000, AreaFireChance = 0.20, MaxBarrageGroups = 15 },
+			AAA = { AudioRangeM = 6000, AreaFireChance = 0.20, BarrageChance = 0.25, MaxBarrageGroups = 15 },
 		},
 	}
 	if overrides then
@@ -339,6 +339,7 @@ function TestAaaService:test_area_fire_can_escalate_into_alternating_barrage_bur
 	local site = battery()
 	local ctx = context(site, { target("aircraft", 3000, 500, 0) })
 	ctx.doctrine.AAA.AreaFireChance = 1
+	ctx.doctrine.AAA.BarrageChance = 1
 
 	Medusa.Services.AaaService.evaluate(ctx)
 	ctx.now = 15
@@ -370,6 +371,26 @@ function TestAaaService:test_area_fire_can_escalate_into_alternating_barrage_bur
 	lu.assertEquals(#self.pushedTasks, 3)
 	lu.assertEquals(self.metricCounts.medusa_aaa_barrage_responses_total, 1)
 	lu.assertEquals(self.metricCounts.medusa_aaa_barrage_bursts_total, 2)
+end
+
+function TestAaaService:test_barrage_chance_zero_finishes_after_area_fire()
+	math.random = function()
+		return 0
+	end
+	local site = battery()
+	local ctx = context(site, { target("aircraft", 3000, 500, 0) })
+	ctx.doctrine.AAA.AreaFireChance = 1
+	ctx.doctrine.AAA.BarrageChance = 0
+
+	Medusa.Services.AaaService.evaluate(ctx)
+	ctx.now = 15
+	Medusa.Services.AaaService.evaluate(ctx)
+	ctx.now = 45
+	Medusa.Services.AaaService.evaluate(ctx)
+
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+	lu.assertEquals(site.ActivationState, C.ActivationState.STATE_COLD)
+	lu.assertIsNil(self.metricCounts.medusa_aaa_barrage_responses_total)
 end
 
 function TestAaaService:test_barrage_pause_durations_diverge()
