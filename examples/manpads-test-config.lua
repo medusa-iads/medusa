@@ -10,8 +10,11 @@ MEDUSA_CONFIG = {
 			doctrine = {
 				Name = "MANPADS Test",
 				Posture = "HOT_WAR",
-				MANPADAlertnessDecaySec = 14400,
-				MANPADFieldRadioRangeM = 5000,
+				MANPAD = {
+					AlertnessDecaySec = 14400,
+					FieldRadioRangeM = 5000,
+					AudioRangeM = 6000,
+				},
 			},
 		},
 	},

@@ -61,14 +61,6 @@ local DOCTRINE_SCHEMA = {
 	{ name = "SensorCleanupSec", type = "number", default = 30, min = 5, max = 300 },
 	{ name = "BallisticSimStepSec", type = "number", default = 1.0, min = 0.1, max = 5 },
 	{ name = "BallisticSimMaxSec", type = "number", default = 120, min = 10, max = 600 },
-	{ name = "MANPADAlertnessDecaySec", type = "number", default = 14400, min = 0 },
-	{
-		name = "MANPADFieldRadioRangeM",
-		type = "number",
-		default = Medusa.Constants.Manpad.DEFAULT_FIELD_RADIO_RANGE_M,
-		min = 0,
-		max = Medusa.Constants.Manpad.MAX_FIELD_RADIO_RANGE_M,
-	},
 	-- Optional clamped numbers (nil if not set)
 	{ name = "ScanSec", type = "number_opt", min = 0, max = 86400 },
 	{ name = "QuietPeriodSec", type = "number_opt", min = 0, max = 86400 },
@@ -102,6 +94,28 @@ local DOCTRINE_SCHEMA = {
 	{ name = "Name", type = "string", default = "Passive Defense" },
 }
 
+local MANPAD_SCHEMA = {
+	{
+		name = "AlertnessDecaySec",
+		legacyName = "MANPADAlertnessDecaySec",
+		default = 14400,
+		min = 0,
+	},
+	{
+		name = "FieldRadioRangeM",
+		legacyName = "MANPADFieldRadioRangeM",
+		default = Medusa.Constants.Manpad.DEFAULT_FIELD_RADIO_RANGE_M,
+		min = 0,
+		max = Medusa.Constants.Manpad.MAX_FIELD_RADIO_RANGE_M,
+	},
+	{
+		name = "AudioRangeM",
+		default = Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M,
+		min = Medusa.Constants.Manpad.AUDIO_RANGE_MIN_M,
+		max = Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M,
+	},
+}
+
 local AAA_SCHEMA = {
 	{
 		name = "AudioRangeM",
@@ -113,7 +127,7 @@ local AAA_SCHEMA = {
 		name = "AreaFireChance",
 		default = Medusa.Constants.Aaa.DEFAULT_AREA_FIRE_CHANCE,
 		min = 0,
-		max = 1,
+		max = 0.5,
 	},
 	{
 		name = "BarrageChance",
@@ -131,6 +145,29 @@ local AAA_SCHEMA = {
 }
 
 local _logger
+
+local function resolveNumericSubtable(schema, overrides, legacyOverrides)
+	local source = type(overrides) == "table" and overrides or {}
+	local resolved = {}
+	for i = 1, #schema do
+		local setting = schema[i]
+		local raw = source[setting.name]
+		if raw == nil and setting.legacyName and legacyOverrides then
+			raw = legacyOverrides[setting.legacyName]
+		end
+		local value = tonumber(raw) or setting.default
+		if setting.min and value < setting.min then
+			value = setting.min
+		elseif setting.max and value > setting.max then
+			value = setting.max
+		end
+		if setting.integer then
+			value = math.floor(value)
+		end
+		resolved[setting.name] = value
+	end
+	return resolved
+end
 
 function Medusa.Entities.Doctrine.new(overrides)
 	local d = overrides or {}
@@ -199,21 +236,8 @@ function Medusa.Entities.Doctrine.new(overrides)
 		end
 	end
 
-	local aaaOverrides = type(d.AAA) == "table" and d.AAA or {}
-	doctrine.AAA = {}
-	for i = 1, #AAA_SCHEMA do
-		local s = AAA_SCHEMA[i]
-		local value = tonumber(aaaOverrides[s.name]) or s.default
-		if value < s.min then
-			value = s.min
-		elseif value > s.max then
-			value = s.max
-		end
-		if s.integer then
-			value = math.floor(value)
-		end
-		doctrine.AAA[s.name] = value
-	end
+	doctrine.MANPAD = resolveNumericSubtable(MANPAD_SCHEMA, d.MANPAD, d)
+	doctrine.AAA = resolveNumericSubtable(AAA_SCHEMA, d.AAA)
 
 	return doctrine
 end

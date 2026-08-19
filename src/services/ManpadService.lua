@@ -69,8 +69,9 @@ local function randomDelay(minSec, maxSec)
 	return minSec + math.random() * (maxSec - minSec)
 end
 
-function Medusa.Services.ManpadService.sampleAudioCueRange()
-	return C.Manpad.AUDIO_RANGE_MIN_M + math.random() * (C.Manpad.AUDIO_RANGE_MAX_M - C.Manpad.AUDIO_RANGE_MIN_M)
+function Medusa.Services.ManpadService.sampleAudioCueRange(maxRangeM)
+	local maximum = maxRangeM or C.Manpad.AUDIO_RANGE_MAX_M
+	return C.Manpad.AUDIO_RANGE_MIN_M + math.random() * (maximum - C.Manpad.AUDIO_RANGE_MIN_M)
 end
 
 local function completeThreatWake(battery, wakeReason, now)
@@ -184,8 +185,9 @@ function Medusa.Services.ManpadService.canFire(battery)
 		and (battery.TotalAmmoStatus or 0) > 0
 end
 
-local function hearsAudio(battery, track)
-	return CrewPerceptionService.hears(battery.Position, track.Position, battery.Manpad.AudioCueRangeM)
+local function hearsAudio(ctx, battery, track)
+	local audioRangeM = math.min(battery.Manpad.AudioCueRangeM, ctx.doctrine.MANPAD.AudioRangeM)
+	return CrewPerceptionService.hears(battery.Position, track.Position, audioRangeM)
 end
 
 function Medusa.Services.ManpadService.onShot(battery, now)
@@ -247,7 +249,7 @@ local function wakeAsleepManpadsInRadius(ctx, centerPos, radius, wakeReason, min
 end
 
 local function onManpadGoHot(ctx, battery)
-	local radioRangeM = ctx.doctrine.MANPADFieldRadioRangeM
+	local radioRangeM = ctx.doctrine.MANPAD.FieldRadioRangeM
 	if radioRangeM == 0 then
 		return
 	end
@@ -281,12 +283,12 @@ local function snapToAlert(battery, now, wakeReason)
 	completeThreatWake(battery, wakeReason, now)
 end
 
-local function checkAudioWake(battery, track, now)
+local function checkAudioWake(ctx, battery, track, now)
 	local state = battery.Manpad.SleepWakeState
 	if state ~= MSWS.ASLEEP and state ~= MSWS.ALERTING then
 		return
 	end
-	if not hearsAudio(battery, track) then
+	if not hearsAudio(ctx, battery, track) then
 		return
 	end
 	snapToAlert(battery, now, MWR.AUDIO)
@@ -323,7 +325,7 @@ local function attemptEngagement(ctx, battery, track, now, posture)
 end
 
 local function processThreatCandidate(ctx, battery, target, now, posture)
-	checkAudioWake(battery, target, now)
+	checkAudioWake(ctx, battery, target, now)
 	checkVisualWake(battery, target, now, posture)
 	return attemptEngagement(ctx, battery, target, now, posture)
 end
@@ -408,31 +410,34 @@ local function processAutonomousTargets(ctx, battery, now, posture)
 	return hostileAircraftFound
 end
 
-local function decayAlertnessIfExpired(battery, now, decaySec)
+local function decayAlertnessIfExpired(battery, now, manpadDoctrine)
 	local manpad = battery.Manpad
 	if
-		decaySec == 0
+		manpadDoctrine.AlertnessDecaySec == 0
 		or manpad.SleepWakeState ~= MSWS.ASLEEP
 		or manpad.LastAlertedTime == nil
-		or now - manpad.LastAlertedTime < decaySec
+		or now - manpad.LastAlertedTime < manpadDoctrine.AlertnessDecaySec
 	then
 		return
 	end
 	manpad.AlertCycleCount = 0
 	manpad.LastAlertedTime = nil
-	manpad.AudioCueRangeM = Medusa.Services.ManpadService.sampleAudioCueRange()
+	manpad.AudioCueRangeM = Medusa.Services.ManpadService.sampleAudioCueRange(manpadDoctrine.AudioRangeM)
 end
 
-local function returnToSleep(battery)
+local function returnToSleep(battery, audioRangeM)
 	local manpad = battery.Manpad
 	manpad.SleepWakeState = MSWS.ASLEEP
 	manpad.WakeReason = MWR.NONE
 	manpad.AlertStartTime = nil
-	manpad.AudioCueRangeM = math.max(manpad.AudioCueRangeM, Medusa.Services.ManpadService.sampleAudioCueRange())
+	manpad.AudioCueRangeM = math.min(
+		audioRangeM,
+		math.max(manpad.AudioCueRangeM, Medusa.Services.ManpadService.sampleAudioCueRange(audioRangeM))
+	)
 end
 
-local function evaluateSingle(ctx, battery, trackStore, geoGrid, now, posture, alertnessDecaySec)
-	decayAlertnessIfExpired(battery, now, alertnessDecaySec)
+local function evaluateSingle(ctx, battery, trackStore, geoGrid, now, posture, manpadDoctrine)
+	decayAlertnessIfExpired(battery, now, manpadDoctrine)
 	local state = battery.Manpad.SleepWakeState
 
 	if
@@ -484,7 +489,7 @@ local function evaluateSingle(ctx, battery, trackStore, geoGrid, now, posture, a
 		and not trackedAircraftFound
 		and not hostileAircraftFound
 	then
-		returnToSleep(battery)
+		returnToSleep(battery, manpadDoctrine.AudioRangeM)
 		return
 	end
 end
@@ -495,10 +500,10 @@ function Medusa.Services.ManpadService.evaluate(ctx)
 	local geoGrid = ctx.networkedGeoGrid or ctx.geoGrid
 	local now = ctx.now
 	local posture = ctx.posture
-	local alertnessDecaySec = ctx.doctrine.MANPADAlertnessDecaySec
+	local manpadDoctrine = ctx.doctrine.MANPAD
 	refreshAutonomousTargetCaches(ctx, manpads, now)
 	for i = 1, #manpads do
-		evaluateSingle(ctx, manpads[i], trackStore, geoGrid, now, posture, alertnessDecaySec)
+		evaluateSingle(ctx, manpads[i], trackStore, geoGrid, now, posture, manpadDoctrine)
 	end
 end
 

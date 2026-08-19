@@ -60,8 +60,11 @@ function TestGetDoctrine:test_inline_table_all_fields_reach_doctrine()
 		EMCON = { LR_SAM = "MINIMIZE" },
 		ScanSec = 45,
 		QuietPeriodSec = 20,
-		MANPADAlertnessDecaySec = 3600,
-		MANPADFieldRadioRangeM = 9000,
+		MANPAD = {
+			AlertnessDecaySec = 3600,
+			FieldRadioRangeM = 9000,
+			AudioRangeM = 4500,
+		},
 	}
 	local d = Medusa.Config:getDoctrine(input)
 	lu.assertEquals(d.Name, "Test Doctrine")
@@ -80,8 +83,9 @@ function TestGetDoctrine:test_inline_table_all_fields_reach_doctrine()
 	lu.assertEquals(d.EMCON.LR_SAM, "MINIMIZE")
 	lu.assertEquals(d.ScanSec, 45)
 	lu.assertEquals(d.QuietPeriodSec, 20)
-	lu.assertEquals(d.MANPADAlertnessDecaySec, 3600)
-	lu.assertEquals(d.MANPADFieldRadioRangeM, 9000)
+	lu.assertEquals(d.MANPAD.AlertnessDecaySec, 3600)
+	lu.assertEquals(d.MANPAD.FieldRadioRangeM, 9000)
+	lu.assertEquals(d.MANPAD.AudioRangeM, 4500)
 end
 
 function TestGetDoctrine:test_nil_input_uses_defaults()
@@ -90,8 +94,9 @@ function TestGetDoctrine:test_nil_input_uses_defaults()
 	lu.assertEquals(d.ROE, "TIGHT")
 	lu.assertEquals(d.HARMResponse, "AUTO_DEFENSE")
 	lu.assertAlmostEquals(d.PkFloor, 0.25, 0.001)
-	lu.assertEquals(d.MANPADAlertnessDecaySec, 14400)
-	lu.assertEquals(d.MANPADFieldRadioRangeM, 5000)
+	lu.assertEquals(d.MANPAD.AlertnessDecaySec, 14400)
+	lu.assertEquals(d.MANPAD.FieldRadioRangeM, 5000)
+	lu.assertEquals(d.MANPAD.AudioRangeM, 6000)
 	lu.assertEquals(d.AAA.AudioRangeM, 6000)
 	lu.assertAlmostEquals(d.AAA.AreaFireChance, 0.20, 0.001)
 	lu.assertAlmostEquals(d.AAA.BarrageChance, 0.25, 0.001)
@@ -113,6 +118,8 @@ function TestGetDoctrine:test_aaa_overrides_are_validated()
 	lu.assertEquals(disabled.AAA.MaxBarrageGroups, 0)
 	local fractional = Medusa.Config:getDoctrine({ AAA = { MaxBarrageGroups = 15.9 } })
 	lu.assertEquals(fractional.AAA.MaxBarrageGroups, 15)
+	local excessiveAreaFire = Medusa.Config:getDoctrine({ AAA = { AreaFireChance = 0.75 } })
+	lu.assertEquals(excessiveAreaFire.AAA.AreaFireChance, 0.5)
 end
 
 function TestGetDoctrine:test_aaa_audio_range_zero_disables_audio_detection()
@@ -124,28 +131,50 @@ end
 
 function TestGetDoctrine:test_manpad_field_radio_range_zero_disables_and_negative_clamps_to_zero()
 	Medusa.Config:initialize()
-	local disabled = Medusa.Config:getDoctrine({ MANPADFieldRadioRangeM = 0 })
-	local negative = Medusa.Config:getDoctrine({ MANPADFieldRadioRangeM = -1 })
-	lu.assertEquals(disabled.MANPADFieldRadioRangeM, 0)
-	lu.assertEquals(negative.MANPADFieldRadioRangeM, 0)
+	local disabled = Medusa.Config:getDoctrine({ MANPAD = { FieldRadioRangeM = 0 } })
+	local negative = Medusa.Config:getDoctrine({ MANPAD = { FieldRadioRangeM = -1 } })
+	lu.assertEquals(disabled.MANPAD.FieldRadioRangeM, 0)
+	lu.assertEquals(negative.MANPAD.FieldRadioRangeM, 0)
 end
 
 function TestGetDoctrine:test_manpad_field_radio_range_is_bounded()
 	Medusa.Config:initialize()
 	local maximum = Medusa.Constants.Manpad.MAX_FIELD_RADIO_RANGE_M
-	local atMaximum = Medusa.Config:getDoctrine({ MANPADFieldRadioRangeM = maximum })
-	local aboveMaximum = Medusa.Config:getDoctrine({ MANPADFieldRadioRangeM = maximum + 1 })
+	local atMaximum = Medusa.Config:getDoctrine({ MANPAD = { FieldRadioRangeM = maximum } })
+	local aboveMaximum = Medusa.Config:getDoctrine({ MANPAD = { FieldRadioRangeM = maximum + 1 } })
 
-	lu.assertEquals(atMaximum.MANPADFieldRadioRangeM, maximum)
-	lu.assertEquals(aboveMaximum.MANPADFieldRadioRangeM, maximum)
+	lu.assertEquals(atMaximum.MANPAD.FieldRadioRangeM, maximum)
+	lu.assertEquals(aboveMaximum.MANPAD.FieldRadioRangeM, maximum)
 end
 
 function TestGetDoctrine:test_manpad_alertness_decay_zero_disables_and_negative_clamps_to_zero()
 	Medusa.Config:initialize()
-	local disabled = Medusa.Config:getDoctrine({ MANPADAlertnessDecaySec = 0 })
-	local negative = Medusa.Config:getDoctrine({ MANPADAlertnessDecaySec = -1 })
-	lu.assertEquals(disabled.MANPADAlertnessDecaySec, 0)
-	lu.assertEquals(negative.MANPADAlertnessDecaySec, 0)
+	local disabled = Medusa.Config:getDoctrine({ MANPAD = { AlertnessDecaySec = 0 } })
+	local negative = Medusa.Config:getDoctrine({ MANPAD = { AlertnessDecaySec = -1 } })
+	lu.assertEquals(disabled.MANPAD.AlertnessDecaySec, 0)
+	lu.assertEquals(negative.MANPAD.AlertnessDecaySec, 0)
+end
+
+function TestGetDoctrine:test_manpad_audio_range_zero_disables_and_above_maximum_clamps()
+	Medusa.Config:initialize()
+	local disabled = Medusa.Config:getDoctrine({ MANPAD = { AudioRangeM = 0 } })
+	local aboveMaximum = Medusa.Config:getDoctrine({
+		MANPAD = { AudioRangeM = Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M + 1 },
+	})
+	lu.assertEquals(disabled.MANPAD.AudioRangeM, 0)
+	lu.assertEquals(aboveMaximum.MANPAD.AudioRangeM, Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M)
+end
+
+function TestGetDoctrine:test_flat_manpad_fields_are_accepted_as_compatibility_aliases()
+	Medusa.Config:initialize()
+	local d = Medusa.Config:getDoctrine({
+		MANPADAlertnessDecaySec = 3600,
+		MANPADFieldRadioRangeM = 9000,
+	})
+	lu.assertEquals(d.MANPAD.AlertnessDecaySec, 3600)
+	lu.assertEquals(d.MANPAD.FieldRadioRangeM, 9000)
+	lu.assertIsNil(d.MANPADAlertnessDecaySec)
+	lu.assertIsNil(d.MANPADFieldRadioRangeM)
 end
 
 function TestGetDoctrine:test_string_input_resolves_global()
@@ -168,14 +197,14 @@ function TestGetDoctrine:test_legacy_global_fallback()
 	Medusa_MM_Doctrine = {
 		ROE = "FREE",
 		ScanSec = 99,
-		MANPADAlertnessDecaySec = 7200,
-		MANPADFieldRadioRangeM = 6400,
+		MANPAD = { AlertnessDecaySec = 7200, FieldRadioRangeM = 6400, AudioRangeM = 3200 },
 	}
 	local d = Medusa.Config:getDoctrine(nil)
 	lu.assertEquals(d.ROE, "FREE")
 	lu.assertEquals(d.ScanSec, 99)
-	lu.assertEquals(d.MANPADAlertnessDecaySec, 7200)
-	lu.assertEquals(d.MANPADFieldRadioRangeM, 6400)
+	lu.assertEquals(d.MANPAD.AlertnessDecaySec, 7200)
+	lu.assertEquals(d.MANPAD.FieldRadioRangeM, 6400)
+	lu.assertEquals(d.MANPAD.AudioRangeM, 3200)
 	Medusa_MM_Doctrine = nil
 end
 
@@ -278,13 +307,13 @@ function TestGetNetworksDoctrine:test_multi_network_independent_doctrines()
 				name = "A",
 				coalition = 1,
 				prefix = "a",
-				doctrine = { ROE = "FREE", MANPADAlertnessDecaySec = 1800, MANPADFieldRadioRangeM = 3500 },
+				doctrine = { ROE = "FREE", MANPAD = { AlertnessDecaySec = 1800, FieldRadioRangeM = 3500 } },
 			},
 			{
 				name = "B",
 				coalition = 1,
 				prefix = "b",
-				doctrine = { ROE = "HOLD", MANPADAlertnessDecaySec = 28800, MANPADFieldRadioRangeM = 12000 },
+				doctrine = { ROE = "HOLD", MANPAD = { AlertnessDecaySec = 28800, FieldRadioRangeM = 12000 } },
 			},
 		},
 	}
@@ -295,9 +324,9 @@ function TestGetNetworksDoctrine:test_multi_network_independent_doctrines()
 	local dB = Medusa.Config:getDoctrine(nets[2].doctrine)
 	lu.assertEquals(dA.ROE, "FREE")
 	lu.assertEquals(dB.ROE, "HOLD")
-	lu.assertEquals(dA.MANPADAlertnessDecaySec, 1800)
-	lu.assertEquals(dB.MANPADAlertnessDecaySec, 28800)
-	lu.assertEquals(dA.MANPADFieldRadioRangeM, 3500)
-	lu.assertEquals(dB.MANPADFieldRadioRangeM, 12000)
+	lu.assertEquals(dA.MANPAD.AlertnessDecaySec, 1800)
+	lu.assertEquals(dB.MANPAD.AlertnessDecaySec, 28800)
+	lu.assertEquals(dA.MANPAD.FieldRadioRangeM, 3500)
+	lu.assertEquals(dB.MANPAD.FieldRadioRangeM, 12000)
 	MEDUSA_CONFIG = nil
 end
