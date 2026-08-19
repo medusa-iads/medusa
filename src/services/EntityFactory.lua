@@ -677,7 +677,9 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 	return "battery", 1
 end
 
-local function createManpad(dto, stores, networkId, units, inventory)
+local function createManpad(dto, stores, networkId, units, inventory, doctrine)
+	local audioRangeM = doctrine and doctrine.MANPAD and doctrine.MANPAD.AudioRangeM
+		or Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M
 	local position = nil
 	for i = 1, #units do
 		if hasRole(inventory.rolesByIndex[i], BUR.MANPAD) then
@@ -697,7 +699,7 @@ local function createManpad(dto, stores, networkId, units, inventory)
 			WakeReason = Medusa.Constants.Manpad.WakeReason.NONE,
 			AlertCycleCount = 0,
 			LastAlertedTime = nil,
-			AudioCueRangeM = Medusa.Services.ManpadService.sampleAudioCueRange(),
+			AudioCueRangeM = Medusa.Services.ManpadService.sampleAudioCueRange(audioRangeM),
 			AlertStartTime = nil,
 			HotUntil = nil,
 			CooldownUntil = nil,
@@ -751,7 +753,7 @@ function Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, har
 		return createBattery(dto, stores, networkId, harmSystems, units, inventory, inventory.batteryRole)
 	end
 	if inventory.manpadCount > 0 and inventory.manpadCount >= inventory.aaaCount then
-		return createManpad(dto, stores, networkId, units, inventory)
+		return createManpad(dto, stores, networkId, units, inventory, doctrine)
 	end
 	if
 		inventory.aaaCount > inventory.manpadCount

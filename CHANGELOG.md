@@ -9,14 +9,21 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- `MANPAD.AudioRangeM` doctrine control for the maximum MANPAD audio-detection range.
+
 ### Changed
 
+- MANPAD doctrine controls now use the `MANPAD` subtable, consistent with AAA doctrine controls.
+
 ### Fixed
+
+- `AAA.AreaFireChance` is now limited to `0.5`, so the inverted nighttime chance cannot be lower than the daytime chance.
 
 ### Removed
 
 ### Deprecated
 
+- Flat `MANPADAlertnessDecaySec` and `MANPADFieldRadioRangeM` doctrine fields remain compatibility aliases for the nested MANPAD fields.
 
 ## [1.3.0] - 2026-08-18
 ### Added

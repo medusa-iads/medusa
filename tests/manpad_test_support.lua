@@ -35,8 +35,11 @@ function Support.evaluateSingle(battery, trackStore, geoGrid, now, posture, deca
 		now = now,
 		posture = posture,
 		doctrine = {
-			MANPADAlertnessDecaySec = decaySec == nil and 14400 or decaySec,
-			MANPADFieldRadioRangeM = 5000,
+			MANPAD = {
+				AlertnessDecaySec = decaySec == nil and 14400 or decaySec,
+				FieldRadioRangeM = 5000,
+				AudioRangeM = Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M,
+			},
 		},
 	})
 end

@@ -124,7 +124,7 @@ local makeGeoGrid = ManpadTest.makeQueryGeoGrid
 local evaluateSingle = ManpadTest.evaluateSingle
 
 -- Helper: call ManpadService.evaluate with positional args (test ergonomics)
-local function evalPositional(store, trackStore, geoGrid, now, posture, coalitionId, decaySec, radioRangeM)
+local function evalPositional(store, trackStore, geoGrid, now, posture, coalitionId, decaySec, radioRangeM, audioRangeM)
 	Medusa.Services.ManpadService.evaluate({
 		manpadStore = store,
 		trackStore = trackStore,
@@ -133,8 +133,11 @@ local function evalPositional(store, trackStore, geoGrid, now, posture, coalitio
 		posture = posture,
 		coalitionId = coalitionId,
 		doctrine = {
-			MANPADAlertnessDecaySec = decaySec == nil and 14400 or decaySec,
-			MANPADFieldRadioRangeM = radioRangeM == nil and 5000 or radioRangeM,
+			MANPAD = {
+				AlertnessDecaySec = decaySec == nil and 14400 or decaySec,
+				FieldRadioRangeM = radioRangeM == nil and 5000 or radioRangeM,
+				AudioRangeM = audioRangeM == nil and Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M or audioRangeM,
+			},
 		},
 	})
 end
@@ -477,6 +480,20 @@ function TestAudioHearing:test_target_outsideAudioRange_doesNotWake()
 	lu.assertEquals(bat.Manpad.SleepWakeState, "ASLEEP", "targets beyond AudioCueRangeM must not wake the crew")
 end
 
+function TestAudioHearing:test_doctrine_audio_range_caps_crew_sensitivity()
+	local bat = makeAudioBattery(0)
+	bat.Manpad.AudioCueRangeM = 6000
+	local store = newManpadView()
+	store:add(bat)
+	local trackId = "track-audio-doctrine-cap"
+	local track = makeTrack({ TrackId = trackId, Position = { x = 3000, y = 0, z = 0 } })
+	local geoGrid = makeGeoGrid({ TrackIds = { [trackId] = true } })
+
+	evalPositional(store, makeTrackStore({ [trackId] = track }), geoGrid, 0, "NORMAL", nil, nil, nil, 2000)
+
+	lu.assertEquals(bat.Manpad.SleepWakeState, "ASLEEP")
+end
+
 function TestAudioHearing:test_slantDistance_includesAltitude()
 	local bat = makeAudioBattery(0)
 	local store = newManpadView()
@@ -659,7 +676,13 @@ local function makeAutonomousContext(store, now)
 		now = now,
 		posture = "HOT_WAR",
 		coalitionId = 1,
-		doctrine = { MANPADAlertnessDecaySec = 14400, MANPADFieldRadioRangeM = 5000 },
+		doctrine = {
+			MANPAD = {
+				AlertnessDecaySec = 14400,
+				FieldRadioRangeM = 5000,
+				AudioRangeM = Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M,
+			},
+		},
 	}
 end
 
