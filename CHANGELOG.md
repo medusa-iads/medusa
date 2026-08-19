@@ -17,7 +17,7 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
-- `AAA.AreaFireChance` now has a maximum value of `0.5`, so its direct and inverted probabilities cannot exceed 50%.
+- `AAA.AreaFireChance` is now limited to `0.5`, so the inverted nighttime chance cannot be lower than the daytime chance.
 
 ### Removed
 
