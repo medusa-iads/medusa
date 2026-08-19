@@ -4,6 +4,12 @@ on:
     push:
         tags:
             - 'v*.*.*'
+    workflow_dispatch:
+        inputs:
+            release_tag:
+                description: 'Published release tag to republish to R2'
+                required: true
+                type: string
 
 env:
     ARTIFACT_NAME: medusa-thin.lua
@@ -12,12 +18,14 @@ env:
     BUNDLED_ARTIFACT_ZIP: medusa.zip
     BUILD_DIR: ./dist
     RELEASE_DIR: ./dist/release
+    RELEASES_HOST: releases.medusa.airdefense.systems
 
 permissions: {}
 
 jobs:
     release-guard:
         name: Guard - Tag points to main
+        if: github.event_name == 'push'
         runs-on: ubuntu-24.04
         permissions:
             contents: read
@@ -43,7 +51,7 @@ jobs:
         name: Validate release
         runs-on: ubuntu-24.04
         needs: release-guard
-        if: needs.release-guard.outputs.on_main == 'true'
+        if: github.event_name == 'push' && needs.release-guard.outputs.on_main == 'true'
         permissions:
             contents: read
         steps:
@@ -151,6 +159,7 @@ jobs:
         name: Release on main tags only
         runs-on: ubuntu-24.04
         needs: validate
+        if: github.event_name == 'push'
         permissions:
             contents: write
         steps:
@@ -202,9 +211,9 @@ jobs:
                 apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                 accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
                 command: |
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/SHA256SUMS.txt --file=${{ env.RELEASE_DIR }}/SHA256SUMS.txt
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }} --remote
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/${{ env.ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.ARTIFACT_ZIP }} --remote
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ github.ref_name }}/SHA256SUMS.txt --file=${{ env.RELEASE_DIR }}/SHA256SUMS.txt --remote
 
             - name: Upload to R2 (latest)
               uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
@@ -212,6 +221,127 @@ jobs:
                 apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                 accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
                 command: |
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.ARTIFACT_ZIP }}
-                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/SHA256SUMS.txt --file=${{ env.RELEASE_DIR }}/SHA256SUMS.txt
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }} --remote
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.ARTIFACT_ZIP }} --remote
+                    r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/SHA256SUMS.txt --file=${{ env.RELEASE_DIR }}/SHA256SUMS.txt --remote
+
+            - name: Purge R2 CDN cache
+              env:
+                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+                  RELEASE_TAG: ${{ github.ref_name }}
+              shell: bash
+              run: |
+                  domain_response=$(curl --fail-with-body --silent --show-error \
+                    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets/$R2_BUCKET_NAME/domains/custom" \
+                    --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+                  zone_id=$(jq -er --arg host "$RELEASES_HOST" \
+                    '[.result.domains[] | select(.domain == $host and .enabled == true) | .zoneId][0]' \
+                    <<<"$domain_response")
+                  purge_payload=$(jq -nc \
+                    --arg base "https://$RELEASES_HOST" \
+                    --arg tag "$RELEASE_TAG" \
+                    --arg bundled "$BUNDLED_ARTIFACT_ZIP" \
+                    --arg thin "$ARTIFACT_ZIP" \
+                    '{files: [
+                      "\($base)/releases/\($tag)/\($bundled)",
+                      "\($base)/releases/\($tag)/\($thin)",
+                      "\($base)/releases/\($tag)/SHA256SUMS.txt",
+                      "\($base)/releases/latest/\($bundled)",
+                      "\($base)/releases/latest/\($thin)",
+                      "\($base)/releases/latest/SHA256SUMS.txt"
+                    ]}')
+                  purge_response=$(curl --fail-with-body --silent --show-error \
+                    "https://api.cloudflare.com/client/v4/zones/$zone_id/purge_cache" \
+                    --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                    --json "$purge_payload")
+                  jq -e '.success == true' <<<"$purge_response" >/dev/null
+
+    republish-r2:
+        name: Republish a GitHub release to R2
+        if: github.event_name == 'workflow_dispatch'
+        runs-on: ubuntu-24.04
+        permissions:
+            contents: read
+        env:
+            RELEASE_TAG: ${{ inputs.release_tag }}
+        steps:
+            - name: Validate release tag
+              shell: bash
+              run: |
+                  if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                    echo "::error::Invalid release tag: $RELEASE_TAG"
+                    exit 1
+                  fi
+
+            - name: Download published release artifacts
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              shell: bash
+              run: |
+                  mkdir -p "$RELEASE_DIR"
+                  gh release download "$RELEASE_TAG" \
+                    --repo "$GITHUB_REPOSITORY" \
+                    --dir "$RELEASE_DIR" \
+                    --pattern "$BUNDLED_ARTIFACT_ZIP" \
+                    --pattern "$ARTIFACT_ZIP" \
+                    --pattern SHA256SUMS.txt
+
+            - name: Verify release artifact checksums
+              shell: bash
+              run: |
+                  cd "$RELEASE_DIR"
+                  sha256sum -c SHA256SUMS.txt
+
+            - name: Upload to R2 (versioned)
+              uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
+              with:
+                  apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  command: |
+                      r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ env.RELEASE_TAG }}/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }} --remote
+                      r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ env.RELEASE_TAG }}/${{ env.ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.ARTIFACT_ZIP }} --remote
+                      r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/${{ env.RELEASE_TAG }}/SHA256SUMS.txt --file=${{ env.RELEASE_DIR }}/SHA256SUMS.txt --remote
+
+            - name: Upload to R2 (latest)
+              uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
+              with:
+                  apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  command: |
+                      r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.BUNDLED_ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.BUNDLED_ARTIFACT_ZIP }} --remote
+                      r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/${{ env.ARTIFACT_ZIP }} --file=${{ env.RELEASE_DIR }}/${{ env.ARTIFACT_ZIP }} --remote
+                      r2 object put ${{ secrets.R2_BUCKET_NAME }}/releases/latest/SHA256SUMS.txt --file=${{ env.RELEASE_DIR }}/SHA256SUMS.txt --remote
+
+            - name: Purge R2 CDN cache
+              env:
+                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+              shell: bash
+              run: |
+                  domain_response=$(curl --fail-with-body --silent --show-error \
+                    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets/$R2_BUCKET_NAME/domains/custom" \
+                    --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+                  zone_id=$(jq -er --arg host "$RELEASES_HOST" \
+                    '[.result.domains[] | select(.domain == $host and .enabled == true) | .zoneId][0]' \
+                    <<<"$domain_response")
+                  purge_payload=$(jq -nc \
+                    --arg base "https://$RELEASES_HOST" \
+                    --arg tag "$RELEASE_TAG" \
+                    --arg bundled "$BUNDLED_ARTIFACT_ZIP" \
+                    --arg thin "$ARTIFACT_ZIP" \
+                    '{files: [
+                      "\($base)/releases/\($tag)/\($bundled)",
+                      "\($base)/releases/\($tag)/\($thin)",
+                      "\($base)/releases/\($tag)/SHA256SUMS.txt",
+                      "\($base)/releases/latest/\($bundled)",
+                      "\($base)/releases/latest/\($thin)",
+                      "\($base)/releases/latest/SHA256SUMS.txt"
+                    ]}')
+                  purge_response=$(curl --fail-with-body --silent --show-error \
+                    "https://api.cloudflare.com/client/v4/zones/$zone_id/purge_cache" \
+                    --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                    --json "$purge_payload")
+                  jq -e '.success == true' <<<"$purge_response" >/dev/null
