@@ -111,6 +111,14 @@ tasks:
       - 'cp "{{.DOWNLOAD_DIR}}/harness.lua" "{{.DEFINITION}}" dependencies/'
       - 'echo "Vendored dcs-harness {{.DCS_HARNESS_VERSION}}"'
 
+  dependencies:lock:
+    desc: "Update the Python dependency lockfile"
+    preconditions:
+      - sh: command -v uv
+        msg: "uv 0.10.12 is required to update the dependency lockfile"
+    cmds:
+      - uv lock
+
   complexity:check:
     desc: "Report Lua complexity warnings"
     preconditions:
@@ -200,6 +208,7 @@ tasks:
     desc: "Bump the major version"
     cmds:
       - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py major"
+      - task: dependencies:lock
     sources:
       - "pyproject.toml"
     generates:
@@ -209,6 +218,7 @@ tasks:
     desc: "Bump the minor version"
     cmds:
       - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py minor"
+      - task: dependencies:lock
     sources:
       - "pyproject.toml"
     generates:
@@ -218,6 +228,7 @@ tasks:
     desc: "Bump the patch version"
     cmds:
       - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py patch"
+      - task: dependencies:lock
     sources:
       - "pyproject.toml"
     generates:

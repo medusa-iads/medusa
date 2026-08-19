@@ -9,6 +9,18 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+### Deprecated
+
+
+## [1.3.0] - 2026-08-18
+### Added
+
 - Managed AAA groups with local visual and audio detection, area and barrage fire, nearby barrage propagation, and radar-directed operation.
 - AAA doctrine controls for audio range, area-fire and barrage chances, and the map-wide barrage group limit.
 - AAA shell-ammunition tracking, with a 12 km fallback range when DCS omits shell range data.
@@ -27,11 +39,6 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 - HOT independent AAA is no longer considered an emitter during HARM classification.
 - `SHOOT_LOOK_SHOOT` now permits one VLR and one standard missile battery to engage the same track.
 - Ground sensor groups now receive their configured ROE, alarm, and emissions state on the first EMCON pass.
-
-### Removed
-
-### Deprecated
-
 
 ## [1.2.0] - 2026-08-12
 ### Added
@@ -122,7 +129,8 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Added
 	- Initial Release
 
-[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/medusa-iads/medusa/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/medusa-iads/medusa/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/medusa-iads/medusa/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/medusa-iads/medusa/compare/v1.1.1...v1.1.2
