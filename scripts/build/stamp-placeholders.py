@@ -72,8 +72,7 @@ def compute_effective_version(base_version: str | None) -> str:
     if in_gha:
         on_tag = ref.startswith("refs/tags/")
         tag_name = ref.split("/")[-1] if on_tag else None
-        on_main = branch == "main"
-        if on_main and on_tag and is_full_semver(tag_name):
+        if on_tag and is_full_semver(tag_name):
             # Exact release. If tag has 'v' prefix, normalize.
             return normalize_tag_to_semver(tag_name)
         else:

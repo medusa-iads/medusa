@@ -102,6 +102,34 @@ local DOCTRINE_SCHEMA = {
 	{ name = "Name", type = "string", default = "Passive Defense" },
 }
 
+local AAA_SCHEMA = {
+	{
+		name = "AudioRangeM",
+		default = Medusa.Constants.Aaa.DEFAULT_AUDIO_RANGE_M,
+		min = 0,
+		max = Medusa.Constants.Aaa.MAX_AUDIO_RANGE_M,
+	},
+	{
+		name = "AreaFireChance",
+		default = Medusa.Constants.Aaa.DEFAULT_AREA_FIRE_CHANCE,
+		min = 0,
+		max = 1,
+	},
+	{
+		name = "BarrageChance",
+		default = Medusa.Constants.Aaa.DEFAULT_BARRAGE_CHANCE,
+		min = 0,
+		max = 1,
+	},
+	{
+		name = "MaxBarrageGroups",
+		default = Medusa.Constants.Aaa.DEFAULT_MAX_BARRAGE_GROUPS,
+		min = 0,
+		max = Medusa.Constants.Aaa.MAX_BARRAGE_GROUPS,
+		integer = true,
+	},
+}
+
 local _logger
 
 function Medusa.Entities.Doctrine.new(overrides)
@@ -169,6 +197,22 @@ function Medusa.Entities.Doctrine.new(overrides)
 		else
 			doctrine[s.name] = raw or s.default
 		end
+	end
+
+	local aaaOverrides = type(d.AAA) == "table" and d.AAA or {}
+	doctrine.AAA = {}
+	for i = 1, #AAA_SCHEMA do
+		local s = AAA_SCHEMA[i]
+		local value = tonumber(aaaOverrides[s.name]) or s.default
+		if value < s.min then
+			value = s.min
+		elseif value > s.max then
+			value = s.max
+		end
+		if s.integer then
+			value = math.floor(value)
+		end
+		doctrine.AAA[s.name] = value
 	end
 
 	return doctrine

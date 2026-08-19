@@ -20,6 +20,7 @@ L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
 /* ---- Layer groups ---- */
 
 MTD.zoneLayer    = L.layerGroup().addTo(MTD.map);
+MTD.aaaDetectionLayer = L.layerGroup().addTo(MTD.map);
 MTD.manpadLobeLayer = L.layerGroup().addTo(MTD.map);
 MTD.sensorLayer  = L.layerGroup().addTo(MTD.map);
 MTD.manpadLayer  = L.layerGroup().addTo(MTD.map);
@@ -92,7 +93,12 @@ async function refresh() {
             MTD.query("medusa_manpad_narrow_detection_range_meters").catch(function () { return []; }), // 32
             MTD.query("medusa_manpad_wide_detection_range_meters").catch(function () { return []; }),   // 33
             MTD.query("medusa_manpad_narrow_detection_half_angle_degrees").catch(function () { return []; }), // 34
-            MTD.query("medusa_manpad_wide_detection_half_angle_degrees").catch(function () { return []; })    // 35
+            MTD.query("medusa_manpad_wide_detection_half_angle_degrees").catch(function () { return []; }),   // 35
+            MTD.query(MTD.netExpr("medusa_aaa_info")).catch(function () { return []; }),                       // 36
+            MTD.query(MTD.netExpr("medusa_aaa_heading_degrees")).catch(function () { return []; }),            // 37
+            MTD.query("medusa_aaa_visual_detection_range_meters").catch(function () { return []; }),          // 38
+            MTD.query("medusa_aaa_visual_detection_half_angle_degrees").catch(function () { return []; }),     // 39
+            MTD.query(MTD.netExpr("medusa_aaa_audio_range_meters")).catch(function () { return []; })          // 40
         ]);
 
         var batLat          = results[0];
@@ -131,6 +137,11 @@ async function refresh() {
         var manpadWideRangeResult = results[33];
         var manpadNarrowAngleResult = results[34];
         var manpadWideAngleResult = results[35];
+        var aaaInfoResult = results[36];
+        var aaaHeadingResult = results[37];
+        var aaaVisualRangeResult = results[38];
+        var aaaVisualAngleResult = results[39];
+        var aaaAudioRangeResult = results[40];
 
         /* Liveness check */
         var isLive = false;
@@ -153,6 +164,7 @@ async function refresh() {
             MTD.trackMarkers = {};
             MTD.ringsByBattery = {};
             MTD.zoneLayer.clearLayers();
+            MTD.aaaDetectionLayer.clearLayers();
             MTD.sensorLayer.clearLayers();
             MTD.manpadLobeLayer.clearLayers();
             MTD.manpadLayer.clearLayers();
@@ -207,6 +219,13 @@ async function refresh() {
             wideRangeMeters: MTD.firstMetricValue(manpadWideRangeResult),
             narrowHalfAngleDegrees: MTD.firstMetricValue(manpadNarrowAngleResult),
             wideHalfAngleDegrees: MTD.firstMetricValue(manpadWideAngleResult)
+        };
+        var aaaInfoMap = MTD.buildScopedInfoMap(aaaInfoResult, "aaa");
+        var aaaHeadingMap = MTD.buildScopedIndexedValues(aaaHeadingResult, "aaa", "heading_index");
+        var aaaAudioRangeMap = MTD.buildLabelMap(aaaAudioRangeResult, "network");
+        var aaaGeometry = {
+            rangeMeters: MTD.firstMetricValue(aaaVisualRangeResult),
+            halfAngleDegrees: MTD.firstMetricValue(aaaVisualAngleResult)
         };
 
         /* Build cluster map: { batteryName: [ {lat, lon}, ... ] } */
@@ -287,7 +306,11 @@ async function refresh() {
             manpadLonMap: manpadLonMap,
             manpadInfoMap: manpadInfoMap,
             manpadHeadingMap: manpadHeadingMap,
-            manpadGeometry: manpadGeometry
+            manpadGeometry: manpadGeometry,
+            aaaInfoMap: aaaInfoMap,
+            aaaHeadingMap: aaaHeadingMap,
+            aaaAudioRangeMap: aaaAudioRangeMap,
+            aaaGeometry: aaaGeometry
         };
 
         /* Kill markers: detect disappeared tracks */
@@ -307,6 +330,8 @@ async function refresh() {
 
         /* Render border zones (behind everything) */
         MTD.renderBorderZones(data);
+
+        MTD.renderAaaDetection(data);
 
         var manpadResult = MTD.renderManpads(data);
 

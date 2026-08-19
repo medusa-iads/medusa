@@ -68,6 +68,27 @@ local function makeBattery(overrides)
 	return Medusa.Entities.Battery.new(data)
 end
 
+local function makeRadarDirectedAaa(overrides)
+	local aaaOverrides = {}
+	for key, value in pairs(overrides or {}) do
+		aaaOverrides[key] = value
+	end
+	aaaOverrides.Role = Medusa.Constants.BatteryRole.AAA
+	local site = makeBattery(aaaOverrides)
+	site.DetectionRangeMax = 50000
+	site.Units = {
+		Medusa.Entities.Battery.newUnit({
+			UnitId = site.GroupId * 10,
+			Roles = { Medusa.Constants.BatteryUnitRole.AAA },
+		}),
+		Medusa.Entities.Battery.newUnit({
+			UnitId = site.GroupId * 10 + 1,
+			Roles = { Medusa.Constants.BatteryUnitRole.SEARCH_RADAR },
+		}),
+	}
+	return site
+end
+
 local function makeMockGeoGrid(batteryStore)
 	return {
 		queryRadius = function(_, _, _, _)
@@ -238,10 +259,17 @@ end
 
 function TestAssignTargets:test_skips_track_with_existing_assignment()
 	local track = makeTrack({ TrackId = "T1" })
-	track.AssignedBatteryIds:add("B-existing")
 	self.trackStore:add(track)
+	local existing = makeBattery({
+		BatteryId = "B-existing",
+		GroupId = 1,
+		GroupName = "SAM-existing",
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+	})
+	Medusa.Entities.Battery.assignTrack(existing, track, 900)
+	self.batteryStore:add(existing)
 
-	local battery = makeBattery({ BatteryId = "B1", GroupId = 1, GroupName = "SAM-1" })
+	local battery = makeBattery({ BatteryId = "B1", GroupId = 2, GroupName = "SAM-1" })
 	self.batteryStore:add(battery)
 
 	local doctrine = makeFreeDoctrine()
@@ -297,6 +325,93 @@ function TestAssignTargets:test_skips_hot_batteries()
 	}))
 
 	lu.assertEquals(#assignments, 0)
+end
+
+function TestAssignTargets:test_skips_independent_aaa()
+	local track = makeTrack({ TrackId = "T1" })
+	self.trackStore:add(track)
+
+	local battery = makeBattery({
+		BatteryId = "AAA-1",
+		GroupId = 1,
+		GroupName = "AAA-1",
+		Role = Medusa.Constants.BatteryRole.AAA,
+	})
+	self.batteryStore:add(battery)
+
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = makeFreeDoctrine(),
+	}))
+
+	lu.assertEquals(#assignments, 0)
+	lu.assertNil(battery.CurrentTargetTrackId)
+end
+
+function TestAssignTargets:test_assigns_radar_directed_aaa()
+	local track = makeTrack({ TrackId = "T1" })
+	self.trackStore:add(track)
+
+	local battery = makeRadarDirectedAaa({
+		BatteryId = "AAA-1",
+		GroupId = 1,
+		GroupName = "AAA-1",
+	})
+	self.batteryStore:add(battery)
+
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = makeFreeDoctrine(),
+	}))
+
+	lu.assertEquals(#assignments, 1)
+	lu.assertEquals(assignments[1].batteryId, "AAA-1")
+end
+
+function TestAssignTargets:test_aaa_does_not_consume_shoot_shoot_slots()
+	local track = makeTrack({ TrackId = "T1" })
+	self.trackStore:add(track)
+	local aaa = makeRadarDirectedAaa({
+		BatteryId = "AAA-1",
+		GroupId = 1,
+		GroupName = "AAA-1",
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+	})
+	Medusa.Entities.Battery.assignTrack(aaa, track, 900)
+	self.batteryStore:add(aaa)
+	self.batteryStore:add(makeBattery({ BatteryId = "B1", GroupId = 2, GroupName = "SAM-1" }))
+	self.batteryStore:add(makeBattery({ BatteryId = "B2", GroupId = 3, GroupName = "SAM-2" }))
+
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = makeFreeDoctrine({ EngageTactics = "SHOOT_SHOOT" }),
+	}))
+
+	lu.assertEquals(#assignments, 2)
+	lu.assertTrue(track.AssignedBatteryIds:contains("B1"))
+	lu.assertTrue(track.AssignedBatteryIds:contains("B2"))
+end
+
+function TestAssignTargets:test_shoot_in_depth_does_not_limit_aaa_assignments()
+	local track = makeTrack({ TrackId = "T1" })
+	self.trackStore:add(track)
+	self.batteryStore:add(makeRadarDirectedAaa({ BatteryId = "AAA-1", GroupId = 1, GroupName = "AAA-1" }))
+	self.batteryStore:add(makeRadarDirectedAaa({ BatteryId = "AAA-2", GroupId = 2, GroupName = "AAA-2" }))
+
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = makeFreeDoctrine({ EngageTactics = "SHOOT_IN_DEPTH" }),
+	}))
+
+	lu.assertEquals(#assignments, 2)
 end
 
 function TestAssignTargets:test_skips_destroyed_batteries()
@@ -711,6 +826,49 @@ function TestCheckDeactivations:test_returns_hot_battery_with_nil_target()
 	lu.assertEquals(#result, 1)
 	lu.assertIs(result[1].battery, battery)
 	lu.assertEquals(result[1].reason, "idle hold-down expired")
+end
+
+function TestCheckDeactivations:test_independent_aaa_owns_its_local_hot_timeout()
+	local battery = makeBattery({
+		Role = Medusa.Constants.BatteryRole.AAA,
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+	})
+
+	local result = Medusa.Services.TargetAssigner.checkSingleDeactivation(
+		battery,
+		makeCtx({
+			trackStore = self.trackStore,
+			doctrine = makeFreeDoctrine(),
+		})
+	)
+
+	lu.assertNil(result)
+end
+
+function TestCheckDeactivations:test_independent_aaa_is_not_handed_off_by_wta()
+	local track = makeTrack({
+		TrackId = "T1",
+		Position = { x = 50000, y = 5000, z = 0 },
+		Velocity = { x = 0, y = 0, z = 0 },
+	})
+	self.trackStore:add(track)
+	local battery = makeBattery({
+		Role = Medusa.Constants.BatteryRole.AAA,
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+		CurrentTargetTrackId = "T1",
+	})
+
+	local result = Medusa.Services.TargetAssigner.evaluateSingleHandoff(
+		battery,
+		makeCtx({
+			trackStore = self.trackStore,
+			batteryStore = self.batteryStore,
+			geoGrid = makeMockGeoGrid(self.batteryStore),
+			doctrine = makeFreeDoctrine({ PkFloor = 1 }),
+		})
+	)
+
+	lu.assertNil(result)
 end
 
 function TestCheckDeactivations:test_returns_hot_battery_when_track_removed()

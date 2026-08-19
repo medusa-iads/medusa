@@ -50,7 +50,9 @@
         { "expr": "medusa_handoff_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} Handoff" },
         { "expr": "medusa_emcon_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} EMCON" },
         { "expr": "medusa_manpad_eval_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} MANPAD Eval" },
-        { "expr": "medusa_manpad_autonomous_scan_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} MANPAD World Search" }
+        { "expr": "medusa_manpad_autonomous_scan_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} MANPAD World Search" },
+        { "expr": "medusa_aaa_eval_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} AAA Eval" },
+        { "expr": "medusa_aaa_local_search_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} AAA World Search" }
       ],
       "fieldConfig": { "defaults": { "unit": "s" } }
     },

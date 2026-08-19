@@ -86,14 +86,13 @@ local function makeNetwork(id, manpadStore, geoGrid)
 	local grid = geoGrid or makeGeoGrid({})
 	return {
 		_id = id or "test-network",
-		_geoGrid = grid,
 		_assetIndex = {
 			manpads = function(self)
 				return store
 			end,
 		},
 		_store = store,
-		_ctx = { manpadStore = store, geoGrid = grid },
+		_ctx = { manpadStore = store, localGeoGrid = grid },
 	}
 end
 
@@ -478,7 +477,10 @@ function TestManpadScheduleWake:test_scheduleWake_emptyContextStore_isNoOp()
 	local bat = makeManpadBattery({ NetworkId = "unregistered-network-xyz" })
 	local emptyStore = newManpadView()
 
-	Medusa.Services.ManpadService.cueFromIADS({ manpadStore = emptyStore, geoGrid = makeGeoGrid({}) }, bat.Position)
+	Medusa.Services.ManpadService.cueFromIADS(
+		{ manpadStore = emptyStore, localGeoGrid = makeGeoGrid({}) },
+		bat.Position
+	)
 
 	lu.assertEquals(
 		#timerHarness.scheduledCallbacks,

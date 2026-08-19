@@ -6,6 +6,7 @@ require("core.Constants")
 require("core.Logger")
 require("services.BatteryActivationService")
 require("services.HarmDetectionService")
+require("entities.Battery")
 
 --[[
             ██████╗  ██████╗ ██╗███╗   ██╗████████╗    ██████╗ ███████╗███████╗███████╗███╗   ██╗███████╗███████╗
@@ -38,6 +39,7 @@ local BR = Medusa.Constants.BatteryRole
 local LS = Medusa.Constants.TrackLifecycleState
 local BatteryActivationService = Medusa.Services.BatteryActivationService
 local C = Medusa.Constants
+local Battery = Medusa.Entities.Battery
 
 local function clearTable(t)
 	for k in pairs(t) do
@@ -84,6 +86,9 @@ function Medusa.Services.PointDefenseService.isProviderViable(provider)
 	if not provider then
 		return false
 	end
+	if Battery.isIndependentAaa(provider) then
+		return false
+	end
 	if provider.OperationalStatus ~= BOS.ACTIVE and provider.OperationalStatus ~= BOS.ENGAGEMENT_IMPAIRED then
 		return false
 	end
@@ -101,10 +106,13 @@ function Medusa.Services.PointDefenseService.releaseOrphanedDefenders(ctx)
 		local pd = batteries[i]
 		if pd.IsPointDefense and pd.PointDefenseTargetId then
 			local liege = batteryStore:get(pd.PointDefenseTargetId)
-			if not liege or not Medusa.Services.PointDefenseService.isProviderViable(liege) then
+			if
+				not Medusa.Services.PointDefenseService.isProviderViable(pd)
+				or not Medusa.Services.PointDefenseService.isProviderViable(liege)
+			then
 				_logger:info(
 					string.format(
-						"PD %s released: liege %s no longer viable",
+						"PD %s released: assignment to %s no longer viable",
 						pd.GroupName or pd.BatteryId,
 						pd.PointDefenseTargetId
 					)
@@ -124,7 +132,13 @@ function Medusa.Services.PointDefenseService.autoAssignShorad(ctx)
 	local assignCount = 0
 	for i = 1, #batteries do
 		local pd = batteries[i]
-		if PD_ROLES[pd.Role] and pd.OperationalStatus == BOS.ACTIVE and pd.Position and not pd.IsPointDefense then
+		if
+			PD_ROLES[pd.Role]
+			and not Battery.isIndependentAaa(pd)
+			and pd.OperationalStatus == BOS.ACTIVE
+			and pd.Position
+			and not pd.IsPointDefense
+		then
 			local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(
 				geoGrid,
 				batteryStore,

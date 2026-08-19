@@ -119,32 +119,7 @@ jobs:
 
       - name: Syntax check
         id: syntax-check
-        run: |
-          luac -p '${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME }}'
-          luac -p '${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}'
-
-      - name: Lua 5.1 compatibility check
-        id: lua51-compat
-        run: |
-          ERRORS=0
-          for f in '${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME }}' '${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}'; do
-            # Integer division operator (// is a comment in 5.1, silent bug)
-            if grep -nP '(?<![/:-])//' "$f" | grep -vP '^\d+:\s*--'; then
-              echo "::error file=$f::Found // (integer division) - use math.floor(a/b) instead"
-              ERRORS=1
-            fi
-            # Lua 5.2+ standard library functions
-            if grep -nP '\b(string\.pack|string\.unpack|string\.packsize|table\.move|table\.pack|table\.unpack|utf8\.)' "$f"; then
-              echo "::error file=$f::Found Lua 5.2+ stdlib function - not available in DCS Lua 5.1"
-              ERRORS=1
-            fi
-            # Bitwise library (bit32 is 5.2+)
-            if grep -nP '\bbit32\.' "$f"; then
-              echo "::error file=$f::Found bit32 - not available in Lua 5.1"
-              ERRORS=1
-            fi
-          done
-          exit $ERRORS
+        run: task syntax:check
 
       - name: Verify version stamped
         id: version-stamp-check
@@ -166,7 +141,7 @@ jobs:
           config-path: "selene.toml"
           lint-path: "${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME }}"
           report-as-annotations: "false"
-          selene-args: "--display-style Json"
+          selene-args: "--allow-warnings --display-style Json"
           working-directory: "."
 
       - name: Lint bundled
@@ -174,10 +149,10 @@ jobs:
         continue-on-error: true
         uses: YoloWingPixie/selene-lua-linter-action@24ecf180fd5bb4d3b40b4296de61b32179cb79d1 # v1
         with:
-          config-path: "selene.toml"
+          config-path: "selene-bundled.toml"
           lint-path: "${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}"
           report-as-annotations: "false"
-          selene-args: "--display-style Json"
+          selene-args: "--allow-warnings --display-style Json"
           working-directory: "."
 
       - name: Test CI PR comment
@@ -245,7 +220,9 @@ jobs:
           if [ "${{ steps.test.outcome }}" != "success" ] || \
              [ "${{ steps.build.outcome }}" != "success" ] || \
              [ "${{ steps.syntax-check.outcome }}" != "success" ] || \
-             [ "${{ steps.version-stamp-check.outcome }}" != "success" ]; then
+             [ "${{ steps.version-stamp-check.outcome }}" != "success" ] || \
+             [ "${{ steps.lint-thin.outcome }}" != "success" ] || \
+             [ "${{ steps.lint-bundled.outcome }}" != "success" ]; then
             echo "::error::Critical checks failed"
             exit 1
           fi

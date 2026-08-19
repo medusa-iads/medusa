@@ -4,6 +4,7 @@ version: "3"
 
 vars:
   PROJECT_NAME: Medusa
+  DCS_HARNESS_VERSION: 1.0.0
   ARTIFACT_NAME: medusa-thin.lua
   BUNDLED_ARTIFACT_NAME: medusa.lua
   BUILD_DIR: ./dist
@@ -13,6 +14,8 @@ vars:
   STYLUA_BIN_WIN: ./tools/stylua/stylua.exe
   SELENE_BIN: ./tools/selene/selene
   SELENE_BIN_WIN: ./tools/selene/selene.exe
+  SELENE_BUNDLED_CONFIG: selene-bundled.toml
+  SELENE_CONFIG: selene.toml
   LUAUNIT_BIN: ./tools/luaunit/luaunit.lua
   TEST_DIR: ./tests
   PYTHON_BIN: python
@@ -48,12 +51,37 @@ tasks:
 
   lint:
     deps: [build]
-    desc: "Run Selene on build artifact"
+    desc: "Run Selene on build artifacts"
     cmds:
-      - cmd: "{{.SELENE_BIN}} --allow-warnings --config selene.toml {{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
+      - task: lint:artifacts
+
+  lint:artifacts:
+    desc: "Run Selene on existing build artifacts"
+    cmds:
+      - task: lint:thin
+      - task: lint:bundled
+
+  lint:thin:
+    desc: "Run Selene on the thin build artifact"
+    cmds:
+      - cmd: "{{.SELENE_BIN}} --allow-warnings --config {{.SELENE_CONFIG}} {{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
         platforms: [linux, darwin]
-      - cmd: "{{.SELENE_BIN_WIN}} --allow-warnings --config selene.toml {{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
+      - cmd: "{{.SELENE_BIN_WIN}} --allow-warnings --config {{.SELENE_CONFIG}} {{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
         platforms: [windows]
+
+  lint:bundled:
+    desc: "Run Selene on the bundled build artifact"
+    cmds:
+      - cmd: "{{.SELENE_BIN}} --allow-warnings --config {{.SELENE_BUNDLED_CONFIG}} {{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}"
+        platforms: [linux, darwin]
+      - cmd: "{{.SELENE_BIN_WIN}} --allow-warnings --config {{.SELENE_BUNDLED_CONFIG}} {{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}"
+        platforms: [windows]
+
+  syntax:check:
+    desc: "Parse build artifacts with Lua 5.1"
+    cmds:
+      - 'luac -p "{{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"'
+      - 'luac -p "{{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}"'
 
   test:
     desc: "Run tests with LuaUnit"
@@ -62,6 +90,26 @@ tasks:
     sources:
       - "{{.SOURCE_DIR}}/**/*.lua"
       - "{{.TEST_DIR}}/**/*.lua"
+
+  dependencies:update:dcs-harness:
+    desc: "Update the vendored dcs-harness release"
+    vars:
+      DOWNLOAD_DIR: ./.task/dcs-harness
+      ARCHIVE: "{{.DOWNLOAD_DIR}}/harness.zip"
+      DEFINITION: "{{.DOWNLOAD_DIR}}/harness.d.lua"
+    preconditions:
+      - sh: command -v curl
+        msg: "curl is required to update dcs-harness"
+      - sh: command -v unzip
+        msg: "unzip is required to update dcs-harness"
+      - sh: command -v cp
+        msg: "cp is required to update dcs-harness"
+    cmds:
+      - 'curl --fail --location --silent --show-error --create-dirs --output "{{.ARCHIVE}}" "https://github.com/YoloWingPixie/dcs-harness/releases/download/v{{.DCS_HARNESS_VERSION}}/harness.zip"'
+      - 'unzip -o "{{.ARCHIVE}}" -d "{{.DOWNLOAD_DIR}}"'
+      - 'curl --fail --location --silent --show-error --output "{{.DEFINITION}}" "https://raw.githubusercontent.com/YoloWingPixie/dcs-harness/v{{.DCS_HARNESS_VERSION}}/dist/harness.d.lua"'
+      - 'cp "{{.DOWNLOAD_DIR}}/harness.lua" "{{.DEFINITION}}" dependencies/'
+      - 'echo "Vendored dcs-harness {{.DCS_HARNESS_VERSION}}"'
 
   complexity:check:
     desc: "Report Lua complexity warnings"
@@ -79,6 +127,11 @@ tasks:
     cmds:
       - node --test scripts/ci/comment_pr_results.test.js
 
+  release:package:test:
+    desc: "Test release artifact packaging"
+    cmds:
+      - '{{.PYTHON_BIN}} -m unittest discover -s {{.SCRIPT_DIR}}/build -p "test_*.py"'
+
   build:
     deps: [format, delete:artifact]
     desc: "Build the {{.PROJECT_NAME}} artifact"
@@ -92,6 +145,19 @@ tasks:
     generates:
       - "{{.BUILD_DIR}}/{{.ARTIFACT_NAME}}"
       - "{{.BUILD_DIR}}/{{.BUNDLED_ARTIFACT_NAME}}"
+
+  diagrams:build:
+    desc: "Render documentation diagrams"
+    preconditions:
+      - sh: command -v d2
+        msg: "D2 is required to render documentation diagrams"
+    cmds:
+      - for: sources
+        cmd: 'd2 --layout=elk --pad=24 --omit-version "{{.ITEM}}" "{{trimSuffix ".d2" .ITEM}}.svg"'
+    sources:
+      - "docs/diagrams/**/*.d2"
+    generates:
+      - "docs/diagrams/**/*.svg"
 
   delete:artifact:
     desc: "Delete the build artifact"
@@ -111,7 +177,10 @@ tasks:
       - task: test
       - task: complexity:check
       - task: ci:comment:test
-      - task: lint
+      - task: release:package:test
+      - task: build
+      - task: syntax:check
+      - task: lint:artifacts
       - task: o11y:check
 
   ci:watch:
@@ -220,6 +289,12 @@ tasks:
     cmds:
       - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/tag_version.py"
     silent: false
+
+  release:package:
+    deps: [build]
+    desc: "Create release archives and checksums"
+    cmds:
+      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/prepare_release.py"
 
   retag:
     desc: "Delete current version tag locally and remotely, then re-tag HEAD"

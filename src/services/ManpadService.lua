@@ -4,6 +4,9 @@ require("core.Constants")
 require("entities.Battery")
 require("services.BatteryActivationService")
 require("services.MetricsService")
+require("services.CrewPerceptionService")
+require("services.LocalSearchService")
+require("services.NeighborPropagationService")
 
 --[[
             ███╗   ███╗ █████╗ ███╗   ██╗██████╗  █████╗ ██████╗     ███████╗███████╗██████╗ ██╗   ██╗██╗ ██████╗███████╗
@@ -43,19 +46,23 @@ local MDM = Medusa.Constants.Manpad.DetectionMode
 local MWR = Medusa.Constants.Manpad.WakeReason
 local P = Medusa.Constants.Posture
 
--- Pre-allocated GeoGrid kind filter tables to avoid per-call allocation.
--- Shared across all queryRadius calls in this module.
 local _FILTER_TRACK = { "Track" }
-local _FILTER_MANPAD = { "Manpad" }
-local _AIR_UNIT_CATEGORIES = {
-	[Unit.Category.AIRPLANE] = true,
-	[Unit.Category.HELICOPTER] = true,
-}
 local _INFERRED_AIRCRAFT_TYPES = {
 	[C.AssessedAircraftType.FIXED_WING] = true,
 	[C.AssessedAircraftType.ROTARY_WING] = true,
 	[C.AssessedAircraftType.FIGHTER] = true,
 	[C.AssessedAircraftType.SEAD_AIRCRAFT] = true,
+}
+local CrewPerceptionService = Medusa.Services.CrewPerceptionService
+local LocalSearchService = Medusa.Services.LocalSearchService
+local NeighborPropagationService = Medusa.Services.NeighborPropagationService
+local _PRIMARY_VISUAL_PROFILES = { CrewPerceptionService.PRIMARY_PROFILE }
+local _FULL_VISUAL_PROFILES = {
+	CrewPerceptionService.PRIMARY_PROFILE,
+	{
+		RangeM = C.Manpad.NARROW_RANGE_M * C.Manpad.WIDE_RANGE_FACTOR,
+		CosHalfAngle = C.Manpad.COS_WIDE,
+	},
 }
 
 local function randomDelay(minSec, maxSec)
@@ -75,49 +82,18 @@ local function completeThreatWake(battery, wakeReason, now)
 	manpad.LastAlertedTime = now
 end
 
---- Rebuilds battery.Manpad.UnitHeadings from the current Units roster. Only
---- BUR.MANPAD soldiers contribute headings; non-combat roster entries are
---- skipped. Reuses existing slot tables when present so mobile-team refreshes
---- don't churn the allocator. Used at discovery (fresh empty headings table)
---- and on position-refresh ticks.
 function Medusa.Services.ManpadService.rebuildHeadings(battery)
-	local units = battery.Units
-	if not units then
-		battery.Manpad.UnitHeadingCount = 0
-		return
-	end
-	local headings = battery.Manpad.UnitHeadings or {}
-	battery.Manpad.UnitHeadings = headings
-	local written = 0
-	for j = 1, #units do
-		local u = units[j]
-		if Medusa.Entities.Battery.isAmmoBearingUnit(battery, u) and u.UnitName then
-			local headingDeg = GetUnitHeading(u.UnitName)
-			if headingDeg then
-				local rad = math.rad(headingDeg)
-				written = written + 1
-				local slot = headings[written]
-				if slot then
-					slot.hx = math.cos(rad)
-					slot.hz = math.sin(rad)
-				else
-					headings[written] = { hx = math.cos(rad), hz = math.sin(rad) }
-				end
-			end
-		end
-	end
-	for i = #headings, written + 1, -1 do
-		headings[i] = nil
-	end
-	battery.Manpad.UnitHeadingCount = written
+	CrewPerceptionService.rebuildHeadings(battery, battery.Manpad, C.BatteryUnitRole.MANPAD)
 end
 
 function Medusa.Services.ManpadService.headingBearingDegrees(heading)
-	local bearing = math.deg(math.atan2(heading.hx, heading.hz))
-	if bearing < 0 then
-		bearing = bearing + 360
+	return CrewPerceptionService.headingBearingDegrees(heading)
+end
+
+local function receiveScheduledWake(battery, wakeReason, now)
+	if battery.Manpad.SleepWakeState == MSWS.ALERTING then
+		completeThreatWake(battery, wakeReason, now)
 	end
-	return bearing
 end
 
 local function scheduleWake(ctx, battery, wakeReason, minSec, maxSec)
@@ -134,26 +110,22 @@ local function scheduleWake(ctx, battery, wakeReason, minSec, maxSec)
 	end
 	manpad.SleepWakeState = MSWS.ALERTING
 	manpad.WakeReason = wakeReason
-
-	local batteryId = battery.BatteryId
-	local manpadStore = ctx.manpadStore
-	local timerId
-	timerId = ScheduleOnce(function()
-		local bat = manpadStore:get(batteryId)
-		if not bat or bat.Manpad.WakeTimerId ~= timerId then
-			return
-		end
-		bat.Manpad.WakeTimerId = nil
-		if bat.Manpad.SleepWakeState == MSWS.ALERTING then
-			completeThreatWake(bat, bat.Manpad.WakeReason, GetTime())
-		end
-	end, nil, randomDelay(minSec, maxSec))
-	if not timerId then
+	if
+		not NeighborPropagationService.scheduleDelivery({
+			recipient = battery,
+			recipientStore = ctx.manpadStore,
+			recipientStateField = "Manpad",
+			pendingTimerField = "WakeTimerId",
+			delayMinSec = minSec,
+			delayMaxSec = maxSec,
+			message = wakeReason,
+			onDelivery = receiveScheduledWake,
+		})
+	then
 		manpad.SleepWakeState = MSWS.ASLEEP
 		manpad.WakeReason = MWR.NONE
 		return false
 	end
-	manpad.WakeTimerId = timerId
 	return true
 end
 
@@ -181,47 +153,8 @@ function Medusa.Services.ManpadService.canDetectVisually(battery, track, posture
 		return false
 	end
 
-	-- Relative altitude ceiling rejects targets too far above the MANPAD.
-	-- Look-down (altRel <= 0) is allowed: mountain MANPAD vs valley target.
-	local altRel = track.Position.y - battery.Position.y
-	if altRel > C.Manpad.REL_ALT_CEIL_M then
-		return false
-	end
-
-	local dx = track.Position.x - battery.Position.x
-	local dz = track.Position.z - battery.Position.z
-	local dist2D_sq = dx * dx + dz * dz
-	local narrowRange = C.Manpad.NARROW_RANGE_M
-	if dist2D_sq > narrowRange * narrowRange then
-		return false
-	end
-	-- Coincident (directly overhead): dot-product direction math is
-	-- undefined at zero distance, so treat as seen unconditionally.
-	if dist2D_sq < 1 then
-		return true
-	end
-
-	local dist2D = math.sqrt(dist2D_sq)
-	local invDist = 1 / dist2D
-	local toTrackX = dx * invDist
-	local toTrackZ = dz * invDist
-	local narrowOnly = detectionMode == MDM.NARROW
-	local headings = battery.Manpad.UnitHeadings
-	local count = battery.Manpad.UnitHeadingCount or 0
-	local wideRange = narrowRange * C.Manpad.WIDE_RANGE_FACTOR
-
-	-- Explicit count iteration: #headings is undefined when a heading probe
-	-- failed at discovery and left the array shorter than the unit count.
-	for j = 1, count do
-		local h = headings[j]
-		local dot = h.hx * toTrackX + h.hz * toTrackZ
-		if dot >= C.Manpad.COS_NARROW then
-			return true
-		elseif not narrowOnly and dot >= C.Manpad.COS_WIDE and dist2D <= wideRange then
-			return true
-		end
-	end
-	return false
+	local profiles = detectionMode == MDM.NARROW and _PRIMARY_VISUAL_PROFILES or _FULL_VISUAL_PROFILES
+	return CrewPerceptionService.canSee(battery.Position, track.Position, battery.Manpad, profiles)
 end
 
 function Medusa.Services.ManpadService.shouldEngage(battery, track, posture)
@@ -252,11 +185,7 @@ function Medusa.Services.ManpadService.canFire(battery)
 end
 
 local function hearsAudio(battery, track)
-	local dx = track.Position.x - battery.Position.x
-	local dy = track.Position.y - battery.Position.y
-	local dz = track.Position.z - battery.Position.z
-	local range = battery.Manpad.AudioCueRangeM
-	return dx * dx + dy * dy + dz * dz <= range * range
+	return CrewPerceptionService.hears(battery.Position, track.Position, battery.Manpad.AudioCueRangeM)
 end
 
 function Medusa.Services.ManpadService.onShot(battery, now)
@@ -274,8 +203,7 @@ end
 function Medusa.Services.ManpadService.cancelPendingWake(battery)
 	if battery.Manpad and battery.Manpad.WakeTimerId then
 		local wasAlerting = battery.Manpad.SleepWakeState == MSWS.ALERTING
-		CancelSchedule(battery.Manpad.WakeTimerId)
-		battery.Manpad.WakeTimerId = nil
+		NeighborPropagationService.cancelDelivery(battery, "Manpad", "WakeTimerId")
 		if wasAlerting then
 			battery.Manpad.SleepWakeState = MSWS.ASLEEP
 			battery.Manpad.WakeReason = MWR.NONE
@@ -300,22 +228,19 @@ function Medusa.Services.ManpadService.onRearmed(battery, now)
 end
 
 local function wakeAsleepManpadsInRadius(ctx, centerPos, radius, wakeReason, minSec, maxSec, excludeId)
-	local results = ctx.geoGrid:queryRadius(centerPos, radius, _FILTER_MANPAD)
-	local manpadIds = results.ManpadIds
-	if not manpadIds then
-		return 0
-	end
+	local manpads = NeighborPropagationService.findRecipients(
+		ctx.localGeoGrid or ctx.geoGrid,
+		ctx.manpadStore,
+		centerPos,
+		radius,
+		"Manpad",
+		excludeId
+	)
 	local scheduledCount = 0
-	for id in pairs(manpadIds) do
-		if id ~= excludeId then
-			local bat = ctx.manpadStore:get(id)
-			if
-				bat
-				and bat.Manpad.SleepWakeState == MSWS.ASLEEP
-				and scheduleWake(ctx, bat, wakeReason, minSec, maxSec)
-			then
-				scheduledCount = scheduledCount + 1
-			end
+	for i = 1, #manpads do
+		local battery = manpads[i]
+		if battery.Manpad.SleepWakeState == MSWS.ASLEEP and scheduleWake(ctx, battery, wakeReason, minSec, maxSec) then
+			scheduledCount = scheduledCount + 1
 		end
 	end
 	return scheduledCount
@@ -427,205 +352,56 @@ local function processCandidateTracks(ctx, battery, trackStore, now, posture, tr
 	return aircraftFound
 end
 
-local function isHostileAircraft(unit, coalitionId)
-	if not IsUnitActive(unit) then
-		return false
-	end
-	local targetCoalition = GetUnitCoalition(unit)
-	if targetCoalition == 0 or targetCoalition == coalitionId then
-		return false
-	end
-	return _AIR_UNIT_CATEGORIES[GetUnitCategoryEx(unit)] == true
-end
-
-local function clearSet(values)
-	for key in pairs(values) do
-		values[key] = nil
-	end
-end
-
-local function syncAutonomousScanQueue(ctx, manpads)
-	local liveIds = ctx.autonomousLiveIds or {}
-	ctx.autonomousLiveIds = liveIds
-	clearSet(liveIds)
-
-	local queue = ctx.autonomousScanQueue
-	local queuedIds = ctx.autonomousScanQueuedIds
-	local topologyChanged = not queue or not queuedIds or queue:size() ~= #manpads
-	for i = 1, #manpads do
-		local batteryId = manpads[i].BatteryId
-		liveIds[batteryId] = true
-		if not topologyChanged and not queuedIds[batteryId] then
-			topologyChanged = true
-		end
-	end
-	if not topologyChanged then
-		return queue
-	end
-
-	local replacement = RingBuffer(math.max(1, #manpads), false)
-	local replacementIds = {}
-	if queue then
-		local queuedCount = queue:size()
-		for _ = 1, queuedCount do
-			local batteryId = queue:pop()
-			if liveIds[batteryId] and not replacementIds[batteryId] then
-				replacement:push(batteryId)
-				replacementIds[batteryId] = true
-			end
-		end
-	end
-	for i = 1, #manpads do
-		local batteryId = manpads[i].BatteryId
-		if not replacementIds[batteryId] then
-			replacement:push(batteryId)
-			replacementIds[batteryId] = true
-		end
-	end
-
-	local cacheByBatteryId = ctx.autonomousTargetCache
-	if cacheByBatteryId then
-		for batteryId in pairs(cacheByBatteryId) do
-			if not liveIds[batteryId] then
-				cacheByBatteryId[batteryId] = nil
-			end
-		end
-	end
-
-	ctx.autonomousScanQueue = replacement
-	ctx.autonomousScanQueuedIds = replacementIds
-	return replacement
-end
-
-local function getUnitName(unit)
-	local ok, unitName = pcall(unit.getName, unit)
-	if ok and type(unitName) == "string" and unitName ~= "" then
-		return unitName
-	end
-	return nil
-end
-
-local function scanAutonomousTargets(ctx, battery, now)
-	local targets = RingBuffer(C.Manpad.AUTONOMOUS_TARGET_CACHE_CAPACITY, false)
-	local cache = {
-		ExpiresAt = now + C.Manpad.AUTONOMOUS_TARGET_CACHE_TTL_SEC,
-		Processed = false,
-		Targets = targets,
-	}
-	ctx.autonomousTargetCache[battery.BatteryId] = cache
-
-	local searchVolume = CreateSphereVolume(battery.Position, C.Manpad.GEOGRID_QUERY_RADIUS_M)
-	if not searchVolume then
-		return false
-	end
-
-	local startedAt = Medusa.hpTimer()
-	SearchWorldObjects(Object.Category.UNIT, searchVolume, function(unit)
-		if not isHostileAircraft(unit, ctx.coalitionId) then
-			return true
-		end
-		local unitName = getUnitName(unit)
-		local position = GetUnitPosition(unit)
-		if not unitName or not position then
-			return true
-		end
-		targets:push({
-			UnitName = unitName,
-			Position = { x = position.x, y = position.y, z = position.z },
+local function getLocalSearch(ctx)
+	local search = ctx.localSearch
+	if not search then
+		search = LocalSearchService:new({
+			coalitionId = ctx.coalitionId,
+			searchRadiusM = C.Manpad.GEOGRID_QUERY_RADIUS_M,
+			quotaPerSec = C.Manpad.AUTONOMOUS_SCAN_QUOTA_PER_SEC,
+			cacheTtlSec = C.Manpad.AUTONOMOUS_TARGET_CACHE_TTL_SEC,
+			cacheCapacity = C.Manpad.AUTONOMOUS_TARGET_CACHE_CAPACITY,
+			metrics = {
+				scansTotal = "medusa_manpad_autonomous_scans_total",
+				scanDuration = "medusa_manpad_autonomous_scan_duration_seconds",
+				cacheReuses = "medusa_manpad_autonomous_cache_reuses_total",
+				queueDepth = "medusa_manpad_autonomous_scan_queue_depth",
+			},
 		})
-		return not targets:isFull()
-	end)
-	Medusa.Services.MetricsService.inc("medusa_manpad_autonomous_scans_total")
-	Medusa.Services.MetricsService.observe(
-		"medusa_manpad_autonomous_scan_duration_seconds",
-		Medusa.hpTimer() - startedAt
-	)
-	return true
-end
-
-local function replenishAutonomousScanTokens(ctx, now)
-	local quota = C.Manpad.AUTONOMOUS_SCAN_QUOTA_PER_SEC
-	local lastTime = ctx.autonomousScanTokenTime
-	if lastTime == nil or now < lastTime then
-		ctx.autonomousScanTokens = quota
-	else
-		ctx.autonomousScanTokens = math.min(quota, (ctx.autonomousScanTokens or quota) + (now - lastTime) * quota)
+		ctx.localSearch = search
 	end
-	ctx.autonomousScanTokenTime = now
+	search.coalitionId = ctx.coalitionId
+	return search
 end
 
 local function refreshAutonomousTargetCaches(ctx, manpads, now)
-	local queue = syncAutonomousScanQueue(ctx, manpads)
-	Medusa.Services.MetricsService.set("medusa_manpad_autonomous_scan_queue_depth", queue:size())
-	if ctx.coalitionId == nil or queue:isEmpty() then
-		return
-	end
-
-	ctx.autonomousTargetCache = ctx.autonomousTargetCache or {}
-	replenishAutonomousScanTokens(ctx, now)
-	local searchesRemaining = math.floor(ctx.autonomousScanTokens)
-	if searchesRemaining == 0 then
-		return
-	end
-
-	local queueDepth = queue:size()
-	for _ = 1, queueDepth do
-		local batteryId = queue:pop()
-		local battery = ctx.manpadStore:get(batteryId)
-		if battery then
-			queue:push(batteryId)
-			local state = battery.Manpad.SleepWakeState
-			local cache = ctx.autonomousTargetCache[batteryId]
-			if
-				state ~= MSWS.HOT
-				and state ~= MSWS.COOLDOWN
-				and battery.Position
-				and (not cache or now >= cache.ExpiresAt)
-				and scanAutonomousTargets(ctx, battery, now)
-			then
-				ctx.autonomousScanTokens = ctx.autonomousScanTokens - 1
-				searchesRemaining = searchesRemaining - 1
-				if searchesRemaining == 0 then
-					break
-				end
-			end
-		end
-	end
+	local search = getLocalSearch(ctx)
+	search:refresh(manpads, now, function(battery)
+		local state = battery.Manpad.SleepWakeState
+		return state ~= MSWS.HOT and state ~= MSWS.COOLDOWN
+	end)
 end
 
 local function processAutonomousTargets(ctx, battery, now, posture)
 	if ctx.coalitionId == nil then
 		return false
 	end
-	local cacheByBatteryId = ctx.autonomousTargetCache
-	local cache = cacheByBatteryId and cacheByBatteryId[battery.BatteryId]
-	if not cache or now >= cache.ExpiresAt then
+	local search = getLocalSearch(ctx)
+	local targets = search:getTargets(battery.BatteryId, now)
+	if not targets then
 		return false
 	end
-
-	if cache.Processed then
-		Medusa.Services.MetricsService.inc("medusa_manpad_autonomous_cache_reuses_total")
-	else
-		cache.Processed = true
-	end
 	local hostileAircraftFound = false
-	for i = 1, cache.Targets:size() do
-		local snapshot = cache.Targets:get(i)
-		local unit = GetUnit(snapshot.UnitName)
-		if unit and isHostileAircraft(unit, ctx.coalitionId) then
-			local position = GetUnitPosition(unit)
-			if position then
-				hostileAircraftFound = true
-				snapshot.Position.x = position.x
-				snapshot.Position.y = position.y
-				snapshot.Position.z = position.z
-				if processThreatCandidate(ctx, battery, snapshot, now, posture) then
-					local controller = GetGroupController(battery.GroupName)
-					if controller then
-						KnowControllerTarget(controller, unit, false, true)
-					end
-					return true
+	for i = 1, targets:size() do
+		local unit, snapshot = search:resolve(targets:get(i))
+		if unit then
+			hostileAircraftFound = true
+			if processThreatCandidate(ctx, battery, snapshot, now, posture) then
+				local controller = GetGroupController(battery.GroupName)
+				if controller then
+					KnowControllerTarget(controller, unit, false, true)
 				end
+				return true
 			end
 		end
 	end
@@ -716,7 +492,7 @@ end
 function Medusa.Services.ManpadService.evaluate(ctx)
 	local manpads = ctx.manpadStore:getAll(_batteryBuffer)
 	local trackStore = ctx.trackStore
-	local geoGrid = ctx.geoGrid
+	local geoGrid = ctx.networkedGeoGrid or ctx.geoGrid
 	local now = ctx.now
 	local posture = ctx.posture
 	local alertnessDecaySec = ctx.doctrine.MANPADAlertnessDecaySec
@@ -726,69 +502,19 @@ function Medusa.Services.ManpadService.evaluate(ctx)
 	end
 end
 
-local function nextBatteryAfter(manpads, batteryId)
-	local first = nil
-	local nextBattery = nil
-	for i = 1, #manpads do
-		local battery = manpads[i]
-		if not first or battery.BatteryId < first.BatteryId then
-			first = battery
-		end
-		if
-			batteryId
-			and battery.BatteryId > batteryId
-			and (not nextBattery or battery.BatteryId < nextBattery.BatteryId)
-		then
-			nextBattery = battery
-		end
-	end
-	return nextBattery or first
-end
-
---- Refreshes one MANPAD's Position from DCS, round-robin by BatteryId.
---- Skips MANPADs whose last refresh was within Manpad.POS_REFRESH_MIN_INTERVAL_SEC
---- but still advances the round-robin cursor, so this call refreshes at most
---- one MANPAD per invocation. Caller schedules every Manpad.POS_REFRESH_TICK_INTERVAL
---- ticks to hit the 2/sec per-network budget.
 function Medusa.Services.ManpadService.refreshOnePosition(ctx)
 	local manpads = ctx.manpadStore:getAll(_batteryBuffer)
-	if #manpads == 0 then
-		return
+	local refreshed
+	ctx.posRefreshBatteryId, refreshed = CrewPerceptionService.refreshOne({
+		batteries = manpads,
+		cursorBatteryId = ctx.posRefreshBatteryId,
+		now = ctx.now,
+		geoGrid = ctx.localGeoGrid or ctx.geoGrid,
+		geoGridType = "Manpad",
+		stateField = "Manpad",
+		unitRole = C.BatteryUnitRole.MANPAD,
+	})
+	if refreshed then
+		Medusa.Services.MetricsService.inc("medusa_manpad_position_refreshes_total")
 	end
-
-	local battery = nextBatteryAfter(manpads, ctx.posRefreshBatteryId)
-	ctx.posRefreshBatteryId = battery.BatteryId
-
-	local last = battery.Manpad.LastPositionRefreshTime
-	if last and (ctx.now - last) < C.Manpad.POS_REFRESH_MIN_INTERVAL_SEC then
-		return
-	end
-
-	local units = battery.Units
-	if not units or #units == 0 then
-		return
-	end
-	local firstUnit = nil
-	for i = 1, #units do
-		if Medusa.Entities.Battery.isAmmoBearingUnit(battery, units[i]) then
-			firstUnit = units[i]
-			break
-		end
-	end
-	if not firstUnit or not firstUnit.UnitName then
-		return
-	end
-
-	local pos = GetUnitPosition(firstUnit.UnitName)
-	if not pos then
-		return
-	end
-
-	battery.Position = pos
-	ctx.geoGrid:updatePosition(battery.BatteryId, pos, "Manpad")
-	battery.Manpad.LastPositionRefreshTime = ctx.now
-
-	Medusa.Services.ManpadService.rebuildHeadings(battery)
-
-	Medusa.Services.MetricsService.inc("medusa_manpad_position_refreshes_total")
 end

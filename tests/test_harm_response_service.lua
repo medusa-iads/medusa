@@ -407,6 +407,27 @@ function TestLocalizedShutdown:test_skipsBatteryWithNoPosition()
 	lu.assertEquals(shutdowns, 0)
 end
 
+function TestLocalizedShutdown:test_skips_independent_aaa()
+	local b = makeBattery({
+		Role = Medusa.Constants.BatteryRole.AAA,
+		Position = { x = 0, y = 0, z = 0 },
+	})
+	local t = makeTrack({
+		Position = { x = 10000, y = 5000, z = 0 },
+		Velocity = { x = -300, y = -50, z = 0 },
+	})
+	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
+	local shutdowns = HRS.executeResponse(makeCtx({
+		trackStore = trackStore,
+		batteryStore = batteryStore,
+		doctrine = { HARMResponse = "ACTIVE_DEFENSE" },
+		geoGrid = geoGrid,
+	}))
+
+	lu.assertEquals(shutdowns, 0)
+	lu.assertNil(b.HarmShutdownUntil)
+end
+
 -- == TestShutdownTiming ==
 
 TestShutdownTiming = {}

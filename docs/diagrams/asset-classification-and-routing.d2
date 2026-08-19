@@ -1,0 +1,153 @@
+grid-columns: 1
+
+title: Medusa asset classification and spatial routing {
+  shape: text
+  near: top-center
+  style: {
+    font-size: 28
+    bold: true
+  }
+}
+
+classification: {
+  label: Discovery and classification
+  direction: right
+  style: {
+    fill: "#ffffff"
+    stroke: "#d7d7d7"
+    border-radius: 6
+  }
+
+  dcs: {
+    label: DCS discovery input
+    direction: down
+    style: {
+      fill: "#f5f5f5"
+      stroke: "#666666"
+      border-radius: 6
+    }
+
+    attributes: Unit attributes
+    name: "Parsed group name\nAWACS, EWR, GCI, or HQ token"
+  }
+
+  factory: {
+    label: EntityFactory
+    direction: right
+    style: {
+      fill: "#eaf2ff"
+      stroke: "#3767a6"
+      border-radius: 6
+    }
+
+    roles: Classify unit roles
+    inventory: Count launchers, MANPAD, AAA, and search radars
+    precedence: Apply group classification precedence
+
+    roles -> inventory: retain every matching role
+    inventory -> precedence: group composition
+  }
+
+  outcomes: {
+    label: Classification outcomes
+    direction: down
+    style: {
+      fill: "#fffdf5"
+      stroke: "#8a7a42"
+      border-radius: 6
+    }
+
+    sensor: "SensorUnit\nNamed sensor or discovered search radar"
+    hq: "C2Node\nHQ group"
+    missile: "Missile battery\nOne or more launchers\nVLR, LR, MR, SR, or GENERIC"
+    manpad: "MANPAD group\nMANPAD count >= AAA count"
+    aaa: "AAA battery\nAAA > MANPAD; and no search radar\nor AAA >= 2 × search radars"
+    skipped: "Not managed\nNo managed asset"
+  }
+
+  dcs.attributes -> factory.roles: unit attributes {
+    style.stroke: "#666666"
+    style.stroke-width: 3
+  }
+  dcs.name -> factory.precedence: role token {
+    style.stroke: "#666666"
+    style.stroke-width: 3
+  }
+  factory.precedence -> outcomes.sensor
+  factory.precedence -> outcomes.hq
+  factory.precedence -> outcomes.missile
+  factory.precedence -> outcomes.manpad
+  factory.precedence -> outcomes.aaa
+  factory.precedence -> outcomes.skipped
+}
+
+placement: {
+  label: Air-defense spatial placement
+  direction: right
+  style: {
+    fill: "#ffffff"
+    stroke: "#d7d7d7"
+    border-radius: 6
+  }
+
+  classified: {
+    label: From classification
+    direction: down
+
+    missile: Missile battery
+    manpad: MANPAD group
+    aaa: AAA battery
+  }
+
+  aaa_mode: {
+    label: AaaService operating mode
+    direction: down
+    style: {
+      fill: "#fff0db"
+      stroke: "#d97706"
+      border-radius: 6
+    }
+
+    reconcile: Initialize or reconcile mode
+    radar: RADAR_DIRECTED
+    independent: INDEPENDENT
+
+    reconcile -> radar: live search radar and detection range
+    reconcile -> independent: otherwise
+    radar -> independent: search radar lost, withdraw, release track, and go COLD
+  }
+
+  spatial: {
+    label: GeospatialIndexService
+    direction: down
+    style: {
+      fill: "#f6effa"
+      stroke: "#76508c"
+      border-radius: 6
+    }
+
+    networked: NetworkedGeoGrid
+    local: LocalGeoGrid
+  }
+
+  classified.aaa -> aaa_mode.reconcile: initialize mode {
+    style.stroke: "#d97706"
+    style.stroke-width: 3
+  }
+  classified.missile -> spatial.networked: syncBattery {
+    style.stroke: "#8a7a42"
+    style.stroke-width: 3
+  }
+  classified.manpad -> spatial.local: syncBattery {
+    style.stroke: "#8a7a42"
+    style.stroke-width: 3
+  }
+  aaa_mode.radar -> spatial.networked: syncBattery {
+    style.stroke: "#d97706"
+    style.stroke-width: 3
+  }
+  aaa_mode.independent -> spatial.local: syncBattery {
+    style.stroke: "#d97706"
+    style.stroke-width: 3
+  }
+}

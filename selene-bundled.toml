@@ -1,0 +1,9 @@
+std = "tools/selene/dcs-world"
+
+[lints]
+empty_if = "allow"
+mixed_table = "allow"
+multiple_statements = "allow"
+shadowing = "allow"
+unscoped_variables = "allow"
+unused_variable = "allow"

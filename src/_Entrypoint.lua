@@ -27,6 +27,7 @@ end
 -- Spawn independent IADS instances from config
 Medusa.Core.IadsById = {}
 local nets = Medusa.Config:getNetworks()
+local aaaBarrageState = Medusa.Services.AaaService.newBarrageState()
 for i = 1, #nets do
 	local n = nets[i]
 	local iads = Medusa.Core.IadsNetwork:new({
@@ -35,9 +36,14 @@ for i = 1, #nets do
 		prefix = n.prefix,
 		doctrine = n.doctrine,
 		borderZones = n.borderZones,
+		aaaBarrageState = aaaBarrageState,
 	})
 	Medusa.Core.IadsById[n.id] = iads
 	iads:initialize()
+end
+for i = 1, #nets do
+	local n = nets[i]
+	local iads = Medusa.Core.IadsById[n.id]
 	iads:start()
 end
 

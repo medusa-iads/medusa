@@ -561,7 +561,12 @@ local function makeWorldTarget(coalitionId, category, active, position, unitName
 			return active
 		end,
 		getPosition = function()
-			return { p = position, x = { x = 1, y = 0, z = 0 } }
+			return {
+				p = position,
+				x = { x = 1, y = 0, z = 0 },
+				y = { x = 0, y = 1, z = 0 },
+				z = { x = 0, y = 0, z = 1 },
+			}
 		end,
 	}
 end
@@ -757,7 +762,7 @@ function TestAutonomousAcquisition:test_cachedCandidates_areBoundedAndContainNoD
 	Medusa.Services.ManpadService.evaluate(ctx)
 
 	lu.assertEquals(visited, Medusa.Constants.Manpad.AUTONOMOUS_TARGET_CACHE_CAPACITY)
-	local cache = ctx.autonomousTargetCache[bat.BatteryId]
+	local cache = ctx.localSearch.cacheByBatteryId[bat.BatteryId]
 	lu.assertEquals(cache.Targets:size(), Medusa.Constants.Manpad.AUTONOMOUS_TARGET_CACHE_CAPACITY)
 	for i = 1, cache.Targets:size() do
 		local snapshot = cache.Targets:get(i)
@@ -775,13 +780,13 @@ function TestAutonomousAcquisition:test_removedGroup_isRemovedFromQueueAndCache(
 	local ctx = makeAutonomousContext(store, 0)
 
 	Medusa.Services.ManpadService.evaluate(ctx)
-	lu.assertNotNil(ctx.autonomousTargetCache[bat.BatteryId])
+	lu.assertNotNil(ctx.localSearch.cacheByBatteryId[bat.BatteryId])
 	store:remove(bat.BatteryId)
 	ctx.now = 1
 	Medusa.Services.ManpadService.evaluate(ctx)
 
-	lu.assertEquals(ctx.autonomousScanQueue:size(), 0)
-	lu.assertNil(ctx.autonomousTargetCache[bat.BatteryId])
+	lu.assertEquals(ctx.localSearch.queue:size(), 0)
+	lu.assertNil(ctx.localSearch.cacheByBatteryId[bat.BatteryId])
 end
 
 -- ============================================================
@@ -1003,7 +1008,7 @@ function TestWakeTriggers:test_cueFromIADS_wakesAsleepManpadsInRange()
 
 	local geoGrid = makeGeoGrid({ ManpadIds = { ["bat-cue-asleep"] = true } })
 
-	MS.cueFromIADS({ manpadStore = store, geoGrid = geoGrid }, { x = 0, y = 0, z = 0 })
+	MS.cueFromIADS({ manpadStore = store, localGeoGrid = geoGrid }, { x = 0, y = 0, z = 0 })
 
 	lu.assertEquals(
 		asleep_bat.Manpad.SleepWakeState,

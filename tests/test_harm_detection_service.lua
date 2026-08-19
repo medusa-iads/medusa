@@ -209,6 +209,30 @@ function TestEvaluateTrack:test_no_emitting_battery_returns_evaluating()
 	lu.assertEquals(label, "EVALUATING")
 end
 
+function TestEvaluateTrack:test_hot_independent_aaa_is_not_an_emitter()
+	local track = makeTrack({ AssessedAircraftType = "MISSILE" })
+	local emitterPos = { x = 10000, y = 0, z = 6000 }
+	populateArmHistory(track, 2, mockTime, emitterPos)
+	local battery = makeBattery({
+		Role = Medusa.Constants.BatteryRole.AAA,
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+		Position = emitterPos,
+	})
+	battery.Units = {
+		Medusa.Entities.Battery.newUnit({
+			UnitId = 1,
+			UnitName = "gun",
+			Roles = { Medusa.Constants.BatteryUnitRole.AAA },
+		}),
+	}
+	local store, grid = makeBatteryStoreAndGrid({ battery })
+
+	local label, state = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
+
+	lu.assertEquals(label, "EVALUATING")
+	lu.assertNil(state)
+end
+
 function TestEvaluateTrack:test_evaluating_during_min_scans()
 	local track = makeTrack({ AssessedAircraftType = "MISSILE" })
 	local emitterPos = { x = 10000, y = 0, z = 6000 }

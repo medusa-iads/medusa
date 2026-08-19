@@ -9,9 +9,24 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Managed AAA groups with local visual and audio detection, area and barrage fire, nearby barrage propagation, and radar-directed operation.
+- AAA doctrine controls for audio range, area-fire and barrage chances, and the map-wide barrage group limit.
+- AAA shell-ammunition tracking, with a 12 km fallback range when DCS omits shell range data.
+
 ### Changed
 
+- Release archives now contain Lua artifacts with the Medusa version in their filenames.
+- Updated the bundled dcs-harness dependency to 1.0.0 and migrated ground-plane geometry to its DCS Vec2 and Vec3 contracts.
+- `EngageTactics` limits now count missile batteries only; AAA assignments do not consume or block missile-battery slots.
+- Local MANPAD and independent AAA groups now use a separate spatial index so they do not enlarge long-range IADS candidate queries.
+- Radar-directed AAA that loses its search radar now releases its target and point-defense assignments before switching to independent behavior.
+
 ### Fixed
+
+- Release-tag builds now stamp the exact tag version in generated artifacts.
+- HOT independent AAA is no longer considered an emitter during HARM classification.
+- `SHOOT_LOOK_SHOOT` now permits one VLR and one standard missile battery to engage the same track.
+- Ground sensor groups now receive their configured ROE, alarm, and emissions state on the first EMCON pass.
 
 ### Removed
 

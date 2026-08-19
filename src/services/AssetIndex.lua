@@ -63,5 +63,17 @@ function Medusa.Services.AssetIndex:tracks()
 end
 
 function Medusa.Services.AssetIndex:geoGrid()
-	return self._stores.geoGrid
+	return self._stores.networkedGeoGrid or self._stores.geoGrid
+end
+
+function Medusa.Services.AssetIndex:networkedGeoGrid()
+	return self._stores.networkedGeoGrid or self._stores.geoGrid
+end
+
+function Medusa.Services.AssetIndex:localGeoGrid()
+	return self._stores.localGeoGrid
+end
+
+function Medusa.Services.AssetIndex:spatialIndex()
+	return self._stores.spatialIndex
 end
