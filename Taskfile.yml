@@ -4,6 +4,7 @@ version: "3"
 
 vars:
   PROJECT_NAME: Medusa
+  DCS_HARNESS_VERSION: 1.0.0
   ARTIFACT_NAME: medusa-thin.lua
   BUNDLED_ARTIFACT_NAME: medusa.lua
   BUILD_DIR: ./dist
@@ -89,6 +90,26 @@ tasks:
     sources:
       - "{{.SOURCE_DIR}}/**/*.lua"
       - "{{.TEST_DIR}}/**/*.lua"
+
+  dependencies:update:dcs-harness:
+    desc: "Update the vendored dcs-harness release"
+    vars:
+      DOWNLOAD_DIR: ./.task/dcs-harness
+      ARCHIVE: "{{.DOWNLOAD_DIR}}/harness.zip"
+      DEFINITION: "{{.DOWNLOAD_DIR}}/harness.d.lua"
+    preconditions:
+      - sh: command -v curl
+        msg: "curl is required to update dcs-harness"
+      - sh: command -v unzip
+        msg: "unzip is required to update dcs-harness"
+      - sh: command -v cp
+        msg: "cp is required to update dcs-harness"
+    cmds:
+      - 'curl --fail --location --silent --show-error --create-dirs --output "{{.ARCHIVE}}" "https://github.com/YoloWingPixie/dcs-harness/releases/download/v{{.DCS_HARNESS_VERSION}}/harness.zip"'
+      - 'unzip -o "{{.ARCHIVE}}" -d "{{.DOWNLOAD_DIR}}"'
+      - 'curl --fail --location --silent --show-error --output "{{.DEFINITION}}" "https://raw.githubusercontent.com/YoloWingPixie/dcs-harness/v{{.DCS_HARNESS_VERSION}}/dist/harness.d.lua"'
+      - 'cp "{{.DOWNLOAD_DIR}}/harness.lua" "{{.DEFINITION}}" dependencies/'
+      - 'echo "Vendored dcs-harness {{.DCS_HARNESS_VERSION}}"'
 
   complexity:check:
     desc: "Report Lua complexity warnings"
@@ -271,7 +292,7 @@ tasks:
 
   release:package:
     deps: [build]
-    desc: "Create versioned release artifacts and checksums"
+    desc: "Create release archives and checksums"
     cmds:
       - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/prepare_release.py"
 

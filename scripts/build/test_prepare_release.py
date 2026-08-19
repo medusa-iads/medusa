@@ -3,6 +3,7 @@
 import hashlib
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from prepare_release import prepare_release, read_version
@@ -22,14 +23,19 @@ class PrepareReleaseTest(unittest.TestCase):
             for name, content in artifacts.items():
                 (build_dir / name).write_bytes(content)
 
-            names = prepare_release(build_dir, release_dir, "1.2.3")
+            archive_names = prepare_release(build_dir, release_dir, "1.2.3")
 
-            self.assertEqual(names, ["medusa-1.2.3.lua", "medusa-thin-1.2.3.lua"])
-            self.assertEqual((release_dir / names[0]).read_bytes(), artifacts["medusa.lua"])
-            self.assertEqual((release_dir / names[1]).read_bytes(), artifacts["medusa-thin.lua"])
+            self.assertEqual(archive_names, ["medusa.zip", "medusa-thin.zip"])
+            expected_members = ["medusa-1.2.3.lua", "medusa-thin-1.2.3.lua"]
+            for archive_name, member_name, content in zip(
+                archive_names, expected_members, artifacts.values(), strict=True
+            ):
+                with zipfile.ZipFile(release_dir / archive_name) as archive:
+                    self.assertEqual(archive.namelist(), [member_name])
+                    self.assertEqual(archive.read(member_name), content)
             expected_checksums = "\n".join(
-                f"{hashlib.sha256(content).hexdigest()}  {name}"
-                for name, content in zip(names, artifacts.values(), strict=True)
+                f"{hashlib.sha256((release_dir / name).read_bytes()).hexdigest()}  {name}"
+                for name in archive_names
             )
             self.assertEqual((release_dir / "SHA256SUMS.txt").read_text(), expected_checksums + "\n")
 

@@ -1,8 +1,8 @@
--- harness: 1.0.0-rc2 loading...
+-- harness: 1.0.0 loading...
 -- ==== BEGIN: src/_header.lua ====
 -- Version
 ---@type string
-HARNESS_VERSION = "1.0.0-rc2"
+HARNESS_VERSION = "1.0.0"
 -- Internal namespace for logger
 _HarnessInternal = _HarnessInternal or {}
 

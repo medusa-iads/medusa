@@ -6,12 +6,13 @@ import re
 import shutil
 import tempfile
 import tomllib
+import zipfile
 from pathlib import Path
 
 
-ARTIFACT_NAMES = {
-    "medusa.lua": "medusa-{version}.lua",
-    "medusa-thin.lua": "medusa-thin-{version}.lua",
+RELEASE_ARCHIVES = {
+    "medusa.zip": ("medusa.lua", "medusa-{version}.lua"),
+    "medusa-thin.zip": ("medusa-thin.lua", "medusa-thin-{version}.lua"),
 }
 VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 
@@ -25,7 +26,7 @@ def read_version(project_file: Path) -> str:
 
 
 def prepare_release(build_dir: Path, release_dir: Path, version: str) -> list[str]:
-    sources = {name: build_dir / name for name in ARTIFACT_NAMES}
+    sources = {source_name: build_dir / source_name for source_name, _ in RELEASE_ARCHIVES.values()}
     missing = [str(path) for path in sources.values() if not path.is_file()]
     if missing:
         raise FileNotFoundError(f"missing build artifacts: {', '.join(missing)}")
@@ -35,13 +36,17 @@ def prepare_release(build_dir: Path, release_dir: Path, version: str) -> list[st
     try:
         release_names = []
         checksum_lines = []
-        for source_name, name_template in ARTIFACT_NAMES.items():
-            release_name = name_template.format(version=version)
-            release_path = staging_dir / release_name
-            shutil.copyfile(sources[source_name], release_path)
-            digest = hashlib.sha256(release_path.read_bytes()).hexdigest()
-            release_names.append(release_name)
-            checksum_lines.append(f"{digest}  {release_name}")
+        for archive_name, (source_name, member_template) in RELEASE_ARCHIVES.items():
+            archive_path = staging_dir / archive_name
+            member_name = member_template.format(version=version)
+            member = zipfile.ZipInfo(member_name, date_time=(1980, 1, 1, 0, 0, 0))
+            member.compress_type = zipfile.ZIP_DEFLATED
+            member.external_attr = 0o644 << 16
+            with zipfile.ZipFile(archive_path, "w", compresslevel=9) as archive:
+                archive.writestr(member, sources[source_name].read_bytes())
+            digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+            release_names.append(archive_name)
+            checksum_lines.append(f"{digest}  {archive_name}")
 
         (staging_dir / "SHA256SUMS.txt").write_text("\n".join(checksum_lines) + "\n", encoding="utf-8")
         if release_dir.exists():
