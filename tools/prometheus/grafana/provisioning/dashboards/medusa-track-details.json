@@ -27,10 +27,11 @@
               "__name__": true,
               "instance": true,
               "job": true,
+              "track": true,
               "Value": true
             },
             "indexByName": {
-              "track": 0,
+              "display_track": 0,
               "unit": 1,
               "type": 2,
               "aircraft_type": 3,
@@ -39,7 +40,7 @@
               "network": 6
             },
             "renameByName": {
-              "track": "Track ID",
+              "display_track": "Track ID",
               "unit": "DCS Unit",
               "type": "Airframe",
               "aircraft_type": "Category",
@@ -62,7 +63,7 @@
       "targets": [
         {
           "expr": "medusa_track_speed{network=~\"$network\"} and on() medusa:live",
-          "legendFormat": "{{track}}",
+          "legendFormat": "{{display_track}}",
           "refId": "A"
         }
       ],
@@ -76,7 +77,7 @@
       "targets": [
         {
           "expr": "medusa_track_pos_y{network=~\"$network\"} and on() medusa:live",
-          "legendFormat": "{{track}}",
+          "legendFormat": "{{display_track}}",
           "refId": "A"
         }
       ],
@@ -90,7 +91,7 @@
       "targets": [
         {
           "expr": "medusa_track_best_pk{network=~\"$network\"} > 0 and on() medusa:live",
-          "legendFormat": "{{track}} \u2190 {{battery}}",
+          "legendFormat": "{{display_track}} \u2190 {{battery}}",
           "refId": "A"
         }
       ],
@@ -110,7 +111,7 @@
       "targets": [
         {
           "expr": "medusa_track_age{network=~\"$network\"} and on() medusa:live",
-          "legendFormat": "{{track}}",
+          "legendFormat": "{{display_track}}",
           "refId": "A"
         }
       ],
@@ -124,7 +125,7 @@
       "targets": [
         {
           "expr": "medusa_track_pos_x{network=~\"$network\"} and on() medusa:live",
-          "legendFormat": "{{track}} X",
+          "legendFormat": "{{display_track}} X",
           "refId": "A"
         }
       ]
@@ -137,7 +138,7 @@
       "targets": [
         {
           "expr": "medusa_track_pos_z{network=~\"$network\"} and on() medusa:live",
-          "legendFormat": "{{track}} Z",
+          "legendFormat": "{{display_track}} Z",
           "refId": "A"
         }
       ]

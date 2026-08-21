@@ -247,14 +247,14 @@ local function createSensors(dto, stores, networkId, units, inventory)
 		return "sensor", 0
 	end
 
-	local sensorType = "EWR"
+	local sensorType = Medusa.Constants.SensorType.EWR
 	local isAwacs = false
 	for i = 1, #dto.parsed.roles do
 		if dto.parsed.roles[i] == Role.GCI then
-			sensorType = "GCI"
+			sensorType = Medusa.Constants.SensorType.GCI
 			break
 		elseif dto.parsed.roles[i] == Role.AWACS then
-			sensorType = "AWACS"
+			sensorType = Medusa.Constants.SensorType.AWACS
 			isAwacs = true
 			break
 		end
@@ -288,10 +288,11 @@ local function createSensors(dto, stores, networkId, units, inventory)
 				UnitTypeName = unitTypeName,
 				GroupId = dto.groupId,
 				GroupName = dto.groupName,
+				GroupCategory = dto.category,
 				SensorType = sensorType,
 				Position = position,
 				HierarchyPath = hierarchyPath,
-				IsAirborne = isAwacs,
+				IsAirborne = isAwacs or dto.category == Group.Category.AIRPLANE,
 			})
 			stores.sensors:add(sensor)
 			count = count + 1
@@ -609,6 +610,7 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 		NetworkId = networkId,
 		GroupId = dto.groupId,
 		GroupName = dto.groupName,
+		GroupCategory = dto.category,
 		Position = position,
 		Role = batteryRole,
 	})
@@ -692,6 +694,7 @@ local function createManpad(dto, stores, networkId, units, inventory, doctrine)
 		NetworkId = networkId,
 		GroupId = dto.groupId,
 		GroupName = dto.groupName,
+		GroupCategory = dto.category,
 		Position = position,
 		Role = BR.MANPAD,
 		Manpad = {

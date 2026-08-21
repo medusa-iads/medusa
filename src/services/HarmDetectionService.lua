@@ -4,6 +4,7 @@ require("services.SpatialQuery")
 require("core.Constants")
 require("core.Logger")
 require("entities.Battery")
+require("entities.Track")
 
 --[[
             ██╗  ██╗ █████╗ ██████╗ ███╗   ███╗    ██████╗ ███████╗████████╗███████╗ ██████╗████████╗██╗ ██████╗ ███╗   ██╗
@@ -412,7 +413,7 @@ local function evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, 
 	if not state then
 		state = { llr = 0, scanCount = 0, label = "EVALUATING", prevCpa = nil, prevTime = nil }
 		states[track.TrackId] = state
-		_logger:info(string.format("track %s entered ARM evaluation", track.TrackId))
+		_logger:info(string.format("track %s entered ARM evaluation", Medusa.Entities.Track.displayId(track)))
 	end
 
 	if state.label == "CONFIRMED" then
@@ -464,7 +465,7 @@ local function evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, 
 		_logger:info(
 			string.format(
 				"track %s ARM %s -> %s (LLR=%.2f, scans=%d) [%s]",
-				track.TrackId,
+				Medusa.Entities.Track.displayId(track),
 				prevLabel,
 				state.label,
 				state.llr,
@@ -539,7 +540,13 @@ function Medusa.Services.HarmDetectionService.assessSingleTrack(
 		Medusa.Services.MetricsService.inc("medusa_harm_confirmed_total")
 		track.AssessedAircraftType = AAT.HARM
 		track.IsSeadThreat = true
-		_logger:info(string.format("track %s classified as HARM (ARM CONFIRMED, LLR=%.2f)", track.TrackId, state.llr))
+		_logger:info(
+			string.format(
+				"track %s classified as HARM (ARM CONFIRMED, LLR=%.2f)",
+				Medusa.Entities.Track.displayId(track),
+				state.llr
+			)
+		)
 		Medusa.Services.HarmDetectionService._backtrackLauncher(track, tracks)
 		return true
 	elseif label == "CLEARED" then
@@ -657,8 +664,8 @@ function Medusa.Services.HarmDetectionService._backtrackLauncher(harmTrack, allT
 		_logger:info(
 			string.format(
 				"track %s flagged hostile action (launched HARM %s, dist=%.0fm)",
-				bestTrack.TrackId,
-				harmTrack.TrackId,
+				Medusa.Entities.Track.displayId(bestTrack),
+				Medusa.Entities.Track.displayId(harmTrack),
 				math.sqrt(bestDistSq)
 			)
 		)

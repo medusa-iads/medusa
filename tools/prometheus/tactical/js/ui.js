@@ -65,7 +65,8 @@ function buildTrackDetail(tName, data) {
     var info = trkInfoMap[tName] || {};
     var bestPk = bestPkByTrack[tName];
     var secondPk = secondPkByTrack[tName];
-    var html = '<h3>Track ' + tName + '</h3>';
+    var displayTrackId = MTD.trackDisplayId(tName, info);
+    var html = '<h3>Track ' + displayTrackId + '</h3>';
     html += detailRow("Unit", info.unit || "-");
     html += detailRow("Airframe", info.aircraft_type || info.type || "-");
     html += detailRow("Identification", info.identification || "-");

@@ -160,6 +160,7 @@ function Medusa.Entities.Battery.new(data)
 		NetworkId = data.NetworkId,
 		GroupId = data.GroupId,
 		GroupName = data.GroupName,
+		GroupCategory = data.GroupCategory,
 		Role = role,
 		ActivationState = data.ActivationState or Medusa.Constants.ActivationState.INITIALIZING,
 		OperationalStatus = data.OperationalStatus or Medusa.Constants.BatteryOperationalStatus.ACTIVE,

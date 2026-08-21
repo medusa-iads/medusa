@@ -1,6 +1,7 @@
 require("_header")
 require("services.Services")
 require("core.Logger")
+require("entities.Track")
 
 --[[
             ████████╗██████╗  █████╗  ██████╗██╗  ██╗    ███████╗████████╗ ██████╗ ██████╗ ███████╗
@@ -34,7 +35,7 @@ end
 
 function Medusa.Services.TrackStore:add(track)
 	if self._byId[track.TrackId] then
-		error(string.format("duplicate TrackId: %s", track.TrackId))
+		error(string.format("duplicate track: %s", Medusa.Entities.Track.displayId(track)))
 	end
 
 	self._byId[track.TrackId] = track
@@ -47,7 +48,12 @@ function Medusa.Services.TrackStore:add(track)
 	self._byIdentification[identification][track.TrackId] = track
 
 	self._logger:debug(
-		string.format("added track %s (identification=%s, count=%d)", track.TrackId, identification, self._count)
+		string.format(
+			"added track %s (identification=%s, count=%d)",
+			Medusa.Entities.Track.displayId(track),
+			identification,
+			self._count
+		)
 	)
 end
 
@@ -73,7 +79,9 @@ function Medusa.Services.TrackStore:remove(trackId)
 		end
 	end
 
-	self._logger:debug(string.format("removed track %s (count=%d)", trackId, self._count))
+	self._logger:debug(
+		string.format("removed track %s (count=%d)", Medusa.Entities.Track.displayId(track), self._count)
+	)
 	return track
 end
 
@@ -124,7 +132,7 @@ end
 function Medusa.Services.TrackStore:updateIdentification(trackId, newIdentification)
 	local track = self._byId[trackId]
 	if not track then
-		error(string.format("track not found: %s", trackId))
+		error("track not found")
 	end
 
 	local oldIdentification = track.TrackIdentification
@@ -146,5 +154,12 @@ function Medusa.Services.TrackStore:updateIdentification(trackId, newIdentificat
 	self._byIdentification[newIdentification][trackId] = track
 
 	track.TrackIdentification = newIdentification
-	self._logger:debug(string.format("re-identified track %s: %s -> %s", trackId, oldIdentification, newIdentification))
+	self._logger:debug(
+		string.format(
+			"re-identified track %s: %s -> %s",
+			Medusa.Entities.Track.displayId(track),
+			oldIdentification,
+			newIdentification
+		)
+	)
 end

@@ -7,6 +7,7 @@ require("core.Logger")
 require("services.BatteryActivationService")
 require("services.HarmDetectionService")
 require("entities.Battery")
+require("entities.Track")
 
 --[[
             ██████╗  ██████╗ ██╗███╗   ██╗████████╗    ██████╗ ███████╗███████╗███████╗███╗   ██╗███████╗███████╗
@@ -196,7 +197,7 @@ local function tryActivatePd(provider, harmTrack, protectedLabel, now)
 		string.format(
 			"PD %s activated for HARM track %s (protecting %s)",
 			provider.GroupName or provider.BatteryId,
-			harmTrack.TrackId,
+			Medusa.Entities.Track.displayId(harmTrack),
 			protectedLabel
 		)
 	)
@@ -331,7 +332,7 @@ function Medusa.Services.PointDefenseService.engageThreats(ctx)
 							string.format(
 								"PD %s engaging %s to defend %s",
 								provider.BatteryId,
-								bestTrack.TrackId,
+								Medusa.Entities.Track.displayId(bestTrack),
 								protected.BatteryId
 							)
 						)

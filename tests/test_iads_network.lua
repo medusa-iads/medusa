@@ -170,6 +170,81 @@ function TestIadsNetwork:test_battery_datalink_excludes_independent_aaa()
 	lu.assertEquals(iads:_buildPollList(), {})
 end
 
+function TestIadsNetwork:test_poll_list_classifies_track_origin_sources()
+	local iads = makeIads()
+	iads:initialize()
+	iads._doctrine = { BatteryTargetDatalink = true }
+	local sensors = iads:getAssetIndex():sensors()
+	local batteries = iads:getAssetIndex():batteries()
+	local sensorType = Medusa.Constants.SensorType
+
+	sensors:add(Medusa.Entities.SensorUnit.new({
+		NetworkId = "T",
+		UnitId = 1,
+		UnitName = "awacs",
+		GroupId = 1,
+		GroupName = "awacs-group",
+		SensorType = sensorType.AWACS,
+		IsAirborne = true,
+		GroupCategory = Group.Category.AIRPLANE,
+	}))
+	sensors:add(Medusa.Entities.SensorUnit.new({
+		NetworkId = "T",
+		UnitId = 2,
+		UnitName = "ewr",
+		GroupId = 2,
+		GroupName = "ewr-group",
+		SensorType = sensorType.EWR,
+		GroupCategory = Group.Category.GROUND,
+	}))
+	sensors:add(Medusa.Entities.SensorUnit.new({
+		NetworkId = "T",
+		UnitId = 3,
+		UnitName = "ship",
+		GroupId = 3,
+		GroupName = "ship-group",
+		SensorType = sensorType.EWR,
+		GroupCategory = Group.Category.SHIP,
+	}))
+	sensors:add(Medusa.Entities.SensorUnit.new({
+		NetworkId = "T",
+		UnitId = 4,
+		UnitName = "fighter",
+		GroupId = 4,
+		GroupName = "fighter-group",
+		SensorType = sensorType.GCI,
+		IsAirborne = true,
+		GroupCategory = Group.Category.AIRPLANE,
+	}))
+	batteries:add(Medusa.Entities.Battery.new({
+		NetworkId = "T",
+		GroupId = 5,
+		GroupName = "sam-group",
+		GroupCategory = Group.Category.GROUND,
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+	}))
+	batteries:add(Medusa.Entities.Battery.new({
+		NetworkId = "T",
+		GroupId = 6,
+		GroupName = "sam-ship-group",
+		GroupCategory = Group.Category.SHIP,
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+	}))
+
+	local byName = {}
+	for _, source in ipairs(iads:_buildPollList()) do
+		byName[source.groupName] = source.sourceType
+	end
+
+	local trackSource = Medusa.Constants.TrackSource
+	lu.assertEquals(byName["awacs-group"], trackSource.AWACS)
+	lu.assertEquals(byName["ewr-group"], trackSource.EARLY_WARNING_RADAR)
+	lu.assertEquals(byName["ship-group"], trackSource.SHIPBORNE_RADAR)
+	lu.assertEquals(byName["fighter-group"], trackSource.AIRBORNE_DATALINK)
+	lu.assertEquals(byName["sam-group"], trackSource.SAM_BATTERY)
+	lu.assertEquals(byName["sam-ship-group"], trackSource.SHIPBORNE_RADAR)
+end
+
 function TestIadsNetwork:test_discovery_routes_hq_to_c2nodes()
 	local iads = makeIads()
 	iads:initialize()

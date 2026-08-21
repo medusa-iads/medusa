@@ -584,6 +584,14 @@ MTD.renderBatteries = function (data) {
 
 /* ---- Tracks ---- */
 
+MTD.trackDisplayId = function (canonicalId, info) {
+    return (info && info.display_track) || "UNSET";
+};
+
+MTD.trackLabelText = function (canonicalId, info) {
+    return MTD.trackDisplayId(canonicalId, info);
+};
+
 MTD.renderTracks = function (data, trackHeadings) {
     var trackLayer   = MTD.trackLayer;
     var labelLayer   = MTD.labelLayer;
@@ -607,6 +615,7 @@ MTD.renderTracks = function (data, trackHeadings) {
         var tPos     = [trkLatMap[tName2], trkLonMap[tName2]];
         bounds.push(tPos);
         var tInfo2   = trkInfoMap[tName2] || {};
+        var displayTrackId = MTD.trackDisplayId(tName2, tInfo2);
         var unitName = tInfo2.unit || "";
         var aircraftType   = tInfo2.aircraft_type || tInfo2.type || "";
         var identification = tInfo2.identification || "UNKNOWN";
@@ -614,7 +623,7 @@ MTD.renderTracks = function (data, trackHeadings) {
         var heading  = (trackHeadings || {})[tName2] || 0;
         currentTrackSet[tName2] = true;
 
-        var tTooltip = "Track " + tName2;
+        var tTooltip = "Track " + displayTrackId;
         if (unitName) tTooltip += "\n" + unitName;
         if (isHarm) tTooltip += "\nHARM";
         else if (aircraftType) tTooltip += "\n" + aircraftType;
@@ -685,14 +694,15 @@ MTD.renderTracks = function (data, trackHeadings) {
         }
 
         /* Track callsign label */
-        if (showTrackLabels && unitName) {
+        if (showTrackLabels) {
             if (existingTrk.label) {
                 existingTrk.label.setLatLng(tPos);
             } else {
+                var trackLabel = MTD.trackLabelText(tName2, tInfo2);
                 existingTrk.label = L.marker(tPos, {
                     icon: L.divIcon({
                         className: "",
-                        html: '<div style="color:#fff;font-size:10px;text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap;margin-left:10px;">' + unitName + '</div>',
+                        html: '<div style="color:#fff;font-size:10px;text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap;margin-left:10px;">' + trackLabel + '</div>',
                         iconSize: [80, 14],
                         iconAnchor: [-2, 7]
                     }),
@@ -763,14 +773,14 @@ MTD.renderEngagementLines = function (data) {
                 }
             }
             var bInfo  = batInfoMap[pkBattery] || {};
-            var isActiveTarget = bInfo.target === pkTrack;
+            var isActiveTarget = (bInfo.target_track || bInfo.target) === pkTrack;
 
             /* Tooltip with distance */
             var distM = MTD.haversineM(batPos[0], batPos[1], trkPos[0], trkPos[1]);
             var distNm = (distM / 1852).toFixed(1);
             var shortBat = MTD.shortName(pkBattery);
-            var trkUnit = (trkInfoMap[pkTrack] || {}).unit || pkTrack;
-            var lineTooltip = shortBat + " \u2192 " + trkUnit + ", Pk=" + pkVal.toFixed(2) + ", dist=" + distNm + "nm";
+            var trkLabel = MTD.trackLabelText(pkTrack, trkInfoMap[pkTrack] || {});
+            var lineTooltip = shortBat + " \u2192 " + trkLabel + ", Pk=" + pkVal.toFixed(2) + ", dist=" + distNm + "nm";
 
             L.polyline([batPos, trkPos], {
                 color: isActiveTarget ? "#e53935" : "#4fc3f7",
@@ -829,9 +839,9 @@ MTD.renderEngagementLines = function (data) {
             var sDistM = MTD.haversineM(sBatPos[0], sBatPos[1], sTrkPos[0], sTrkPos[1]);
             var sDistNm = (sDistM / 1852).toFixed(1);
             var sShortBat = MTD.shortName(spkBatt);
-            var sTrkUnit = (trkInfoMap[spkTrack] || {}).unit || spkTrack;
+            var sTrkLabel = MTD.trackLabelText(spkTrack, trkInfoMap[spkTrack] || {});
             var spkVal2  = parseFloat(spk.value[1]);
-            var sLineTooltip = sShortBat + " \u2192 " + sTrkUnit + ", Pk=" + spkVal2.toFixed(2) + ", dist=" + sDistNm + "nm";
+            var sLineTooltip = sShortBat + " \u2192 " + sTrkLabel + ", Pk=" + spkVal2.toFixed(2) + ", dist=" + sDistNm + "nm";
 
             L.polyline([sBatPos, sTrkPos], {
                 color: "#888888",

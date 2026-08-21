@@ -8,6 +8,7 @@ require("services.CrewPerceptionService")
 require("services.PkModel")
 require("core.Constants")
 require("entities.Battery")
+require("entities.Track")
 
 --[[
             ███╗   ███╗███████╗████████╗██████╗ ██╗ ██████╗███████╗    ███████╗███╗   ██╗ █████╗ ██████╗ ███████╗██╗  ██╗ ██████╗ ████████╗
@@ -78,6 +79,16 @@ local AAA_STATES = {
 	Medusa.Constants.Aaa.ResponseState.LOCAL_ACQUISITION,
 }
 local _aaaStateCounts = {}
+
+local displayTrackId = Medusa.Entities.Track.displayId
+
+local function getTrack(trackStore, trackId)
+	if not trackStore or not trackStore.get or not trackId or trackId == "" then
+		return nil
+	end
+	return trackStore:get(trackId)
+end
+
 for i = 1, #AAA_MODES do
 	_aaaStateCounts[AAA_MODES[i]] = {}
 end
@@ -520,89 +531,114 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 					for i = 1, #tracks do
 						local t = tracks[i]
 						local tid = t.TrackId
+						local displayTid = displayTrackId(t)
 						if t.Position then
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_pos_x{network="%s",track="%s"} %s',
+								'medusa_track_pos_x{network="%s",track="%s",display_track="%s"} %s',
 								id,
 								tid,
+								displayTid,
 								tostring(t.Position.x)
 							)
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_pos_y{network="%s",track="%s"} %s',
+								'medusa_track_pos_y{network="%s",track="%s",display_track="%s"} %s',
 								id,
 								tid,
+								displayTid,
 								tostring(t.Position.y)
 							)
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_pos_z{network="%s",track="%s"} %s',
+								'medusa_track_pos_z{network="%s",track="%s",display_track="%s"} %s',
 								id,
 								tid,
+								displayTid,
 								tostring(t.Position.z)
 							)
 							local okLL, lat, lon = pcall(coord.LOtoLL, t.Position)
 							if okLL and lat and lon then
 								en = en + 1
-								extLines[en] =
-									string.format('medusa_track_lat{network="%s",track="%s"} %.6f', id, tid, lat)
+								extLines[en] = string.format(
+									'medusa_track_lat{network="%s",track="%s",display_track="%s"} %.6f',
+									id,
+									tid,
+									displayTid,
+									lat
+								)
 								en = en + 1
-								extLines[en] =
-									string.format('medusa_track_lon{network="%s",track="%s"} %.6f', id, tid, lon)
+								extLines[en] = string.format(
+									'medusa_track_lon{network="%s",track="%s",display_track="%s"} %.6f',
+									id,
+									tid,
+									displayTid,
+									lon
+								)
 							end
 						end
 						if t.Velocity then
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_vel_x{network="%s",track="%s"} %s',
+								'medusa_track_vel_x{network="%s",track="%s",display_track="%s"} %s',
 								id,
 								tid,
+								displayTid,
 								tostring(t.Velocity.x)
 							)
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_vel_y{network="%s",track="%s"} %s',
+								'medusa_track_vel_y{network="%s",track="%s",display_track="%s"} %s',
 								id,
 								tid,
+								displayTid,
 								tostring(t.Velocity.y)
 							)
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_vel_z{network="%s",track="%s"} %s',
+								'medusa_track_vel_z{network="%s",track="%s",display_track="%s"} %s',
 								id,
 								tid,
+								displayTid,
 								tostring(t.Velocity.z)
 							)
 							local spd = math.sqrt(
 								t.Velocity.x * t.Velocity.x + t.Velocity.y * t.Velocity.y + t.Velocity.z * t.Velocity.z
 							)
 							en = en + 1
-							extLines[en] =
-								string.format('medusa_track_speed{network="%s",track="%s"} %.1f', id, tid, spd)
+							extLines[en] = string.format(
+								'medusa_track_speed{network="%s",track="%s",display_track="%s"} %.1f',
+								id,
+								tid,
+								displayTid,
+								spd
+							)
 						end
 						en = en + 1
 						extLines[en] = string.format(
-							'medusa_track_updates{network="%s",track="%s"} %d',
+							'medusa_track_updates{network="%s",track="%s",display_track="%s"} %d',
 							id,
 							tid,
+							displayTid,
 							t.UpdateCount or 0
 						)
 						if t.FirstDetectionTime then
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_age{network="%s",track="%s"} %.1f',
+								'medusa_track_age{network="%s",track="%s",display_track="%s"} %.1f',
 								id,
 								tid,
+								displayTid,
 								now - t.FirstDetectionTime
 							)
 						end
 						if t.HarmLikelihoodScore then
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_harm_score{network="%s",track="%s"} %.3f',
+								'medusa_track_harm_score{network="%s",track="%s",display_track="%s"} %.3f',
 								id,
 								tid,
+								displayTid,
 								t.HarmLikelihoodScore
 							)
 						end
@@ -626,9 +662,10 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 						local unitName = bb and bb.UnitName or ""
 						en = en + 1
 						extLines[en] = string.format(
-							'medusa_track_info{network="%s",track="%s",type="%s",unit="%s",identification="%s",aircraft_type="%s",maneuver="%s"} 1',
+							'medusa_track_info{network="%s",track="%s",display_track="%s",type="%s",unit="%s",identification="%s",aircraft_type="%s",maneuver="%s"} 1',
 							id,
 							t.TrackId,
+							displayTrackId(t),
 							typeName,
 							unitName,
 							t.TrackIdentification or "UNKNOWN",
@@ -673,38 +710,44 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 			for id, iads in pairs(iadsById) do
 				local tm = iads:getTrackManager()
 				if tm then
-					local states = networkStates[tm:getStore()]
+					local trackStore = tm:getStore()
+					local states = networkStates[trackStore]
 					if states then
 						for trackId, state in pairs(states) do
+							local displayTid = displayTrackId(trackStore:get(trackId))
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_sprt_llr{network="%s",track="%s"} %.3f',
+								'medusa_track_sprt_llr{network="%s",track="%s",display_track="%s"} %.3f',
 								id,
 								trackId,
+								displayTid,
 								state.llr or 0
 							)
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_sprt_scans{network="%s",track="%s"} %d',
+								'medusa_track_sprt_scans{network="%s",track="%s",display_track="%s"} %d',
 								id,
 								trackId,
+								displayTid,
 								state.scanCount or 0
 							)
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_sprt_info{network="%s",track="%s",label="%s"} 1',
+								'medusa_track_sprt_info{network="%s",track="%s",display_track="%s",label="%s"} 1',
 								id,
 								trackId,
+								displayTid,
 								state.label or "UNKNOWN"
 							)
 							if state.lastFeat then
 								for fi = 1, 8 do
 									en = en + 1
 									extLines[en] = string.format(
-										'medusa_track_sprt_%s{network="%s",track="%s"} %.2f',
+										'medusa_track_sprt_%s{network="%s",track="%s",display_track="%s"} %.2f',
 										featNames[fi],
 										id,
 										trackId,
+										displayTid,
 										state.lastFeat[fi] or 0
 									)
 								end
@@ -766,6 +809,8 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 			for id, iads in pairs(iadsById) do
 				local ai = iads:getAssetIndex()
 				if ai then
+					local tm = iads:getTrackManager()
+					local trackStore = tm and tm:getStore() or nil
 					local batts = ai:batteries():getAll()
 					for i = 1, #batts do
 						local b = batts[i]
@@ -829,15 +874,18 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 								end
 							end
 						end
+						local canonicalTargetId = b.CurrentTargetTrackId or ""
+						local targetTrack = getTrack(trackStore, canonicalTargetId)
 						en = en + 1
 						extLines[en] = string.format(
-							'medusa_battery_info{network="%s",battery="%s",role="%s",status="%s",state="%s",target="%s",system="%s"} 1',
+							'medusa_battery_info{network="%s",battery="%s",role="%s",status="%s",state="%s",target="%s",target_track="%s",system="%s"} 1',
 							id,
 							bname,
 							b.Role or "",
 							b.OperationalStatus or "",
 							b.ActivationState or "",
-							b.CurrentTargetTrackId or "",
+							displayTrackId(targetTrack),
+							canonicalTargetId,
 							b.SystemType or ""
 						)
 						local primaryWeapon = ""
@@ -1164,17 +1212,21 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 			for id, iads in pairs(iadsById) do
 				local ai = iads:getAssetIndex()
 				if ai then
+					local tm = iads:getTrackManager()
+					local trackStore = tm and tm:getStore() or nil
 					local batts = ai:batteries():getAll()
 					for i = 1, #batts do
 						local b = batts[i]
 						if b.LastChanceTrackId then
 							local bname = b.GroupName or b.BatteryId
+							local lastChanceTrack = getTrack(trackStore, b.LastChanceTrackId)
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_battery_last_chance{network="%s",battery="%s",track="%s"} 1',
+								'medusa_battery_last_chance{network="%s",battery="%s",track="%s",display_track="%s"} 1',
 								id,
 								bname,
-								b.LastChanceTrackId
+								b.LastChanceTrackId,
+								displayTrackId(lastChanceTrack)
 							)
 							en = en + 1
 							extLines[en] = string.format(
@@ -1276,6 +1328,7 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 					for ti = 1, #tracks do
 						local t = tracks[ti]
 						if t.Position then
+							local displayTid = displayTrackId(t)
 							local bestPk, bestBatt = 0, ""
 							local secondPk, secondBatt = 0, ""
 							for bi = 1, #batts do
@@ -1313,17 +1366,19 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 							end
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_best_pk{network="%s",track="%s",battery="%s"} %.3f',
+								'medusa_track_best_pk{network="%s",track="%s",display_track="%s",battery="%s"} %.3f',
 								id,
 								t.TrackId,
+								displayTid,
 								bestBatt,
 								bestPk
 							)
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_track_second_pk{network="%s",track="%s",battery="%s"} %.3f',
+								'medusa_track_second_pk{network="%s",track="%s",display_track="%s",battery="%s"} %.3f',
 								id,
 								t.TrackId,
+								displayTid,
 								secondBatt,
 								secondPk
 							)

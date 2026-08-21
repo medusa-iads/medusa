@@ -99,6 +99,7 @@ function TestSensorPollingServicePollSensor:test_buildsReportFromDetection()
 
 	lu.assertEquals(#reports, 1)
 	lu.assertEquals(reports[1].NetworkId, 1)
+	lu.assertEquals(reports[1].SourceType, Medusa.Constants.TrackSource.EARLY_WARNING_RADAR)
 	lu.assertIsNil(reports[1].ObjectCategory)
 	lu.assertIsNil(reports[1].UnitCategory)
 	lu.assertEquals(reports[1].Position.x, 100)
@@ -107,6 +108,23 @@ function TestSensorPollingServicePollSensor:test_buildsReportFromDetection()
 	lu.assertEquals(reports[1].Velocity.x, 10)
 	lu.assertEquals(reports[1].Velocity.y, 0)
 	lu.assertEquals(reports[1].Velocity.z, 5)
+end
+
+function TestSensorPollingServicePollSensor:test_includes_supplied_originating_source()
+	GetGroupController = function(_)
+		return {}
+	end
+	GetControllerDetectedTargets = function(_)
+		return {
+			{
+				object = makeDcsObject("target-1", { x = 100, y = 500, z = 200 }, { x = 10, y = 0, z = 5 }),
+			},
+		}
+	end
+
+	local reports = self.svc:pollSensor("awacs-group", 100, Medusa.Constants.TrackSource.AWACS)
+
+	lu.assertEquals(reports[1].SourceType, Medusa.Constants.TrackSource.AWACS)
 end
 
 function TestSensorPollingServicePollSensor:test_multipleDetections()

@@ -3,6 +3,7 @@ require("services.Services")
 require("services.PkModel")
 require("services.SpatialQuery")
 require("entities.Battery")
+require("entities.Track")
 require("core.Constants")
 require("core.Logger")
 
@@ -391,7 +392,11 @@ function Medusa.Services.TargetAssigner.emconSelfAssign(ctx)
 				end
 				assignments[#assignments + 1] = { batteryId = battery.BatteryId, trackId = trackId }
 				_logger:info(
-					string.format("EMCON self-assign: battery %s engaging track %s", battery.GroupName, trackId)
+					string.format(
+						"EMCON self-assign: battery %s engaging track %s",
+						battery.GroupName,
+						Medusa.Entities.Track.displayId(trackObj)
+					)
 				)
 			end
 		end
@@ -474,7 +479,7 @@ local function _assignSeadPriority(tracks, ctx, minId, assignments)
 					string.format(
 						"SEAD priority: battery %s to track %s (pk=%.2f)",
 						bestBat.GroupName,
-						track.TrackId,
+						Medusa.Entities.Track.displayId(track),
 						bestPk
 					)
 				)
@@ -511,7 +516,7 @@ local function _greedyAssign(pairCount, ctx, assignments)
 			string.format(
 				"assigned battery %s to track %s (pk=%.2f, threat=%d)",
 				best.battery.GroupName,
-				best.track.TrackId,
+				Medusa.Entities.Track.displayId(best.track),
 				best.pk,
 				best.threatValue
 			)
@@ -630,7 +635,7 @@ function Medusa.Services.TargetAssigner.evaluateSingleHandoff(battery, ctx)
 				"handoff: battery %s pk=%.2f below floor for track %s",
 				battery.GroupName,
 				pk,
-				battery.CurrentTargetTrackId
+				Medusa.Entities.Track.displayId(track)
 			)
 		)
 		return { batteryId = battery.BatteryId, trackId = battery.CurrentTargetTrackId }
@@ -649,7 +654,7 @@ function Medusa.Services.TargetAssigner.evaluateSingleHandoff(battery, ctx)
 					pk,
 					altBat and altBat.GroupName or altId,
 					altPk,
-					battery.CurrentTargetTrackId
+					Medusa.Entities.Track.displayId(track)
 				)
 			)
 			return { batteryId = battery.BatteryId, trackId = battery.CurrentTargetTrackId }

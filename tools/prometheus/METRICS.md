@@ -1,3 +1,17 @@
+# Track identifier metric contract
+
+Extended per-track metrics retain the canonical ULID in the `track` label. They expose the operator-facing identifier in the `display_track` label. `medusa_battery_info` uses the display ID in `target` and the canonical ULID in `target_track`. Consumers shall use canonical labels for joins and display labels for legends, tables, and tooltips.
+
+| Prefix | Originating source |
+|---|---|
+| `AW` | AWACS |
+| `AE` | Early Warning Radar group |
+| `AB` | SAM battery |
+| `AS` | Shipborne radar |
+| `AC` | Other airborne datalink participant |
+
+The display ID has a four-digit octal suffix from `0001` through `7777`. If display metadata is unavailable, operator surfaces use `UNSET` instead of exposing the canonical ULID. Adding a display label does not increase the number of active series because each canonical track has one display ID. The label-schema change causes one replacement series per affected metric during an upgrade. Old series remain until Prometheus marks them stale. Extended telemetry remains opt-in.
+
 # Local-defense metric contracts
 
 `ManpadService` records MANPAD runtime metrics. `MetricsSnapshotService` owns metric registration, current-state collection, and Prometheus exposition. All metrics reset with the mission-script process. The tactical display treats a missing extended series as unavailable data, not as zero.

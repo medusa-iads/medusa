@@ -5,7 +5,9 @@ require("core.Logger")
 require("services.DiscoveryService")
 require("services.HierarchyService")
 require("services.TrackManager")
+require("services.TrackDisplayIdAllocator")
 require("entities.Battery")
+require("entities.Track")
 require("services.stores.BatteryStore")
 require("services.SensorPollingService")
 require("services.TargetAssigner")
@@ -68,6 +70,31 @@ Medusa.Core.IadsNetwork = {}
 
 Medusa.Core.IadsNetwork._assignBatteryBuffer = {}
 local _assignBatteryBuffer = Medusa.Core.IadsNetwork._assignBatteryBuffer
+
+local function isShipGroupCategory(groupCategory)
+	local shipCategory = Group and Group.Category and Group.Category.SHIP
+	return groupCategory == shipCategory or string.upper(tostring(groupCategory)) == "SHIP"
+end
+
+local function trackSourceForSensor(sensor)
+	if isShipGroupCategory(sensor and sensor.GroupCategory) then
+		return Medusa.Constants.TrackSource.SHIPBORNE_RADAR
+	end
+	if sensor and sensor.SensorType == Medusa.Constants.SensorType.AWACS then
+		return Medusa.Constants.TrackSource.AWACS
+	end
+	if sensor and sensor.IsAirborne then
+		return Medusa.Constants.TrackSource.AIRBORNE_DATALINK
+	end
+	return Medusa.Constants.TrackSource.EARLY_WARNING_RADAR
+end
+
+local function trackSourceForBattery(battery)
+	if isShipGroupCategory(battery.GroupCategory) then
+		return Medusa.Constants.TrackSource.SHIPBORNE_RADAR
+	end
+	return Medusa.Constants.TrackSource.SAM_BATTERY
+end
 
 --- ChunkStep: queue-based chunked work processor.
 --- Fills from a snapshot when drained, processes up to budget items per tick.
@@ -231,7 +258,10 @@ function Medusa.Core.IadsNetwork:initialize()
 
 	self._spatialIndex = Medusa.Services.GeospatialIndexService:new(10000)
 	self._networkedGeoGrid = self._spatialIndex:networkedGeoGrid()
-	self._trackManager = Medusa.Services.TrackManager:new({ geoGrid = self._networkedGeoGrid })
+	self._trackManager = Medusa.Services.TrackManager:new({
+		geoGrid = self._networkedGeoGrid,
+		displayIdAllocator = Medusa.Services.TrackDisplayIdAllocator.shared(),
+	})
 
 	self._assetIndex = Medusa.Services.AssetIndex.new({
 		batteryRepository = batteryRepository,
@@ -1114,7 +1144,9 @@ function Medusa.Core.IadsNetwork:_buildPollList()
 	local list = {}
 	local sensorNames = self._assetIndex:sensors():getUniqueGroupNames()
 	for i = 1, #sensorNames do
-		list[#list + 1] = sensorNames[i]
+		local groupName = sensorNames[i]
+		local sensors = self._assetIndex:sensors():getByGroupName(groupName)
+		list[#list + 1] = { groupName = groupName, sourceType = trackSourceForSensor(sensors[1]) }
 	end
 	local AS = Medusa.Constants.ActivationState
 	local datalink = self._doctrine and self._doctrine.BatteryTargetDatalink
@@ -1125,7 +1157,7 @@ function Medusa.Core.IadsNetwork:_buildPollList()
 			b.IsActingAsEWR
 			or (datalink and b.ActivationState == AS.STATE_HOT and not Medusa.Entities.Battery.isIndependentAaa(b))
 		then
-			list[#list + 1] = b.GroupName
+			list[#list + 1] = { groupName = b.GroupName, sourceType = trackSourceForBattery(b) }
 		end
 	end
 	return list
@@ -1170,8 +1202,9 @@ function Medusa.Core.IadsNetwork:_pollSensors()
 		if idx > count then
 			idx = 1
 		end
-		local name = pollList[idx]
-		local reports = self._sensorPollingService:pollSensor(name, now)
+		local source = pollList[idx]
+		local name = source.groupName
+		local reports = self._sensorPollingService:pollSensor(name, now, source.sourceType)
 		if not reports then
 			self:_removeSensorGroup(name)
 		else
@@ -1421,8 +1454,13 @@ function Medusa.Core.IadsNetwork:_phaseAssign(ctx)
 		local a = autoAssignments[i]
 		local battery = ctx.batteryStore:get(a.batteryId)
 		if battery and BAS.goHot(battery, ctx.now) then
+			local track = ctx.trackStore:get(a.trackId)
 			self._logger:info(
-				string.format("battery %s HOT (EMCON self-assign) for track %s", battery.GroupName, a.trackId)
+				string.format(
+					"battery %s HOT (EMCON self-assign) for track %s",
+					battery.GroupName,
+					Medusa.Entities.Track.displayId(track)
+				)
 			)
 		end
 	end
@@ -1436,7 +1474,9 @@ function Medusa.Core.IadsNetwork:_phaseAssign(ctx)
 		end
 		local battery = ctx.batteryStore:get(a.batteryId)
 		if battery and BAS.goHot(battery, ctx.now) then
-			self._logger:info(string.format("battery %s HOT for track %s", a.batteryId, a.trackId))
+			self._logger:info(
+				string.format("battery %s HOT for track %s", a.batteryId, Medusa.Entities.Track.displayId(track))
+			)
 		end
 	end
 
@@ -1446,11 +1486,12 @@ function Medusa.Core.IadsNetwork:_phaseAssign(ctx)
 		local battery = allBatteries[i]
 		if battery.CurrentTargetTrackId and battery.ActivationState ~= AS.STATE_HOT then
 			if BAS.goHot(battery, ctx.now) then
+				local track = ctx.trackStore:get(battery.CurrentTargetTrackId)
 				self._logger:info(
 					string.format(
 						"battery %s HOT for track %s (retry)",
 						battery.BatteryId,
-						battery.CurrentTargetTrackId
+						Medusa.Entities.Track.displayId(track)
 					)
 				)
 			end
@@ -1482,12 +1523,17 @@ function Medusa.Core.IadsNetwork:_phaseMaintain(ctx)
 		if result then
 			local bat = ctx.batteryStore:get(result.batteryId)
 			if bat then
+				local track = ctx.trackStore:get(result.trackId)
 				Medusa.Entities.Battery.releaseTrack(bat, ctx.trackStore)
 				bat.LastAssignmentChangeTime = ctx.now
 				Medusa.Entities.Battery.beginLastChance(bat, result.trackId, ctx.doctrine.HoldDownSec or 15)
 				ctx.MS.inc("medusa_last_chance_activated_total")
 				self._logger:info(
-					string.format("battery %s released track %s (last-chance)", bat.GroupName, result.trackId)
+					string.format(
+						"battery %s released track %s (last-chance)",
+						bat.GroupName,
+						Medusa.Entities.Track.displayId(track)
+					)
 				)
 			end
 		end
