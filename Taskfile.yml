@@ -321,7 +321,9 @@ tasks:
       - task: tag
 
   release:
-    desc: "Full release: bump version, commit, tag, and push (PART=major|minor|patch)"
+    desc: "Full release: bump version, commit, tag, and push (usage: task release -- minor)"
+    vars:
+      PART: "{{.CLI_ARGS}}"
     requires:
       vars:
         - name: PART
@@ -337,13 +339,15 @@ tasks:
       - task: bump
         vars:
           PART: "{{.PART}}"
-      - task: ci
+      - cmd: task ci
       - cmd: "git add -- pyproject.toml CHANGELOG.md uv.lock"
       - cmd: 'git commit -m "Release v$({{.PYTHON_BIN}} -c "import re; from pathlib import Path; m=re.search(r''version\s*=\s*\"([\d.]+)\"'', Path(''pyproject.toml'').read_text()); print(m.group(1))")"'
       - task: tag
 
   release:dry-run:
-    desc: "Show what a release would do without executing (PART=major|minor|patch)"
+    desc: "Show what a release would do without executing (usage: task release:dry-run -- patch)"
+    vars:
+      PART: "{{.CLI_ARGS}}"
     requires:
       vars:
         - name: PART
