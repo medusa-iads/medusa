@@ -1,6 +1,7 @@
 require("_header")
 require("services.Services")
 require("services.BlackBoxService")
+require("core.Constants")
 require("core.Logger")
 
 --[[
@@ -33,7 +34,7 @@ function Medusa.Services.SensorPollingService:new(doctrine)
 	return o
 end
 
-function Medusa.Services.SensorPollingService:_buildReport(entry, now)
+function Medusa.Services.SensorPollingService:_buildReport(entry, now, sourceType)
 	local obj = entry.object
 	if not obj then
 		return nil
@@ -71,12 +72,14 @@ function Medusa.Services.SensorPollingService:_buildReport(entry, now)
 	self._lastScanned[networkId] = now
 	return {
 		NetworkId = networkId,
+		SourceType = sourceType,
 		Position = { x = pos.x, y = pos.y, z = pos.z },
 		Velocity = { x = vel.x, y = vel.y, z = vel.z },
 	}
 end
 
-function Medusa.Services.SensorPollingService:pollSensor(groupName, now)
+function Medusa.Services.SensorPollingService:pollSensor(groupName, now, sourceType)
+	sourceType = sourceType or Medusa.Constants.TrackSource.EARLY_WARNING_RADAR
 	if now - self._lastCleanup > self._doctrine.SensorCleanupSec then
 		for id, ts in pairs(self._lastScanned) do
 			if now - ts > self._doctrine.SensorCleanupSec then
@@ -98,7 +101,7 @@ function Medusa.Services.SensorPollingService:pollSensor(groupName, now)
 
 	local reports = {}
 	for i = 1, #detections do
-		local report = self:_buildReport(detections[i], now)
+		local report = self:_buildReport(detections[i], now, sourceType)
 		if report then
 			reports[#reports + 1] = report
 		end

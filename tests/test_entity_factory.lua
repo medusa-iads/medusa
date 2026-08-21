@@ -132,7 +132,7 @@ end
 
 function TestEntityFactory:test_battery_fields()
 	local stores = makeStores()
-	local dto = makeDTO({ groupId = 42, groupName = "SAM-SA10" })
+	local dto = makeDTO({ groupId = 42, groupName = "SAM-SA10", category = Group.Category.GROUND })
 
 	Medusa.Services.EntityFactory.createFromDTO(dto, stores, "net-1")
 
@@ -140,6 +140,7 @@ function TestEntityFactory:test_battery_fields()
 	lu.assertEquals(battery.NetworkId, "net-1")
 	lu.assertEquals(battery.GroupId, 42)
 	lu.assertEquals(battery.GroupName, "SAM-SA10")
+	lu.assertEquals(battery.GroupCategory, Group.Category.GROUND)
 	lu.assertNotNil(battery.Position)
 end
 
@@ -167,6 +168,21 @@ function TestEntityFactory:test_sensor_gci_classification()
 
 	local all = stores.sensors:getAll()
 	lu.assertEquals(all[1].SensorType, "GCI")
+end
+
+function TestEntityFactory:test_airborne_sensor_retains_group_category()
+	useSearchRadarGroup()
+	local stores = makeStores()
+	local dto = makeDTO({
+		category = Group.Category.AIRPLANE,
+		parsed = { roles = { Medusa.Constants.Role.GCI } },
+	})
+
+	Medusa.Services.EntityFactory.createFromDTO(dto, stores, "net-1")
+
+	local sensor = stores.sensors:getAll()[1]
+	lu.assertEquals(sensor.GroupCategory, Group.Category.AIRPLANE)
+	lu.assertTrue(sensor.IsAirborne)
 end
 
 function TestEntityFactory:test_sensor_ewr_type()

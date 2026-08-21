@@ -43,6 +43,9 @@ function Medusa.Entities.Track.new(data)
 
 	local o = {
 		TrackId = data.TrackId or NewULID(),
+		DisplayTrackId = data.DisplayTrackId,
+		DisplayTrackIdAliases = data.DisplayTrackIdAliases or {},
+		OriginSourceType = data.OriginSourceType,
 		NetworkId = data.NetworkId,
 		Position = data.Position,
 		Velocity = data.Velocity,
@@ -84,9 +87,27 @@ function Medusa.Entities.Track.new(data)
 	}
 
 	Medusa.Entities.Track._logger:debug(
-		string.format("created track %s for network %s", o.TrackId, tostring(o.NetworkId))
+		string.format("created track %s for network %s", Medusa.Entities.Track.displayId(o), tostring(o.NetworkId))
 	)
 	return o
+end
+
+function Medusa.Entities.Track.displayId(track)
+	return (track and track.DisplayTrackId) or Medusa.Constants.TrackDisplayId.UNSET
+end
+
+function Medusa.Entities.Track.addDisplayIdAlias(track, displayId)
+	if not displayId or displayId == track.DisplayTrackId then
+		return false
+	end
+	local aliases = track.DisplayTrackIdAliases
+	for i = 1, #aliases do
+		if aliases[i] == displayId then
+			return false
+		end
+	end
+	aliases[#aliases + 1] = displayId
+	return true
 end
 
 function Medusa.Entities.Track.update(track, position, velocity, timestamp)

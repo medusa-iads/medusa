@@ -1,6 +1,7 @@
 require("_header")
 require("services.Services")
 require("services.stores.TrackStore")
+require("services.TrackDisplayIdAllocator")
 require("entities.Track")
 require("core.Constants")
 require("core.Config")
@@ -37,6 +38,7 @@ function Medusa.Services.TrackManager:new(opts)
 		_pruneBuffer = {},
 		_staleBuffer = {},
 		_expiredBuffer = {},
+		_displayIdAllocator = (opts and opts.displayIdAllocator) or Medusa.Services.TrackDisplayIdAllocator:new(),
 		_trackMemoryDurationSec = Medusa.Config:getTrackMemoryDurationSec(),
 		_smoothedVelocityWindowSec = Medusa.Config:getSmoothedVelocityWindowSec(),
 	}
@@ -44,8 +46,24 @@ function Medusa.Services.TrackManager:new(opts)
 	return o
 end
 
+function Medusa.Services.TrackManager:_releaseDisplayIds(track)
+	if track.DisplayTrackId then
+		self._displayIdAllocator:release(track.DisplayTrackId)
+	end
+	local aliases = track.DisplayTrackIdAliases or {}
+	for i = 1, #aliases do
+		self._displayIdAllocator:release(aliases[i])
+	end
+end
+
 function Medusa.Services.TrackManager:processReport(report, now)
-	if not report or not report.NetworkId or not report.Position or not report.Velocity then
+	if
+		not report
+		or not report.NetworkId
+		or not Medusa.Constants.TrackSourcePrefix[report.SourceType]
+		or not report.Position
+		or not report.Velocity
+	then
 		self._logger:error("processReport: invalid report (missing required fields)")
 		return nil
 	end
@@ -59,7 +77,7 @@ function Medusa.Services.TrackManager:processReport(report, now)
 
 	-- Check dormant cache for re-association
 	local dormant = self._dormant[report.NetworkId]
-	if dormant and dormant.Position and report.Position then
+	if dormant and dormant.Position then
 		local dx = report.Position.x - dormant.Position.x
 		local dy = report.Position.y - dormant.Position.y
 		local dz = report.Position.z - dormant.Position.z
@@ -68,6 +86,7 @@ function Medusa.Services.TrackManager:processReport(report, now)
 			self._dormant[report.NetworkId] = nil
 			return self:_reassociateTrack(report, dormant, now)
 		end
+		self:_releaseDisplayIds(dormant)
 		self._logger:debug(
 			string.format(
 				"dormant re-association failed for network %s: dist=%.0fm > %dm",
@@ -92,20 +111,32 @@ function Medusa.Services.TrackManager:_registerTrack(track, networkId, now)
 end
 
 function Medusa.Services.TrackManager:_createNewTrack(report, now)
+	local displayTrackId = self._displayIdAllocator:allocate(report.SourceType)
 	local track = Medusa.Entities.Track.new({
 		NetworkId = report.NetworkId,
+		DisplayTrackId = displayTrackId,
+		OriginSourceType = report.SourceType,
 		Position = report.Position,
 		Velocity = report.Velocity,
 	})
 	self:_registerTrack(track, report.NetworkId, now)
 	Medusa.Services.MetricsService.inc("medusa_tracks_created_total")
-	self._logger:debug(string.format("created track %s for network %s", track.TrackId, tostring(report.NetworkId)))
+	self._logger:debug(
+		string.format(
+			"created track %s for network %s",
+			Medusa.Entities.Track.displayId(track),
+			tostring(report.NetworkId)
+		)
+	)
 	return track
 end
 
 function Medusa.Services.TrackManager:_reassociateTrack(report, dormant, now)
 	local track = Medusa.Entities.Track.new({
 		NetworkId = report.NetworkId,
+		DisplayTrackId = dormant.DisplayTrackId,
+		DisplayTrackIdAliases = dormant.DisplayTrackIdAliases,
+		OriginSourceType = dormant.OriginSourceType,
 		Position = report.Position,
 		Velocity = report.Velocity,
 	})
@@ -117,7 +148,7 @@ function Medusa.Services.TrackManager:_reassociateTrack(report, dormant, now)
 	self._logger:info(
 		string.format(
 			"re-associated track %s for network %s (was %s/%s)",
-			track.TrackId,
+			Medusa.Entities.Track.displayId(track),
 			tostring(report.NetworkId),
 			tostring(dormant.TrackIdentification),
 			tostring(dormant.AssessedAircraftType)
@@ -152,6 +183,14 @@ function Medusa.Services.TrackManager:_updateExistingTrack(trackId, report, now)
 		timestamp = now,
 	})
 	return track
+end
+
+function Medusa.Services.TrackManager:_remapNetworkIdMappings(fromTrackId, toTrackId)
+	for networkId, mappedTrackId in pairs(self._byNetworkId) do
+		if mappedTrackId == fromTrackId then
+			self._byNetworkId[networkId] = toTrackId
+		end
+	end
 end
 
 function Medusa.Services.TrackManager:pruneStale(now)
@@ -199,12 +238,17 @@ function Medusa.Services.TrackManager:pruneStale(now)
 			if track.NetworkId then
 				self._dormant[track.NetworkId] = {
 					Position = track.Position,
+					DisplayTrackId = track.DisplayTrackId,
+					DisplayTrackIdAliases = track.DisplayTrackIdAliases,
+					OriginSourceType = track.OriginSourceType,
 					TrackIdentification = track.TrackIdentification,
 					AssessedAircraftType = track.AssessedAircraftType,
 					HarmLikelihoodScore = track.HarmLikelihoodScore,
 					IsSeadThreat = track.IsSeadThreat,
 					expiredAt = now,
 				}
+			else
+				self:_releaseDisplayIds(track)
 			end
 		end
 		local removed = self._store:remove(expiredIds[i])
@@ -212,7 +256,7 @@ function Medusa.Services.TrackManager:pruneStale(now)
 			if self._geoGrid then
 				self._geoGrid:remove(expiredIds[i])
 			end
-			self._byNetworkId[removed.NetworkId] = nil
+			self:_remapNetworkIdMappings(removed.TrackId, nil)
 			self._eventBus:publish({ id = "TrackRemoved", TrackId = expiredIds[i], timestamp = now })
 		end
 	end
@@ -220,9 +264,57 @@ function Medusa.Services.TrackManager:pruneStale(now)
 	-- Evict stale dormant entries
 	for nid, d in pairs(self._dormant) do
 		if now - d.expiredAt > Medusa.Constants.TRACK_REASSOC_TTL_SEC then
+			self:_releaseDisplayIds(d)
 			self._dormant[nid] = nil
 		end
 	end
+end
+
+function Medusa.Services.TrackManager:mergeTracks(survivingTrackId, absorbedTrackId, now)
+	if survivingTrackId == absorbedTrackId then
+		error("cannot merge a track into itself")
+	end
+	local survivor = self._store:get(survivingTrackId)
+	local absorbed = self._store:get(absorbedTrackId)
+	if not survivor or not absorbed then
+		error("merge requires two existing tracks")
+	end
+	local absorbedDisplayId = Medusa.Entities.Track.displayId(absorbed)
+
+	Medusa.Entities.Track.addDisplayIdAlias(survivor, absorbed.DisplayTrackId)
+	for i = 1, #absorbed.DisplayTrackIdAliases do
+		Medusa.Entities.Track.addDisplayIdAlias(survivor, absorbed.DisplayTrackIdAliases[i])
+	end
+	self:_remapNetworkIdMappings(absorbedTrackId, survivingTrackId)
+	self._store:remove(absorbedTrackId)
+	if self._geoGrid then
+		self._geoGrid:remove(absorbedTrackId)
+	end
+	self._eventBus:publish({
+		id = "TracksMerged",
+		TrackId = survivingTrackId,
+		MergedTrackId = absorbedTrackId,
+		timestamp = now or GetTime(),
+	})
+	self._logger:info(
+		string.format(
+			"merged track %s into track %s; retained %s as an alias",
+			absorbedDisplayId,
+			Medusa.Entities.Track.displayId(survivor),
+			absorbedDisplayId
+		)
+	)
+	return survivor
+end
+
+function Medusa.Services.TrackManager:splitTrack(continuingTrackId, report, now)
+	if not self._store:get(continuingTrackId) then
+		error("split requires an existing continuing track")
+	end
+	if report and self._byNetworkId[report.NetworkId] then
+		error("split report requires a new network ID")
+	end
+	return self:processReport(report, now)
 end
 
 function Medusa.Services.TrackManager:getStore()

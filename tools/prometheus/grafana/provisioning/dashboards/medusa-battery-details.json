@@ -41,6 +41,7 @@
               "__name__": true,
               "instance": true,
               "job": true,
+              "target_track": true,
               "Value #A": true
             },
             "indexByName": {
@@ -128,7 +129,7 @@
       "targets": [
         {
           "expr": "medusa_track_best_pk{network=~\"$network\", battery=~\"$battery\"} > 0 and on() medusa:live",
-          "legendFormat": "{{battery}} \u2192 {{track}}",
+          "legendFormat": "{{battery}} \u2192 {{display_track}}",
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }
         }
       ],
@@ -148,7 +149,7 @@
       "targets": [
         {
           "expr": "medusa_track_second_pk{network=~\"$network\", battery=~\"$battery\"} > 0 and on() medusa:live",
-          "legendFormat": "{{battery}} \u2192 {{track}}",
+          "legendFormat": "{{battery}} \u2192 {{display_track}}",
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }
         }
       ],
@@ -314,7 +315,22 @@
             "excludeByName": {
               "__name__": true,
               "instance": true,
-              "job": true
+              "job": true,
+              "track": true
+            },
+            "indexByName": {
+              "display_track": 0,
+              "battery": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "network": 4
+            },
+            "renameByName": {
+              "display_track": "Track ID",
+              "battery": "Battery",
+              "network": "Network",
+              "Value #A": "Active",
+              "Value #B": "Shots Remaining"
             }
           }
         }

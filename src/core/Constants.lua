@@ -163,6 +163,26 @@ Medusa.Constants.TrackLifecycleState = {
 	EXPIRED = "EXPIRED",
 }
 
+Medusa.Constants.TrackSource = {
+	AWACS = "AWACS",
+	EARLY_WARNING_RADAR = "EARLY_WARNING_RADAR",
+	SAM_BATTERY = "SAM_BATTERY",
+	SHIPBORNE_RADAR = "SHIPBORNE_RADAR",
+	AIRBORNE_DATALINK = "AIRBORNE_DATALINK",
+}
+
+Medusa.Constants.TrackSourcePrefix = {
+	[Medusa.Constants.TrackSource.AWACS] = "AW",
+	[Medusa.Constants.TrackSource.EARLY_WARNING_RADAR] = "AE",
+	[Medusa.Constants.TrackSource.SAM_BATTERY] = "AB",
+	[Medusa.Constants.TrackSource.SHIPBORNE_RADAR] = "AS",
+	[Medusa.Constants.TrackSource.AIRBORNE_DATALINK] = "AC",
+}
+
+Medusa.Constants.TrackDisplayId = {
+	UNSET = "UNSET",
+}
+
 Medusa.Constants.TrackIdentification = {
 	UNKNOWN = "UNKNOWN",
 	BOGEY = "BOGEY",
@@ -266,6 +286,7 @@ Medusa.Constants.REARM_CHECK_INTERVAL_SEC = 600
 Medusa.Constants.SensorType = {
 	EWR = "EWR",
 	GCI = "GCI",
+	AWACS = "AWACS",
 	SAM_SEARCH = "SAM_SEARCH",
 	SAM_TRACK = "SAM_TRACK",
 }

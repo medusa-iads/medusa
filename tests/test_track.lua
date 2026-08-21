@@ -50,6 +50,12 @@ function TestTrack:test_track_creation_preserves_provided_track_id()
 	lu.assertEquals(track.TrackId, "my-track-123")
 end
 
+function TestTrack:test_display_id_does_not_expose_canonical_id_when_unset()
+	local track = Medusa.Entities.Track.new(makeTrackData({ TrackId = "my-track-123" }))
+
+	lu.assertEquals(Medusa.Entities.Track.displayId(track), Medusa.Constants.TrackDisplayId.UNSET)
+end
+
 -- == TrackStore Tests ==
 
 TestTrackStore = {}
@@ -152,10 +158,10 @@ end
 
 function TestTrackStore:test_store_add_duplicate_errors()
 	local store = Medusa.Services.TrackStore:new()
-	store:add(makeTrack({ TrackId = "dup1" }))
+	store:add(makeTrack({ TrackId = "dup1", DisplayTrackId = "AE0001" }))
 
-	lu.assertErrorMsgContains("duplicate TrackId: dup1", function()
-		store:add(makeTrack({ TrackId = "dup1" }))
+	lu.assertErrorMsgContains("duplicate track: AE0001", function()
+		store:add(makeTrack({ TrackId = "dup1", DisplayTrackId = "AE0001" }))
 	end)
 end
 

@@ -7,6 +7,7 @@ require("services.BatteryActivationService")
 require("services.PointDefenseService")
 require("services.HarmDetectionService")
 require("entities.Battery")
+require("entities.Track")
 
 --[[
             ██╗  ██╗ █████╗ ██████╗ ███╗   ███╗    ██████╗ ███████╗███████╗██████╗  ██████╗ ███╗   ██╗███████╗███████╗
@@ -330,7 +331,7 @@ local function applyLocalizedShutdown(
 		string.format(
 			"HARM shutdown: battery %s for track %s (strategy=%s)",
 			battery.BatteryId,
-			track.TrackId,
+			Medusa.Entities.Track.displayId(track),
 			strategy
 		)
 	)

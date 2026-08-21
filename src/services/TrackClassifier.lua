@@ -1,6 +1,7 @@
 require("_header")
 require("services.Services")
 require("services.SpatialQuery")
+require("entities.Track")
 require("core.Constants")
 require("core.Logger")
 
@@ -199,7 +200,14 @@ local function checkHostileAction(track, trackStore, posture, now)
 	trackStore:updateIdentification(track.TrackId, TI.HOSTILE)
 	Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
 	track.LastIdentificationTime = now
-	_logger:info(string.format("track %s %s->HOSTILE (hostile action, %s)", track.TrackId, prev, posture))
+	_logger:info(
+		string.format(
+			"track %s %s->HOSTILE (hostile action, %s)",
+			Medusa.Entities.Track.displayId(track),
+			prev,
+			posture
+		)
+	)
 	return true
 end
 
@@ -222,9 +230,21 @@ local function evaluateUnknown(track, trackStore, posture, hasBorders, now)
 		Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
 		track.LastIdentificationTime = now
 		if forceByADIZ then
-			_logger:info(string.format("track %s UNKNOWN->BOGEY (ADIZ entry, %s)", track.TrackId, posture))
+			_logger:info(
+				string.format(
+					"track %s UNKNOWN->BOGEY (ADIZ entry, %s)",
+					Medusa.Entities.Track.displayId(track),
+					posture
+				)
+			)
 		else
-			_logger:debug(string.format("track %s UNKNOWN->BOGEY (%s, IFF confirmed)", track.TrackId, posture))
+			_logger:debug(
+				string.format(
+					"track %s UNKNOWN->BOGEY (%s, IFF confirmed)",
+					Medusa.Entities.Track.displayId(track),
+					posture
+				)
+			)
 		end
 	end
 end
@@ -270,7 +290,14 @@ local function evaluateBogey(track, trackStore, posture, hasBorders, now)
 		trackStore:updateIdentification(track.TrackId, TI.BANDIT)
 		Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
 		track.LastIdentificationTime = now
-		_logger:info(string.format("track %s BOGEY->BANDIT (%s, criteria=%d)", track.TrackId, posture, criteria))
+		_logger:info(
+			string.format(
+				"track %s BOGEY->BANDIT (%s, criteria=%d)",
+				Medusa.Entities.Track.displayId(track),
+				posture,
+				criteria
+			)
+		)
 	end
 end
 
@@ -287,7 +314,13 @@ local function evaluateBandit(track, trackStore, posture, hasBorders, now, geoGr
 			trackStore:updateIdentification(track.TrackId, TI.HOSTILE)
 			Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
 			track.LastIdentificationTime = now
-			_logger:info(string.format("track %s BANDIT->HOSTILE (HOT_WAR dwell %.0fs)", track.TrackId, dwell))
+			_logger:info(
+				string.format(
+					"track %s BANDIT->HOSTILE (HOT_WAR dwell %.0fs)",
+					Medusa.Entities.Track.displayId(track),
+					dwell
+				)
+			)
 		end
 		return
 	end
@@ -304,7 +337,7 @@ local function evaluateBandit(track, trackStore, posture, hasBorders, now, geoGr
 			_logger:info(
 				string.format(
 					"track %s BANDIT->HOSTILE (NFZ trespass, dwell=%.0fs, %s)",
-					track.TrackId,
+					Medusa.Entities.Track.displayId(track),
 					track.BorderHostileDwellSec,
 					posture
 				)
@@ -320,7 +353,13 @@ local function evaluateBandit(track, trackStore, posture, hasBorders, now, geoGr
 			trackStore:updateIdentification(track.TrackId, TI.HOSTILE)
 			Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
 			track.LastIdentificationTime = now
-			_logger:info(string.format("track %s BANDIT->HOSTILE (HOT_WAR dwell %.0fs)", track.TrackId, dwell))
+			_logger:info(
+				string.format(
+					"track %s BANDIT->HOSTILE (HOT_WAR dwell %.0fs)",
+					Medusa.Entities.Track.displayId(track),
+					dwell
+				)
+			)
 			return
 		end
 	end
@@ -342,7 +381,13 @@ local function evaluateBandit(track, trackStore, posture, hasBorders, now, geoGr
 		trackStore:updateIdentification(track.TrackId, TI.HOSTILE)
 		Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
 		track.LastIdentificationTime = now
-		_logger:info(string.format("track %s BANDIT->HOSTILE (hostile intent, %s)", track.TrackId, posture))
+		_logger:info(
+			string.format(
+				"track %s BANDIT->HOSTILE (hostile intent, %s)",
+				Medusa.Entities.Track.displayId(track),
+				posture
+			)
+		)
 	end
 end
 
@@ -405,10 +450,10 @@ local function applyGuiltByAssociation(tracks, trackStore, now)
 						_logger:info(
 							string.format(
 								"track %s %s->%s (guilt by association with %s)",
-								candidate.TrackId,
+								Medusa.Entities.Track.displayId(candidate),
 								cId,
 								promoted.newId,
-								promoted.track.TrackId
+								Medusa.Entities.Track.displayId(promoted.track)
 							)
 						)
 					end
@@ -551,7 +596,14 @@ function Medusa.Services.TrackClassifier.assessSingleAircraftType(track)
 	local currentRank = TYPE_RANK[track.AssessedAircraftType] or 0
 	local newRank = TYPE_RANK[finalType] or 0
 	if newRank > currentRank then
-		_logger:info(string.format("track %s type %s -> %s", track.TrackId, track.AssessedAircraftType, finalType))
+		_logger:info(
+			string.format(
+				"track %s type %s -> %s",
+				Medusa.Entities.Track.displayId(track),
+				track.AssessedAircraftType,
+				finalType
+			)
+		)
 		track.AssessedAircraftType = finalType
 	end
 end

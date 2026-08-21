@@ -9,6 +9,8 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Source-derived operator track IDs for tactical displays, Grafana, and human-readable logs while retaining ULIDs as internal identifiers.
+
 ### Changed
 
 ### Fixed
