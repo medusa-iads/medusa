@@ -147,6 +147,18 @@ function TestSetAssignment:test_rejects_missing_battery()
 	lu.assertFalse(ok)
 end
 
+function TestSetAssignment:test_crew_suppressed_provider_is_not_viable()
+	local pd = makeBattery({ BatteryId = "PD-1", Role = BR.SR_SAM, TotalAmmoStatus = 4 })
+	pd.CrewSuppressionState = Medusa.Constants.CrewSuppressionState.SUPPRESSED
+	pd.CrewSuppressionUntil = 1100
+	local target = makeBattery({ BatteryId = "HVA-1", Role = BR.LR_SAM })
+	self.batteryStore:add(pd)
+	self.batteryStore:add(target)
+
+	lu.assertFalse(PDS.isProviderViable(pd))
+	lu.assertFalse(PDS.setAssignment(pd.BatteryId, target.BatteryId, self.batteryStore))
+end
+
 -- == TestClearAssignment ==
 
 TestClearAssignment = {}

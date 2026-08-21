@@ -436,3 +436,125 @@ function TestIadsNetwork:test_death_ignores_unknown_unit()
 	lu.assertEquals(sensorStore:count(), 0)
 	lu.assertEquals(batteryStore:count(), 0)
 end
+
+TestIadsSuppressionEvents = {}
+
+function TestIadsSuppressionEvents:setUp()
+	self.originalBus = HarnessWorldEventBus
+	self.originalGetTime = GetTime
+	self.now = 1000
+	GetTime = function()
+		return self.now
+	end
+	HarnessWorldEventBus = CreateHarnessWorldEventBus()
+end
+
+function TestIadsSuppressionEvents:tearDown()
+	HarnessWorldEventBus:dispose()
+	HarnessWorldEventBus = self.originalBus
+	GetTime = self.originalGetTime
+end
+
+local function hitEvent(unitId, coalitionId)
+	return {
+		initiator = {},
+		target = {
+			getCoalition = function()
+				return coalitionId or COAL_RED
+			end,
+			getID = function()
+				return unitId
+			end,
+		},
+	}
+end
+
+function TestIadsSuppressionEvents:test_hit_boundary_rejects_missing_or_invalid_fields()
+	local iads = makeIads()
+	iads:initialize()
+
+	HarnessWorldEventBus:publish({ id = world.event.S_EVENT_HIT })
+	HarnessWorldEventBus:publish({ id = world.event.S_EVENT_HIT, initiator = {} })
+	HarnessWorldEventBus:publish(hitEvent(10, coalition.side.BLUE))
+	HarnessWorldEventBus:publish({
+		id = world.event.S_EVENT_HIT,
+		initiator = {},
+		target = {
+			getCoalition = function()
+				return COAL_RED
+			end,
+		},
+	})
+
+	lu.assertTrue(iads._hitQueue:isEmpty())
+end
+
+function TestIadsSuppressionEvents:test_hit_boundary_translates_to_bounded_unit_record()
+	local iads = makeIads()
+	iads:initialize()
+	local capacity = Medusa.Constants.CrewSuppression.HIT_EVENT_QUEUE_CAPACITY
+
+	for unitId = 1, capacity + 1 do
+		local event = hitEvent(unitId)
+		event.id = world.event.S_EVENT_HIT
+		HarnessWorldEventBus:publish(event)
+	end
+
+	lu.assertEquals(iads._hitQueue:size(), capacity)
+	lu.assertEquals(iads._hitQueue:pop().TargetUnitId, 2)
+end
+
+function TestIadsSuppressionEvents:test_hit_processing_obeys_budget_and_expiry()
+	local iads = makeIads()
+	iads:initialize()
+
+	for unitId = 1, 3 do
+		local event = hitEvent(unitId)
+		event.id = world.event.S_EVENT_HIT
+		HarnessWorldEventBus:publish(event)
+	end
+	lu.assertEquals(iads:_processHitEvents(2), 2)
+	lu.assertEquals(iads._hitQueue:size(), 1)
+
+	self.now = self.now + Medusa.Constants.CrewSuppression.HIT_EVENT_MAX_AGE_SEC + 1
+	lu.assertEquals(iads:_processHitEvents(2), 1)
+	lu.assertTrue(iads._hitQueue:isEmpty())
+end
+
+function TestIadsSuppressionEvents:test_stop_and_restart_replace_hit_subscription()
+	local iads = makeIads()
+	iads:initialize()
+	lu.assertEquals(#HarnessWorldEventBus._subscribers[world.event.S_EVENT_HIT], 1)
+	for unitId = 1, 2 do
+		local event = hitEvent(unitId)
+		event.id = world.event.S_EVENT_HIT
+		HarnessWorldEventBus:publish(event)
+	end
+	lu.assertEquals(iads:_processHitEvents(1), 1)
+	lu.assertStrContains(
+		Medusa.Services.MetricsService.serialize(),
+		'medusa_crew_suppression_event_queue_depth{network="T"} 1'
+	)
+
+	iads:stop()
+	lu.assertIsNil(HarnessWorldEventBus._subscribers[world.event.S_EVENT_HIT])
+	lu.assertTrue(iads._hitQueue:isEmpty())
+
+	iads:start()
+	iads:start()
+	lu.assertEquals(#HarnessWorldEventBus._subscribers[world.event.S_EVENT_HIT], 1)
+	iads:stop()
+end
+
+function TestIadsSuppressionEvents:test_disabled_doctrine_does_not_subscribe_to_hit_events()
+	local iads = Medusa.Core.IadsNetwork:new({
+		id = "T",
+		coalitionId = COAL_RED,
+		prefix = "iads",
+		doctrine = { CrewSuppression = { Enabled = false } },
+	})
+
+	iads:initialize()
+
+	lu.assertIsNil(HarnessWorldEventBus._subscribers[world.event.S_EVENT_HIT])
+end

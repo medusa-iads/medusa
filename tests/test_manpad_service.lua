@@ -139,6 +139,10 @@ function TestManpadFireReadiness:test_requiresHotActivationOperationalStateAndAm
 	bat.ActivationState = C.ActivationState.STATE_HOT
 	bat.Manpad.SleepWakeState = C.Manpad.SleepWakeState.ALERT
 	lu.assertFalse(Medusa.Services.ManpadService.canFire(bat))
+	bat.Manpad.SleepWakeState = C.Manpad.SleepWakeState.HOT
+	bat.CrewSuppressionState = C.CrewSuppressionState.SUPPRESSED
+	bat.CrewSuppressionUntil = 100
+	lu.assertFalse(Medusa.Services.ManpadService.canFire(bat))
 end
 
 -- ============================================================
@@ -502,6 +506,19 @@ function TestManpadScheduleWake:test_scheduleWake_setsStateAndTimerId()
 	lu.assertNotNil(bat.Manpad.WakeTimerId, "cueFromIADS must set WakeTimerId")
 	lu.assertEquals(bat.Manpad.AlertCycleCount, 0)
 	lu.assertIsNil(bat.Manpad.LastAlertedTime)
+end
+
+function TestManpadScheduleWake:test_crew_suppression_blocks_pending_wake()
+	local bat = makeManpadBattery({ NetworkId = "test-network" })
+	bat.CrewSuppressionState = Medusa.Constants.CrewSuppressionState.SUPPRESSED
+	bat.CrewSuppressionUntil = 100
+	self.store:add(bat)
+
+	Medusa.Services.ManpadService.cueFromIADS(self.network._ctx, bat.Position)
+
+	lu.assertEquals(bat.Manpad.SleepWakeState, "ASLEEP")
+	lu.assertNil(bat.Manpad.WakeTimerId)
+	lu.assertEquals(#timerHarness.scheduledCallbacks, 0)
 end
 
 function TestManpadScheduleWake:test_scheduleFailure_restoresSleepingState()

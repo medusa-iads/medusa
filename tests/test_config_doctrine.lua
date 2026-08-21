@@ -101,6 +101,46 @@ function TestGetDoctrine:test_nil_input_uses_defaults()
 	lu.assertAlmostEquals(d.AAA.AreaFireChance, 0.20, 0.001)
 	lu.assertAlmostEquals(d.AAA.BarrageChance, 0.25, 0.001)
 	lu.assertEquals(d.AAA.MaxBarrageGroups, 15)
+	lu.assertTrue(d.CrewSuppression.Enabled)
+	lu.assertEquals(d.CrewSuppression.DamageDurationSec, 120)
+	lu.assertAlmostEquals(d.CrewSuppression.MaxGroupDiameterM, 609.6, 0.001)
+end
+
+function TestGetDoctrine:test_crew_suppression_enabled_requires_boolean()
+	Medusa.Config:initialize()
+	local disabled = Medusa.Config:getDoctrine({ CrewSuppression = { Enabled = false } })
+	local invalid = Medusa.Config:getDoctrine({ CrewSuppression = { Enabled = "false" } })
+
+	lu.assertFalse(disabled.CrewSuppression.Enabled)
+	lu.assertTrue(invalid.CrewSuppression.Enabled)
+end
+
+function TestGetDoctrine:test_crew_suppression_damage_duration_is_bounded()
+	Medusa.Config:initialize()
+	local negative = Medusa.Config:getDoctrine({ CrewSuppression = { DamageDurationSec = -1 } })
+	local text = Medusa.Config:getDoctrine({ CrewSuppression = { DamageDurationSec = "invalid" } })
+	local numericText = Medusa.Config:getDoctrine({ CrewSuppression = { DamageDurationSec = "75" } })
+	local excessive = Medusa.Config:getDoctrine({ CrewSuppression = { DamageDurationSec = 3601 } })
+	local valid = Medusa.Config:getDoctrine({ CrewSuppression = { DamageDurationSec = 75 } })
+
+	lu.assertEquals(negative.CrewSuppression.DamageDurationSec, 1)
+	lu.assertEquals(text.CrewSuppression.DamageDurationSec, 120)
+	lu.assertEquals(numericText.CrewSuppression.DamageDurationSec, 75)
+	lu.assertEquals(excessive.CrewSuppression.DamageDurationSec, 3600)
+	lu.assertEquals(valid.CrewSuppression.DamageDurationSec, 75)
+end
+
+function TestGetDoctrine:test_crew_suppression_group_diameter_is_bounded()
+	Medusa.Config:initialize()
+	local belowMinimum = Medusa.Config:getDoctrine({ CrewSuppression = { MaxGroupDiameterM = 0 } })
+	local aboveMaximum = Medusa.Config:getDoctrine({ CrewSuppression = { MaxGroupDiameterM = 100001 } })
+	local invalid = Medusa.Config:getDoctrine({ CrewSuppression = { MaxGroupDiameterM = "invalid" } })
+	local valid = Medusa.Config:getDoctrine({ CrewSuppression = { MaxGroupDiameterM = 500 } })
+
+	lu.assertEquals(belowMinimum.CrewSuppression.MaxGroupDiameterM, 1)
+	lu.assertEquals(aboveMaximum.CrewSuppression.MaxGroupDiameterM, 100000)
+	lu.assertAlmostEquals(invalid.CrewSuppression.MaxGroupDiameterM, 609.6, 0.001)
+	lu.assertEquals(valid.CrewSuppression.MaxGroupDiameterM, 500)
 end
 
 function TestGetDoctrine:test_aaa_overrides_are_validated()

@@ -40,6 +40,37 @@ local function getUnitName(unit)
 	return nil
 end
 
+local function isFiniteNumber(value)
+	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+end
+
+local function measureHorizontalGroupDiameter(units)
+	local positions = {}
+	for i = 1, #units do
+		local position = GetUnitPosition(units[i])
+		if not position or not isFiniteNumber(position.x) or not isFiniteNumber(position.z) then
+			return nil
+		end
+		positions[i] = position
+	end
+	if #positions == 0 then
+		return nil
+	end
+
+	local diameterSquared = 0
+	for i = 1, #positions - 1 do
+		for j = i + 1, #positions do
+			local dx = positions[i].x - positions[j].x
+			local dz = positions[i].z - positions[j].z
+			local distanceSquared = dx * dx + dz * dz
+			if distanceSquared > diameterSquared then
+				diameterSquared = distanceSquared
+			end
+		end
+	end
+	return math.sqrt(diameterSquared)
+end
+
 local function classifyUnitRoles(desc)
 	if not desc or not desc.attributes then
 		return { BUR.OTHER }
@@ -324,6 +355,12 @@ local function createBatteryUnit(unit, unitId, batteryRole, roles)
 	local unitName = getUnitName(unit)
 	local unitTypeName = unitName and GetUnitType(unitName) or nil
 	local desc = GetUnitDesc(unit)
+	local suppressionEligible = (batteryRole == BR.AAA and hasRole(roles, BUR.AAA))
+		or (batteryRole == BR.MANPAD and hasRole(roles, BUR.MANPAD))
+	local health = suppressionEligible and unitName and GetUnitHealth(unitName) or nil
+	local life = health and health.CurrentLife or nil
+	local initialLife = health and health.InitialLife or nil
+	local initiallyDamaged = health and health.IsDamaged == true
 
 	local ammoTypes, ammoCount = nil, 0
 	if unitName then
@@ -343,6 +380,11 @@ local function createBatteryUnit(unit, unitId, batteryRole, roles)
 		Roles = roles,
 		AmmoCount = ammoCount,
 		AmmoTypes = ammoTypes,
+		OperationalStatus = initiallyDamaged and Medusa.Constants.UnitOperationalStatus.DAMAGED
+			or Medusa.Constants.UnitOperationalStatus.ACTIVE,
+		LastKnownLife = life,
+		InitialLife = initialLife,
+		InitialDamagePending = initiallyDamaged,
 	})
 	logger:debug(
 		string.format("[%s] roles=%s, ammo=%d", unitTypeName or "unknown", table.concat(roles, ","), ammoCount)
@@ -613,6 +655,7 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 		GroupCategory = dto.category,
 		Position = position,
 		Role = batteryRole,
+		GroupDiameterM = batteryRole == BR.AAA and measureHorizontalGroupDiameter(units) or nil,
 	})
 
 	local hasTelar, hasCommandPost = populateBatteryUnits(battery, units, inventory, batteryRole)
@@ -697,6 +740,7 @@ local function createManpad(dto, stores, networkId, units, inventory, doctrine)
 		GroupCategory = dto.category,
 		Position = position,
 		Role = BR.MANPAD,
+		GroupDiameterM = measureHorizontalGroupDiameter(units),
 		Manpad = {
 			SleepWakeState = Medusa.Constants.Manpad.SleepWakeState.ASLEEP,
 			WakeReason = Medusa.Constants.Manpad.WakeReason.NONE,

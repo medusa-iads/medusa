@@ -144,6 +144,21 @@ local AAA_SCHEMA = {
 	},
 }
 
+local CREW_SUPPRESSION_SCHEMA = {
+	{
+		name = "DamageDurationSec",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_DAMAGE_DURATION_SEC,
+		min = 1,
+		max = Medusa.Constants.CrewSuppression.MAX_DAMAGE_DURATION_SEC,
+	},
+	{
+		name = "MaxGroupDiameterM",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_MAX_GROUP_DIAMETER_M,
+		min = 1,
+		max = Medusa.Constants.CrewSuppression.MAX_GROUP_DIAMETER_M,
+	},
+}
+
 local _logger
 
 local function resolveNumericSubtable(schema, overrides, legacyOverrides)
@@ -238,6 +253,23 @@ function Medusa.Entities.Doctrine.new(overrides)
 
 	doctrine.MANPAD = resolveNumericSubtable(MANPAD_SCHEMA, d.MANPAD, d)
 	doctrine.AAA = resolveNumericSubtable(AAA_SCHEMA, d.AAA)
+	local crewSuppressionOverrides = type(d.CrewSuppression) == "table" and d.CrewSuppression or {}
+	doctrine.CrewSuppression = resolveNumericSubtable(CREW_SUPPRESSION_SCHEMA, crewSuppressionOverrides)
+	local enabled = crewSuppressionOverrides.Enabled
+	if enabled ~= nil and type(enabled) ~= "boolean" then
+		_logger:error(
+			string.format(
+				"invalid CrewSuppression.Enabled value '%s', using '%s'",
+				tostring(enabled),
+				tostring(Medusa.Constants.CrewSuppression.DEFAULT_ENABLED)
+			)
+		)
+		enabled = nil
+	end
+	if enabled == nil then
+		enabled = Medusa.Constants.CrewSuppression.DEFAULT_ENABLED
+	end
+	doctrine.CrewSuppression.Enabled = enabled
 
 	return doctrine
 end

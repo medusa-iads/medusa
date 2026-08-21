@@ -88,6 +88,13 @@ local __HarnessLuaLsType5 = {}
 ---@field debug fun(message: string, caller?: string)
 local __HarnessLuaLsType6 = {}
 
+---@class UnitHealthSnapshot
+---@field CurrentLife number
+---@field InitialLife number?
+---@field IsAlive boolean
+---@field IsDamaged boolean?
+local __HarnessLuaLsType7 = {}
+
 ---@class Vec2
 ---@field x number DCS world X coordinate
 ---@field y number DCS world Z coordinate at the Vec2 boundary
@@ -101,7 +108,7 @@ local __HarnessLuaLsType6 = {}
 ---@field midpointTo fun(self: Vec2, other: Vec2): Vec2
 ---@field angleTo fun(self: Vec2, other: Vec2): number
 ---@field rotate fun(self: Vec2, angleDeg: number): Vec2
-local __HarnessLuaLsType7 = {}
+local __HarnessLuaLsType8 = {}
 
 ---@class Vec3
 ---@field x number DCS world X coordinate
@@ -120,7 +127,7 @@ local __HarnessLuaLsType7 = {}
 ---@field displace2D fun(self: Vec3, bearingDeg: number, distance: number): Vec3?
 ---@field midpointTo fun(self: Vec3, other: Vec3): Vec3
 ---@field angleTo fun(self: Vec3, other: Vec3): number
-local __HarnessLuaLsType8 = {}
+local __HarnessLuaLsType9 = {}
 
 ---@type string
 HARNESS_VERSION = nil
@@ -3288,6 +3295,12 @@ function GetUnitGroup(unitName) end
 ---@return string? playerName The player name if unit is player-controlled, nil otherwise
 --- Usage: local playerName = GetUnitPlayerName("Player")
 function GetUnitPlayerName(unitName) end
+
+--- Get a validated health snapshot for a named unit
+---@param unitName string The name of the unit
+---@return UnitHealthSnapshot? health Validated health state or nil
+--- Usage: local health = GetUnitHealth("Player")
+function GetUnitHealth(unitName) end
 
 --- Get unit life/health
 ---@param unitName string The name of the unit

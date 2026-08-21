@@ -56,6 +56,7 @@ local _INFERRED_AIRCRAFT_TYPES = {
 local CrewPerceptionService = Medusa.Services.CrewPerceptionService
 local LocalSearchService = Medusa.Services.LocalSearchService
 local NeighborPropagationService = Medusa.Services.NeighborPropagationService
+local Battery = Medusa.Entities.Battery
 local _PRIMARY_VISUAL_PROFILES = { CrewPerceptionService.PRIMARY_PROFILE }
 local _FULL_VISUAL_PROFILES = {
 	CrewPerceptionService.PRIMARY_PROFILE,
@@ -98,7 +99,7 @@ local function receiveScheduledWake(battery, wakeReason, now)
 end
 
 local function scheduleWake(ctx, battery, wakeReason, minSec, maxSec)
-	if battery.Manpad.WakeTimerId then
+	if Battery.isCrewSuppressed(battery) or battery.Manpad.WakeTimerId then
 		return false
 	end
 
@@ -144,6 +145,9 @@ function Medusa.Services.ManpadService.detectionMode(state, posture, alertCycleC
 end
 
 function Medusa.Services.ManpadService.canDetectVisually(battery, track, posture)
+	if Battery.isCrewSuppressed(battery) then
+		return false
+	end
 	local state = battery.Manpad.SleepWakeState
 	if not battery.Position then
 		return false
@@ -179,6 +183,7 @@ end
 
 function Medusa.Services.ManpadService.canFire(battery)
 	return battery.Manpad ~= nil
+		and not Battery.isCrewSuppressed(battery)
 		and battery.Manpad.SleepWakeState == MSWS.HOT
 		and battery.ActivationState == C.ActivationState.STATE_HOT
 		and battery.OperationalStatus == C.BatteryOperationalStatus.ACTIVE
@@ -191,7 +196,7 @@ local function hearsAudio(ctx, battery, track)
 end
 
 function Medusa.Services.ManpadService.onShot(battery, now)
-	if battery.Manpad.SleepWakeState ~= MSWS.HOT then
+	if Battery.isCrewSuppressed(battery) or battery.Manpad.SleepWakeState ~= MSWS.HOT then
 		return
 	end
 	if (battery.TotalAmmoStatus or 0) > 0 then
@@ -218,6 +223,31 @@ function Medusa.Services.ManpadService.cancelPendingWakes(manpadStore)
 	for i = 1, #manpads do
 		Medusa.Services.ManpadService.cancelPendingWake(manpads[i])
 	end
+end
+
+function Medusa.Services.ManpadService.suppressBattery(battery)
+	if not battery.Manpad then
+		return false
+	end
+	Medusa.Services.ManpadService.cancelPendingWake(battery)
+	local manpad = battery.Manpad
+	manpad.SleepWakeState = MSWS.ALERT
+	manpad.WakeReason = MWR.NONE
+	manpad.AlertStartTime = nil
+	manpad.HotUntil = nil
+	manpad.CooldownUntil = nil
+	return true
+end
+
+function Medusa.Services.ManpadService.recoverFromCrewSuppression(battery, now)
+	if not battery.Manpad then
+		return false
+	end
+	local manpad = battery.Manpad
+	manpad.SleepWakeState = MSWS.ALERT
+	manpad.WakeReason = MWR.RECOVERY
+	manpad.AlertStartTime = now
+	return true
 end
 
 function Medusa.Services.ManpadService.onRearmed(battery, now)
@@ -437,6 +467,9 @@ local function returnToSleep(battery, audioRangeM)
 end
 
 local function evaluateSingle(ctx, battery, trackStore, geoGrid, now, posture, manpadDoctrine)
+	if Battery.isCrewSuppressed(battery) then
+		return
+	end
 	decayAlertnessIfExpired(battery, now, manpadDoctrine)
 	local state = battery.Manpad.SleepWakeState
 

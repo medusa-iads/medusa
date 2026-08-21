@@ -60,6 +60,9 @@ function Medusa.Services.PointDefenseService.setAssignment(pdBatteryId, targetBa
 	if not pdBattery or not targetBattery then
 		return false
 	end
+	if Battery.isCrewSuppressed(pdBattery) then
+		return false
+	end
 	pdBattery.IsPointDefense = true
 	pdBattery.PointDefenseTargetId = targetBatteryId
 	targetBattery.PointDefenseProviderId = pdBatteryId
@@ -88,6 +91,9 @@ function Medusa.Services.PointDefenseService.isProviderViable(provider)
 		return false
 	end
 	if Battery.isIndependentAaa(provider) then
+		return false
+	end
+	if Battery.isCrewSuppressed(provider) then
 		return false
 	end
 	if provider.OperationalStatus ~= BOS.ACTIVE and provider.OperationalStatus ~= BOS.ENGAGEMENT_IMPAIRED then
@@ -136,6 +142,7 @@ function Medusa.Services.PointDefenseService.autoAssignShorad(ctx)
 		if
 			PD_ROLES[pd.Role]
 			and not Battery.isIndependentAaa(pd)
+			and not Battery.isCrewSuppressed(pd)
 			and pd.OperationalStatus == BOS.ACTIVE
 			and pd.Position
 			and not pd.IsPointDefense

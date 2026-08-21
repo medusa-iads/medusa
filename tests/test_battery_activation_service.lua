@@ -134,6 +134,17 @@ function TestGoHot:test_setsLastStateChangeTime()
 	lu.assertEquals(battery.LastStateChangeTime, 100)
 end
 
+function TestGoHot:test_crew_suppression_blocks_normal_and_emergency_activation()
+	local battery = makeBattery("sa6-1")
+	battery.CrewSuppressionState = Medusa.Constants.CrewSuppressionState.SUPPRESSED
+	battery.CrewSuppressionUntil = 200
+
+	lu.assertFalse(Medusa.Services.BatteryActivationService.goHot(battery, 100))
+	lu.assertFalse(Medusa.Services.BatteryActivationService.forceGoHot(battery, 100))
+	lu.assertEquals(battery.ActivationState, AS.INITIALIZING)
+	lu.assertEquals(#self.roeCalls, 0)
+end
+
 -- == TestGoCold ==
 
 TestGoCold = {}
@@ -290,4 +301,14 @@ function TestGoWarm:test_setsLastStateChangeTime()
 	local battery = makeBattery("sa10-1")
 	Medusa.Services.BatteryActivationService.goWarm(battery, 100)
 	lu.assertEquals(battery.LastStateChangeTime, 100)
+end
+
+function TestGoWarm:test_crew_suppression_blocks_warm_state()
+	local battery = makeBattery("sa10-1")
+	battery.CrewSuppressionState = Medusa.Constants.CrewSuppressionState.SUPPRESSED
+	battery.CrewSuppressionUntil = 200
+
+	lu.assertFalse(Medusa.Services.BatteryActivationService.goWarm(battery, 100))
+	lu.assertEquals(battery.ActivationState, AS.INITIALIZING)
+	lu.assertEquals(#self.roeCalls, 0)
 end

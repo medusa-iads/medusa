@@ -189,6 +189,11 @@ function Medusa.Entities.Battery.new(data)
 		HarmDefenseDefenders = 0,
 		HarmDefenseThreats = 0,
 		HarmDefenseRatio = 0,
+		GroupDiameterM = data.GroupDiameterM,
+		CrewSuppressionState = Medusa.Constants.CrewSuppressionState.CLEAR,
+		CrewSuppressionCause = nil,
+		CrewSuppressionUntil = nil,
+		CrewSuppressionTimerId = nil,
 		IsActingAsEWR = data.IsActingAsEWR or false,
 		PkRangeOptimal = data.PkRangeOptimal,
 		PkRangeSigma = data.PkRangeSigma,
@@ -221,7 +226,30 @@ function Medusa.Entities.Battery.newUnit(data)
 		AmmoTypes = data.AmmoTypes,
 		OperationalStatus = data.OperationalStatus or Medusa.Constants.UnitOperationalStatus.ACTIVE,
 		RadarStatus = data.RadarStatus or Medusa.Constants.RadarStatus.NA,
+		LastKnownLife = data.LastKnownLife,
+		InitialLife = data.InitialLife,
+		InitialDamagePending = data.InitialDamagePending == true,
 	}
+end
+
+function Medusa.Entities.Battery.isCrewSuppressed(battery)
+	return battery and battery.CrewSuppressionState == Medusa.Constants.CrewSuppressionState.SUPPRESSED
+end
+
+function Medusa.Entities.Battery.applyCrewSuppression(battery, cause, deadline)
+	local extendsDeadline = not battery.CrewSuppressionUntil or deadline > battery.CrewSuppressionUntil
+	battery.CrewSuppressionState = Medusa.Constants.CrewSuppressionState.SUPPRESSED
+	if extendsDeadline then
+		battery.CrewSuppressionCause = cause
+		battery.CrewSuppressionUntil = deadline
+	end
+end
+
+function Medusa.Entities.Battery.clearCrewSuppression(battery)
+	battery.CrewSuppressionState = Medusa.Constants.CrewSuppressionState.CLEAR
+	battery.CrewSuppressionCause = nil
+	battery.CrewSuppressionUntil = nil
+	battery.CrewSuppressionTimerId = nil
 end
 
 function Medusa.Entities.Battery.computeEngagementRange(battery)

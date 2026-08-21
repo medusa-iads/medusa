@@ -9,7 +9,11 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Damage-based crew suppression for managed AAA and MANPAD groups, with doctrine controls, a configurable group-diameter eligibility limit, bounded HIT processing, group-level weapon hold, recovery, and Prometheus observability.
+
 ### Changed
+
+- Updated the vendored dcs-harness dependency to 1.0.1 for validated unit-health snapshots.
 
 ### Fixed
 

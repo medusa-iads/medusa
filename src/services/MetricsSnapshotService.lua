@@ -103,6 +103,7 @@ end
 
 function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	local MetricsService = Medusa.Services.MetricsService
+	local crewCauseLabel = { "network", "cause" }
 
 	MetricsService.gauge("medusa_mission_time_seconds", "Seconds since mission start")
 	MetricsService.gauge("medusa_mission_info", "Mission metadata", { "mission", "theatre", "start" })
@@ -126,6 +127,17 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.counter("medusa_last_chance_fired_total", "Shots fired during last-chance salvo", netLabel)
 	MetricsService.counter("medusa_roe_changes_total", "Runtime ROE changes via API", netLabel)
 	MetricsService.counter("medusa_track_promotions_total", "Track identification promotions", netLabel)
+	MetricsService.counter(
+		"medusa_crew_suppression_applications_total",
+		"Crew suppression applications",
+		crewCauseLabel
+	)
+	MetricsService.counter("medusa_crew_suppression_recoveries_total", "Crew suppression recoveries", crewCauseLabel)
+	MetricsService.counter(
+		"medusa_crew_suppression_dropped_events_total",
+		"Crew suppression events rejected or dropped",
+		{ "network", "reason" }
+	)
 
 	MetricsService.gauge("medusa_rolling_pk", "Network rolling kill probability", netLabel)
 	MetricsService.gauge("medusa_effective_pk_floor", "Effective PkFloor after rolling adjustment", netLabel)
@@ -137,6 +149,12 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.gauge("medusa_tracks_harm", "Tracks assessed as HARM", netLabel)
 	MetricsService.gauge("medusa_ammo_remaining", "Total missiles remaining across all batteries", netLabel)
 	MetricsService.gauge("medusa_batteries_rearming", "Batteries out of ammo awaiting rearm", netLabel)
+	MetricsService.gauge("medusa_crew_suppressed_batteries", "AAA and MANPAD groups under crew suppression", netLabel)
+	MetricsService.gauge(
+		"medusa_crew_suppression_event_queue_depth",
+		"Validated HIT events awaiting damage processing",
+		netLabel
+	)
 
 	local defaultQuantiles = { 0.5, 0.9, 0.99 }
 	MetricsService.summary(
@@ -200,6 +218,12 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 		"Number of sensor updates a track received before expiring",
 		Medusa.Constants.TRACK_UPDATE_EXPIRY_BUCKETS,
 		netLabel
+	)
+	MetricsService.histogram(
+		"medusa_crew_suppression_duration_seconds",
+		"Applied crew suppression duration",
+		{ 15, 30, 60, 120, 300, 600, 1800, 3600 },
+		crewCauseLabel
 	)
 	-- Pipeline chunk throughput
 	local phaseLabel = { "network", "phase" }
@@ -349,7 +373,7 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 
 				local batteries = ai:batteries():getAll()
 				local hotCount, warmCount, coldCount, engagedCount = 0, 0, 0, 0
-				local damagedCount, shutdownCount, rearmingCount = 0, 0, 0
+				local damagedCount, shutdownCount, rearmingCount, crewSuppressedCount = 0, 0, 0, 0
 				local suppressedCount, selfDefendCount, pdProtectedCount = 0, 0, 0
 				local totalAmmo = 0
 				for i = 1, #batteries do
@@ -382,6 +406,9 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 					if b.RearmCheckTime then
 						rearmingCount = rearmingCount + 1
 					end
+					if Medusa.Entities.Battery.isCrewSuppressed(b) then
+						crewSuppressedCount = crewSuppressedCount + 1
+					end
 					local HDS = Medusa.Constants.HarmDefenseState
 					if b.HarmDefenseState == HDS.SUPPRESSED then
 						suppressedCount = suppressedCount + 1
@@ -409,11 +436,15 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 				local manpads = ai:manpads():getAll()
 				for i = 1, #manpads do
 					local m = manpads[i]
+					if Medusa.Entities.Battery.isCrewSuppressed(m) then
+						crewSuppressedCount = crewSuppressedCount + 1
+					end
 					local mState = m.Manpad and m.Manpad.SleepWakeState
 					if _manpadStateCounts[mState] ~= nil then
 						_manpadStateCounts[mState] = _manpadStateCounts[mState] + 1
 					end
 				end
+				ms.set("medusa_crew_suppressed_batteries", crewSuppressedCount, labels)
 				local labelBuf = Medusa.Services.MetricsSnapshotService._manpadStateLabel
 				labelBuf.network = id
 				for i = 1, #MANPAD_STATES do
