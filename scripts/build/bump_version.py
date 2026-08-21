@@ -1,24 +1,32 @@
 #!/usr/bin/env python3
-import sys
 import re
 import subprocess
-from pathlib import Path
+import sys
 from datetime import date
+from enum import StrEnum
+from pathlib import Path
 
 
-def bump_version(version: str, part: str) -> str:
+PRINT_NEXT_ARGUMENT = "--next"
+
+
+class VersionPart(StrEnum):
+    MAJOR = "major"
+    MINOR = "minor"
+    PATCH = "patch"
+
+
+def bump_version(version: str, part: VersionPart) -> str:
     major, minor, patch = map(int, version.split("."))
-    if part == "major":
+    if part is VersionPart.MAJOR:
         major += 1
         minor = 0
         patch = 0
-    elif part == "minor":
+    elif part is VersionPart.MINOR:
         minor += 1
         patch = 0
-    elif part == "patch":
+    elif part is VersionPart.PATCH:
         patch += 1
-    else:
-        raise ValueError("part must be one of: major, minor, patch")
     return f"{major}.{minor}.{patch}"
 
 
@@ -171,11 +179,17 @@ def update_changelog(new_version: str) -> None:
 
 
 def main():
-    if len(sys.argv) != 2 or sys.argv[1] not in {"major", "minor", "patch"}:
-        print("Usage: bump_version.py [major|minor|patch]")
+    if len(sys.argv) not in {2, 3} or (
+        len(sys.argv) == 3 and sys.argv[2] != PRINT_NEXT_ARGUMENT
+    ):
+        print("Usage: bump_version.py [major|minor|patch] [--next]")
         sys.exit(1)
 
-    part = sys.argv[1]
+    try:
+        part = VersionPart(sys.argv[1])
+    except ValueError:
+        print("Usage: bump_version.py [major|minor|patch] [--next]")
+        sys.exit(1)
     pyproject = Path("pyproject.toml")
     if not pyproject.exists():
         print("pyproject.toml not found in current directory")
@@ -190,6 +204,10 @@ def main():
     old_version = match.group(1)
     new_version = bump_version(old_version, part)
 
+    if len(sys.argv) == 3:
+        print(new_version)
+        return
+
     pattern = re.compile(r'(version\s*=\s*")\d+\.\d+\.\d+(\")')
 
     def repl(m: re.Match) -> str:
@@ -199,7 +217,7 @@ def main():
 
     pyproject.write_text(new_content)
     update_changelog(new_version)
-    print(f"Bumped {part} version: {old_version} -> {new_version}")
+    print(f"Bumped {part.value} version: {old_version} -> {new_version}")
 
 
 if __name__ == "__main__":

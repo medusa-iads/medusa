@@ -204,35 +204,36 @@ tasks:
       - "pyproject.toml"
       - "uv.lock"
 
+  bump:
+    desc: "Bump the project version"
+    requires:
+      vars:
+        - name: PART
+          enum: [major, minor, patch]
+    cmds:
+      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py {{.PART}}"
+      - task: dependencies:lock
+
   bump:major:
     desc: "Bump the major version"
     cmds:
-      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py major"
-      - task: dependencies:lock
-    sources:
-      - "pyproject.toml"
-    generates:
-      - "pyproject.toml"
+      - task: bump
+        vars:
+          PART: major
 
   bump:minor:
     desc: "Bump the minor version"
     cmds:
-      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py minor"
-      - task: dependencies:lock
-    sources:
-      - "pyproject.toml"
-    generates:
-      - "pyproject.toml"
+      - task: bump
+        vars:
+          PART: minor
 
   bump:patch:
     desc: "Bump the patch version"
     cmds:
-      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py patch"
-      - task: dependencies:lock
-    sources:
-      - "pyproject.toml"
-    generates:
-      - "pyproject.toml"
+      - task: bump
+        vars:
+          PART: patch
 
   analyze:
     desc: "Analyze a Medusa log file (usage: task analyze -- <logfile> <command> [--json])"
@@ -320,34 +321,39 @@ tasks:
       - task: tag
 
   release:
-    desc: "Full release: bump version, commit, tag, and push"
-    vars:
-      PART: '{{.CLI_ARGS | default "minor"}}'
+    desc: "Full release: bump version, commit, tag, and push (PART=major|minor|patch)"
+    requires:
+      vars:
+        - name: PART
+          enum: [major, minor, patch]
+    preconditions:
+      - sh: '[ "$(git branch --show-current)" = "main" ]'
+        msg: "Releases must run from main"
+      - sh: '[ -z "$(git status --porcelain --untracked-files=all)" ]'
+        msg: "The working tree must be clean before a release"
+      - sh: git remote get-url origin
+        msg: "The origin remote is required for a release"
     cmds:
+      - task: bump
+        vars:
+          PART: "{{.PART}}"
       - task: ci
-      - "{{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py {{.PART}}"
-      - cmd: "git add pyproject.toml CHANGELOG.md"
+      - cmd: "git add -- pyproject.toml CHANGELOG.md uv.lock"
       - cmd: 'git commit -m "Release v$({{.PYTHON_BIN}} -c "import re; from pathlib import Path; m=re.search(r''version\s*=\s*\"([\d.]+)\"'', Path(''pyproject.toml'').read_text()); print(m.group(1))")"'
       - task: tag
 
   release:dry-run:
-    desc: "Show what a release would do without executing (usage: task release:dry-run -- patch)"
-    vars:
-      PART: '{{.CLI_ARGS | default "minor"}}'
+    desc: "Show what a release would do without executing (PART=major|minor|patch)"
+    requires:
+      vars:
+        - name: PART
+          enum: [major, minor, patch]
     cmds:
       - cmd: |
-          set -e
-          CURRENT=$({{.PYTHON_BIN}} -c "import re; from pathlib import Path; m=re.search(r'version\s*=\"([\d.]+)\"', Path('pyproject.toml').read_text()); print(m.group(1))")
-          NEXT=$({{.PYTHON_BIN}} -c "
-          v='$CURRENT'.split('.')
-          part='{{.PART}}'
-          if part=='major': v=[str(int(v[0])+1),'0','0']
-          elif part=='minor': v=[v[0],str(int(v[1])+1),'0']
-          else: v=[v[0],v[1],str(int(v[2])+1)]
-          print('.'.join(v))
-          ")
-          echo "Would bump {{.PART}}: $CURRENT -> $NEXT"
+          NEXT=$({{.PYTHON_BIN}} {{.SCRIPT_DIR}}/build/bump_version.py {{.PART}} --next)
+          echo "Would bump {{.PART}} to $NEXT"
+          echo "Would verify the bumped source"
           echo "Would commit: Release v$NEXT"
           echo "Would tag: v$NEXT"
-          echo "Would push tag to origin"
+          echo "Would atomically push main and v$NEXT to origin"
         platforms: [linux, darwin]
