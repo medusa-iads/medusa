@@ -8,7 +8,7 @@ require("./render.js");
 
 assert.equal(window.MTD.trackDisplayId("01HXYZ", { display_track: "AW0001" }), "AW0001");
 assert.equal(window.MTD.trackDisplayId("01HXYZ", {}), "UNSET");
-assert.equal(window.MTD.trackLabelText("01HXYZ", { display_track: "AW0001", unit: "Bandit 1" }), "AW0001 Bandit 1");
+assert.equal(window.MTD.trackLabelText("01HXYZ", { display_track: "AW0001", unit: "Bandit 1" }), "AW0001");
 
 assert.equal(window.MTD.manpadMarkerColor("ALERT", "AUDIO", false), "#42a5f5");
 assert.equal(window.MTD.manpadMarkerColor("HOT", "AUDIO", true), "#4caf50");

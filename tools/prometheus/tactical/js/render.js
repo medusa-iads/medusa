@@ -589,9 +589,7 @@ MTD.trackDisplayId = function (canonicalId, info) {
 };
 
 MTD.trackLabelText = function (canonicalId, info) {
-    var displayId = MTD.trackDisplayId(canonicalId, info);
-    var unitName = (info && info.unit) || "";
-    return unitName ? displayId + " " + unitName : displayId;
+    return MTD.trackDisplayId(canonicalId, info);
 };
 
 MTD.renderTracks = function (data, trackHeadings) {
