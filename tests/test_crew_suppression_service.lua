@@ -117,6 +117,13 @@ function TestCrewSuppressionService:setUp()
 	self.roe = {}
 	self.popCount = 0
 	self.droppedReasons = {}
+	self.originalInfo = env.info
+	self.originalLogLevel = Medusa.Logger:getLevel()
+	self.infoMessages = {}
+	env.info = function(message)
+		self.infoMessages[#self.infoMessages + 1] = message
+	end
+	Medusa.Logger:setLevel(C.LogLevel.INFO)
 	self.metricsInc = MetricsService.inc
 	MetricsService.inc = function(name, _, labels)
 		if name == "medusa_crew_suppression_dropped_events_total" then
@@ -164,9 +171,63 @@ end
 
 function TestCrewSuppressionService:tearDown()
 	MetricsService.inc = self.metricsInc
+	env.info = self.originalInfo
+	Medusa.Logger:setLevel(self.originalLogLevel)
 	for name, value in pairs(original) do
 		_G[name] = value
 	end
+end
+
+function TestCrewSuppressionService:test_successful_suppression_logs_group_cause_and_duration()
+	local battery = makeBattery(C.BatteryRole.AAA)
+	local ctx = makeContext(self, battery)
+
+	lu.assertTrue(CrewSuppressionService.processDamage(ctx, 101))
+
+	lu.assertEquals(#self.infoMessages, 1)
+	lu.assertStrContains(self.infoMessages[1], "[ Medusa | INFO | CrewSuppressionService ]")
+	lu.assertStrContains(self.infoMessages[1], "red.local-defense")
+	lu.assertStrContains(self.infoMessages[1], "cause=DAMAGE")
+	lu.assertStrContains(self.infoMessages[1], "duration=120s")
+end
+
+function TestCrewSuppressionService:test_missing_health_logs_damage_evaluation_at_debug()
+	local battery = makeBattery(C.BatteryRole.AAA)
+	local ctx = makeContext(self, battery)
+	self.life = nil
+	Medusa.Logger:setLevel(C.LogLevel.DEBUG)
+
+	lu.assertFalse(CrewSuppressionService.processDamage(ctx, 101))
+
+	local message = self.infoMessages[#self.infoMessages]
+	lu.assertStrContains(message, "[ Medusa | DEBUG | CrewSuppressionService ]")
+	lu.assertStrContains(message, "red.local-defense")
+	lu.assertStrContains(message, "unitId=101")
+	lu.assertStrContains(message, "health unavailable")
+end
+
+function TestCrewSuppressionService:test_extension_and_recovery_decisions_are_logged_at_info()
+	local battery = makeBattery(C.BatteryRole.AAA)
+	local ctx = makeContext(self, battery)
+
+	CrewSuppressionService.apply(ctx, battery, C.CrewSuppressionCause.DAMAGE, 120)
+	self.now = 150
+	ctx.now = self.now
+	CrewSuppressionService.apply(ctx, battery, C.CrewSuppressionCause.DAMAGE, 120)
+	lu.assertStrContains(self.infoMessages[#self.infoMessages], "crew suppression extended")
+	lu.assertStrContains(self.infoMessages[#self.infoMessages], "duration=120s")
+
+	self.now = 160
+	ctx.now = self.now
+	CrewSuppressionService.apply(ctx, battery, C.CrewSuppressionCause.DAMAGE, 30)
+	lu.assertStrContains(self.infoMessages[#self.infoMessages], "crew suppression reapplied")
+
+	self.now = 220
+	self.scheduled[1].callback()
+	self.now = 270
+	self.scheduled[2].callback()
+	lu.assertStrContains(self.infoMessages[#self.infoMessages], "crew suppression recovered")
+	lu.assertStrContains(self.infoMessages[#self.infoMessages], "cause=DAMAGE")
 end
 
 function TestCrewSuppressionService:test_new_damage_suppresses_complete_aaa_group()
