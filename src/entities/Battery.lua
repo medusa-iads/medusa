@@ -174,6 +174,7 @@ function Medusa.Entities.Battery.new(data)
 		EngagementAltitudeMin = data.EngagementAltitudeMin,
 		TotalAmmoStatus = data.TotalAmmoStatus or 0,
 		Position = data.Position,
+		PositionAnchorUnitId = data.PositionAnchorUnitId,
 		LastStateChangeTime = nil,
 		StateChangeHoldDownSec = data.StateChangeHoldDownSec or 5,
 		RadarDependencyPolicy = data.RadarDependencyPolicy or Medusa.Constants.BatteryRadarDependencyPolicy.REQUIRED,
@@ -194,6 +195,7 @@ function Medusa.Entities.Battery.new(data)
 		CrewSuppressionCause = nil,
 		CrewSuppressionUntil = nil,
 		CrewSuppressionTimerId = nil,
+		LastExplosiveImpactId = data.LastExplosiveImpactId,
 		IsActingAsEWR = data.IsActingAsEWR or false,
 		PkRangeOptimal = data.PkRangeOptimal,
 		PkRangeSigma = data.PkRangeSigma,
@@ -206,6 +208,28 @@ function Medusa.Entities.Battery.new(data)
 	}
 
 	return o
+end
+
+function Medusa.Entities.Battery.selectPositionAnchor(battery, preferredRole)
+	local units = battery and battery.Units or {}
+	if preferredRole then
+		for i = 1, #units do
+			if units[i].Position and Medusa.Entities.Battery.unitHasRole(units[i], preferredRole) then
+				battery.PositionAnchorUnitId = units[i].UnitId
+				return units[i]
+			end
+		end
+	end
+	for i = 1, #units do
+		if units[i].Position then
+			battery.PositionAnchorUnitId = units[i].UnitId
+			return units[i]
+		end
+	end
+	if battery then
+		battery.PositionAnchorUnitId = nil
+	end
+	return nil
 end
 
 function Medusa.Entities.Battery.newUnit(data)
@@ -229,6 +253,11 @@ function Medusa.Entities.Battery.newUnit(data)
 		LastKnownLife = data.LastKnownLife,
 		InitialLife = data.InitialLife,
 		InitialDamagePending = data.InitialDamagePending == true,
+		Position = data.Position,
+		LastPositionRefreshTime = data.LastPositionRefreshTime,
+		HeadingDegrees = data.HeadingDegrees,
+		HeadingIndex = data.HeadingIndex,
+		LastExplosiveImpactId = data.LastExplosiveImpactId,
 	}
 end
 
@@ -624,10 +653,12 @@ function Medusa.Entities.Battery.computeEffectiveRanges(battery)
 	end
 end
 
+function Medusa.Entities.Battery.hasSearchRadar(battery)
+	return (battery.DetectionRangeMax or 0) > 0 and Medusa.Entities.Battery.hasRoleAlive(battery, SEARCH_ROLES)
+end
+
 function Medusa.Entities.Battery.isRadarDirectedAaa(battery)
-	return battery.Role == BR.AAA
-		and (battery.DetectionRangeMax or 0) > 0
-		and Medusa.Entities.Battery.hasRoleAlive(battery, SEARCH_ROLES)
+	return battery.Role == BR.AAA and Medusa.Entities.Battery.hasSearchRadar(battery)
 end
 
 function Medusa.Entities.Battery.isIndependentAaa(battery)

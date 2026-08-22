@@ -23,7 +23,7 @@ The display ID has a four-digit octal suffix from `0001` through `7777`. If disp
 | `medusa_manpad_visual_detections_total` | Count wakes triggered by directional visual detection | Counter, wakes | `network` | Grafana MANPAD Activity panel; increments once per visual-triggered wake and resets with the mission |
 | `medusa_manpad_audio_wakes_total` | Count wakes triggered by omnidirectional audio proximity | Counter, wakes | `network` | Grafana MANPAD Activity panel; increments once per audio-triggered wake and resets with the mission |
 | `medusa_manpad_neighbor_wakes_total` | Count previously ASLEEP groups that received a new delayed wake schedule because a nearby MANPAD group entered HOT | Counter, wakes | `network` | Grafana MANPAD Activity panel; increments once per successful schedule and resets with the mission |
-| `medusa_manpad_position_refreshes_total` | Count successful cached position and heading refreshes | Counter, refreshes | `network` | Operational metric; increments after the GeoGrid update and resets with the mission |
+| `medusa_manpad_position_refreshes_total` | Count successful cached MANPAD heading refreshes performed with a unit-position refresh | Counter, refreshes | `network` | Operational metric; increments after the unit and group spatial indexes update and resets with the mission |
 | `medusa_manpad_winchester_total` | Count groups that exhaust their cached ammunition | Counter, groups | `network` | Grafana MANPAD Activity panel; increments on the positive-to-zero ammunition transition and resets with the mission |
 | `medusa_manpad_autonomous_scans_total` | Count completed autonomous DCS world searches | Counter, searches | `network` | Grafana MANPAD Activity panel; increments only when a group consumes one scan token and resets with the mission |
 | `medusa_manpad_autonomous_cache_reuses_total` | Count evaluations that reused a fresh positive or negative autonomous scan result | Counter, reuses | `network` | Grafana MANPAD Activity panel; excludes the first processing pass after each scan and resets with the mission |
@@ -45,7 +45,7 @@ For `G` exported MANPAD groups and `U` cached ammo-bearing unit headings, this c
 
 `can_fire` is `true` only when the group is HOT, its DCS activation state is HOT, its operational status is ACTIVE, and its cached ammunition is greater than zero. Otherwise, the value is `false`.
 
-The tactical display anchors every cached unit heading at the cached group position. Medusa does not retain an individual position for each MANPAD soldier.
+The tactical display anchors every cached unit heading at the cached group position. Medusa retains each managed unit position for bounded spatial evaluation, but the tactical display does not expose those individual positions.
 
 ## AAA
 
@@ -62,7 +62,7 @@ The tactical display anchors every cached unit heading at the cached group posit
 | `medusa_aaa_barrage_bursts_total` | Count 10-15-second barrage bursts started | Counter, bursts | `network` |
 | `medusa_aaa_barrage_infections_total` | Count AAA groups activated by nearby barrage fire | Counter, groups | `network` |
 | `medusa_aaa_local_acquisition_responses_total` | Count local-acquisition responses | Counter, responses | `network` |
-| `medusa_aaa_position_refreshes_total` | Count successful cached position and heading refreshes | Counter, refreshes | `network` |
+| `medusa_aaa_position_refreshes_total` | Count successful cached AAA heading refreshes performed with a unit-position refresh | Counter, refreshes | `network` |
 | `medusa_aaa_local_searches_total` | Count completed local DCS world searches | Counter, searches | `network` |
 | `medusa_aaa_local_search_cache_reuses_total` | Count evaluations that reused cached local-search results | Counter, reuses | `network` |
 | `medusa_aaa_local_search_queue_depth` | Expose the local-search rotation depth | Gauge, groups | `network` |
@@ -77,3 +77,22 @@ The tactical display anchors every cached unit heading at the cached group posit
 For `N` active networks, `G` exported AAA groups, and `U` cached gun headings, AAA adds `2 + N + G + U` active extended series. Changes to `mode` or `state` replace the active `medusa_aaa_info` series. The tactical display draws independent AAA visual sectors and audio ranges from these metrics.
 
 Counters reset with the mission. State gauges are replaced on each snapshot. Local-search and evaluation summaries retain at most 1,000 observations per network. Extended heading, state, and detection-geometry metrics exist only while extended telemetry is enabled.
+
+# Crew-suppression metric contracts
+
+`BlackBoxService` owns mission-wide weapon-tracker metrics. `IadsNetwork` owns per-network impact-queue and managed-unit refresh metrics. `CrewSuppressionService` owns application, recovery, duration, and dropped-event metrics. All series reset with the mission.
+
+`medusa_tick_duration_seconds` exports p50, p90, p95, and p99. Use p95 from equivalent suppression-disabled and suppression-enabled mission runs to verify the performance requirement.
+
+| Metric | Purpose | Type and unit | Labels | Consumer and lifecycle |
+|---|---|---|---|---|
+| `medusa_battery_unit_position_refreshes_total` | Count successful managed battery-unit position refreshes | Counter, refreshes | `network` | Operational capacity and movement diagnostics; increments after cached position and applicable spatial indexes update |
+| `medusa_crew_suppression_weapons_tracked` | Expose the current number of weapon candidates in the mission-wide tracker | Gauge, weapons | None | Capacity diagnostics; set after each bounded tracker update |
+| `medusa_crew_suppression_weapon_outcomes_total` | Count bounded weapon-tracker outcomes | Counter, outcomes | `outcome` | Tracker diagnostics; the closed values are `TRACKED`, `TRACKER_FULL`, `UNTRACKABLE`, `EXPIRED`, `IMPACT_HIT`, `IMPACT_TERRAIN`, and `NO_TERRAIN_INTERSECTION` |
+| `medusa_crew_suppression_impact_queue_depth` | Expose explosive impacts awaiting per-network proximity evaluation | Gauge, impacts | `network` | Queue-capacity diagnostics; set after each bounded impact-processing phase |
+| `medusa_crew_suppression_applications_total` | Count crew-suppression applications and reapplications | Counter, applications | `network`, `cause` | Action diagnostics; `cause` is the closed value `DAMAGE` or `EXPLOSIVE` |
+| `medusa_crew_suppression_recoveries_total` | Count completed crew-suppression recoveries | Counter, recoveries | `network`, `cause` | Recovery diagnostics; increments when a battery clears crew suppression |
+| `medusa_crew_suppression_duration_seconds` | Measure the effective suppression duration at application time | Histogram, seconds | `network`, `cause`, `le` | Duration diagnostics; uses the registered fixed duration buckets and resets with the mission |
+| `medusa_crew_suppression_dropped_events_total` | Count rejected or expired suppression inputs | Counter, events | `network`, `reason` | Boundary and capacity diagnostics; `reason` uses `CrewSuppressionDropReason` and never includes unit or weapon names |
+
+For `N` active networks, the standard crew-suppression metrics add one tracker gauge, seven initialized tracker-outcome counter series, and bounded per-network series. Mission group names, unit names, weapon names, and impact identifiers are excluded from metric labels.

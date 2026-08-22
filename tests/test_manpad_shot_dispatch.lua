@@ -571,6 +571,7 @@ function TestIadsNetworkHandleUnitDeathManpad:test_death_manpad_lastSoldier_remo
 	local removedId = nil
 	local originalSpatialIndex = iads._spatialIndex
 	iads._spatialIndex = {
+		removeSuppressibleUnit = function() end,
 		removeBattery = function(self, id)
 			removedId = id
 		end,

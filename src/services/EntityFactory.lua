@@ -44,22 +44,20 @@ local function isFiniteNumber(value)
 	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
-local function measureHorizontalGroupDiameter(units)
-	local positions = {}
-	for i = 1, #units do
-		local position = GetUnitPosition(units[i])
+local function measureHorizontalGroupDiameter(positions, unitCount)
+	for i = 1, unitCount do
+		local position = positions[i]
 		if not position or not isFiniteNumber(position.x) or not isFiniteNumber(position.z) then
 			return nil
 		end
-		positions[i] = position
 	end
-	if #positions == 0 then
+	if unitCount == 0 then
 		return nil
 	end
 
 	local diameterSquared = 0
-	for i = 1, #positions - 1 do
-		for j = i + 1, #positions do
+	for i = 1, unitCount - 1 do
+		for j = i + 1, unitCount do
 			local dx = positions[i].x - positions[j].x
 			local dz = positions[i].z - positions[j].z
 			local distanceSquared = dx * dx + dz * dz
@@ -157,6 +155,8 @@ local BATTERY_ROLE_PRIORITY = {
 local function inspectInventory(units)
 	local inventory = {
 		rolesByIndex = {},
+		positionsByIndex = {},
+		positionReadByIndex = {},
 		launcherCount = 0,
 		manpadCount = 0,
 		aaaCount = 0,
@@ -188,6 +188,20 @@ local function inspectInventory(units)
 		end
 	end
 	return inventory
+end
+
+local function cachedUnitPosition(units, inventory, index)
+	if not inventory.positionReadByIndex[index] then
+		inventory.positionsByIndex[index] = GetUnitPosition(units[index])
+		inventory.positionReadByIndex[index] = true
+	end
+	return inventory.positionsByIndex[index]
+end
+
+local function cacheUnitPositions(units, inventory)
+	for i = 1, #units do
+		cachedUnitPosition(units, inventory, i)
+	end
 end
 
 local function hasNamedRole(dto, role)
@@ -311,7 +325,7 @@ local function createSensors(dto, stores, networkId, units, inventory)
 		if unitId then
 			local unitName = getUnitName(units[i])
 			local unitTypeName = unitName and GetUnitType(unitName) or nil
-			local position = GetUnitPosition(units[i])
+			local position = cachedUnitPosition(units, inventory, i)
 			local sensor = Medusa.Entities.SensorUnit.new({
 				NetworkId = networkId,
 				UnitId = unitId,
@@ -333,8 +347,8 @@ local function createSensors(dto, stores, networkId, units, inventory)
 	return "sensor", count
 end
 
-local function createHQ(dto, stores, networkId, units)
-	local position = units[1] and GetUnitPosition(units[1]) or nil
+local function createHQ(dto, stores, networkId, units, inventory)
+	local position = units[1] and cachedUnitPosition(units, inventory, 1) or nil
 
 	local echelonName = nil
 	if dto.parsed.echelonPath and #dto.parsed.echelonPath > 0 then
@@ -351,12 +365,12 @@ local function createHQ(dto, stores, networkId, units)
 	return "hq", 1
 end
 
-local function createBatteryUnit(unit, unitId, batteryRole, roles)
+local function createBatteryUnit(unit, unitId, batteryRole, roles, position)
 	local unitName = getUnitName(unit)
 	local unitTypeName = unitName and GetUnitType(unitName) or nil
 	local desc = GetUnitDesc(unit)
-	local suppressionEligible = (batteryRole == BR.AAA and hasRole(roles, BUR.AAA))
-		or (batteryRole == BR.MANPAD and hasRole(roles, BUR.MANPAD))
+	local suppressionEligible = (batteryRole == BR.AAA or batteryRole == BR.MANPAD)
+		and (hasRole(roles, BUR.AAA) or hasRole(roles, BUR.MANPAD))
 	local health = suppressionEligible and unitName and GetUnitHealth(unitName) or nil
 	local life = health and health.CurrentLife or nil
 	local initialLife = health and health.InitialLife or nil
@@ -385,6 +399,7 @@ local function createBatteryUnit(unit, unitId, batteryRole, roles)
 		LastKnownLife = life,
 		InitialLife = initialLife,
 		InitialDamagePending = initiallyDamaged,
+		Position = position,
 	})
 	logger:debug(
 		string.format("[%s] roles=%s, ammo=%d", unitTypeName or "unknown", table.concat(roles, ","), ammoCount)
@@ -400,7 +415,8 @@ local function populateBatteryUnits(battery, units, inventory, batteryRole)
 		local unitId = GetUnitID(units[i])
 		if unitId then
 			local roles = inventory.rolesByIndex[i]
-			battery.Units[#battery.Units + 1] = createBatteryUnit(units[i], unitId, batteryRole, roles)
+			battery.Units[#battery.Units + 1] =
+				createBatteryUnit(units[i], unitId, batteryRole, roles, inventory.positionsByIndex[i])
 			if hasRole(roles, BUR.TELAR) then
 				hasTelar = true
 			end
@@ -539,13 +555,12 @@ end
 --- Detects when launchers in a group are spread > 1 NM apart and clusters them.
 --- Returns nil for tight groups (no clustering needed), or a table with cluster
 --- centroids, overall centroid, and spread radius for distributed groups.
-local function clusterLaunchers(dcsUnits, batteryUnits)
+local function clusterLaunchers(batteryUnits)
 	local threshold = Medusa.Constants.CLUSTER_THRESHOLD_M
-	-- Build a set of launcher UnitIds from batteryUnits (which may have gaps vs dcsUnits)
-	local launcherInfo = {}
+	local launchers = {}
 	for i = 1, #batteryUnits do
 		local roles = batteryUnits[i].Roles
-		if roles then
+		if roles and batteryUnits[i].Position then
 			for j = 1, #roles do
 				if launcherRoles[roles[j]] then
 					local maxRange = 0
@@ -557,20 +572,9 @@ local function clusterLaunchers(dcsUnits, batteryUnits)
 							end
 						end
 					end
-					launcherInfo[batteryUnits[i].UnitId] = maxRange
+					launchers[#launchers + 1] = { pos = batteryUnits[i].Position, rangeMax = maxRange }
 					break
 				end
-			end
-		end
-	end
-	-- Iterate DCS unit handles directly to get positions for launchers
-	local launchers = {}
-	for i = 1, #dcsUnits do
-		local uid = GetUnitID(dcsUnits[i])
-		if uid and launcherInfo[uid] then
-			local pos = GetUnitPosition(dcsUnits[i])
-			if pos then
-				launchers[#launchers + 1] = { pos = pos, rangeMax = launcherInfo[uid] }
 			end
 		end
 	end
@@ -638,10 +642,11 @@ local function clusterLaunchers(dcsUnits, batteryUnits)
 end
 
 local function createBattery(dto, stores, networkId, harmSystems, units, inventory, batteryRole)
+	cacheUnitPositions(units, inventory)
 	local position = nil
 	for i = 1, #units do
 		if batteryRole ~= BR.AAA or hasRole(inventory.rolesByIndex[i], BUR.AAA) then
-			position = GetUnitPosition(units[i])
+			position = inventory.positionsByIndex[i]
 			if position then
 				break
 			end
@@ -655,10 +660,12 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 		GroupCategory = dto.category,
 		Position = position,
 		Role = batteryRole,
-		GroupDiameterM = batteryRole == BR.AAA and measureHorizontalGroupDiameter(units) or nil,
+		GroupDiameterM = batteryRole == BR.AAA and measureHorizontalGroupDiameter(inventory.positionsByIndex, #units)
+			or nil,
 	})
 
 	local hasTelar, hasCommandPost = populateBatteryUnits(battery, units, inventory, batteryRole)
+	Medusa.Entities.Battery.selectPositionAnchor(battery, batteryRole == BR.AAA and BUR.AAA or nil)
 	if hasTelar then
 		battery.HasTelar = true
 	end
@@ -671,10 +678,11 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 		return "skipped", 0
 	end
 
-	local clusterResult = batteryRole ~= BR.AAA and clusterLaunchers(units, battery.Units) or nil
+	local clusterResult = batteryRole ~= BR.AAA and clusterLaunchers(battery.Units) or nil
 	if clusterResult then
 		battery.Clusters = clusterResult.clusters
 		battery.Position = clusterResult.centroid
+		battery.PositionAnchorUnitId = nil
 		battery.ClusterSpreadRadius = clusterResult.spreadRadius
 		logger:info(
 			string.format(
@@ -723,12 +731,13 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 end
 
 local function createManpad(dto, stores, networkId, units, inventory, doctrine)
+	cacheUnitPositions(units, inventory)
 	local audioRangeM = doctrine and doctrine.MANPAD and doctrine.MANPAD.AudioRangeM
 		or Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M
 	local position = nil
 	for i = 1, #units do
 		if hasRole(inventory.rolesByIndex[i], BUR.MANPAD) then
-			position = GetUnitPosition(units[i])
+			position = inventory.positionsByIndex[i]
 			break
 		end
 	end
@@ -740,7 +749,7 @@ local function createManpad(dto, stores, networkId, units, inventory, doctrine)
 		GroupCategory = dto.category,
 		Position = position,
 		Role = BR.MANPAD,
-		GroupDiameterM = measureHorizontalGroupDiameter(units),
+		GroupDiameterM = measureHorizontalGroupDiameter(inventory.positionsByIndex, #units),
 		Manpad = {
 			SleepWakeState = Medusa.Constants.Manpad.SleepWakeState.ASLEEP,
 			WakeReason = Medusa.Constants.Manpad.WakeReason.NONE,
@@ -758,6 +767,7 @@ local function createManpad(dto, stores, networkId, units, inventory, doctrine)
 	})
 
 	populateBatteryUnits(battery, units, inventory, BR.MANPAD)
+	Medusa.Entities.Battery.selectPositionAnchor(battery, BUR.MANPAD)
 
 	local defaults = Medusa.Constants.SystemTypeDefaults[BR.MANPAD]
 	battery.AmmoDepletedBehavior = defaults.AmmoDepletedBehavior
@@ -787,7 +797,7 @@ function Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, har
 		return createSensors(dto, stores, networkId, units, inventory)
 	end
 	if dto.parsed.isHQ and not namedSensor then
-		createHQ(dto, stores, networkId, units)
+		createHQ(dto, stores, networkId, units, inventory)
 		if autoDiscoverEwrs and inventory.searchRadarCount > 0 and inventory.launcherCount == 0 then
 			local _, sensorCount = createSensors(dto, stores, networkId, units, inventory)
 			if sensorCount > 0 then

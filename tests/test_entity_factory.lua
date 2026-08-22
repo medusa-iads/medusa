@@ -136,6 +136,22 @@ function TestEntityFactory:test_battery_has_units()
 	lu.assertTrue(#battery.Units > 0)
 end
 
+function TestEntityFactory:test_every_battery_unit_caches_its_discovery_position()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "launcher", { attributes = { ["SAM LL"] = true } }, { x = 10, y = 20, z = 30 }),
+			makeMockUnit(102, "radar", { attributes = { ["SAM SR"] = true } }, { x = 40, y = 50, z = 60 }),
+		}
+	end
+	local stores = makeStores()
+
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net-1")
+
+	local units = stores.batteries:getAll()[1].Units
+	lu.assertEquals(units[1].Position, { x = 10, y = 20, z = 30 })
+	lu.assertEquals(units[2].Position, { x = 40, y = 50, z = 60 })
+end
+
 function TestEntityFactory:test_battery_unit_caches_validated_discovery_health()
 	GetGroupUnits = function()
 		return {
@@ -186,6 +202,23 @@ function TestEntityFactory:test_battery_caches_maximum_horizontal_group_diameter
 	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net-1")
 
 	lu.assertEquals(stores.batteries:getAll()[1].GroupDiameterM, 500)
+end
+
+function TestEntityFactory:test_aaa_position_anchor_uses_a_gun_instead_of_its_radar()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "radar", { attributes = { ["SAM SR"] = true } }, { x = 0, y = 0, z = 0 }),
+			makeMockUnit(102, "gun", { attributes = { AAA = true } }, { x = 100, y = 0, z = 100 }),
+			makeMockUnit(103, "gun-2", { attributes = { AAA = true } }, { x = 110, y = 0, z = 100 }),
+		}
+	end
+	local stores = makeStores()
+
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net-1")
+
+	local battery = stores.batteries:getAll()[1]
+	lu.assertEquals(battery.PositionAnchorUnitId, 102)
+	lu.assertEquals(battery.Position, { x = 100, y = 0, z = 100 })
 end
 
 function TestEntityFactory:test_battery_group_diameter_is_unknown_when_a_member_position_is_unavailable()

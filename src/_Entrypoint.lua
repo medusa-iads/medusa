@@ -4,6 +4,8 @@ require("core.Config")
 require("core.Logger")
 require("core.IadsNetwork")
 require("services.ApiService")
+require("services.BlackBoxService")
+require("services.stores.BlackBoxWeaponStore")
 
 --[[
             ███████╗███╗   ██╗████████╗██████╗ ██╗   ██╗██████╗  ██████╗ ██╗███╗   ██╗████████╗
@@ -28,6 +30,26 @@ end
 Medusa.Core.IadsById = {}
 local nets = Medusa.Config:getNetworks()
 local aaaBarrageState = Medusa.Services.AaaService.newBarrageState()
+local blackBoxWeaponStore =
+	Medusa.Services.BlackBoxWeaponStore:new(Medusa.Constants.CrewSuppression.WEAPON_TRACK_CAPACITY)
+local suppressionEnabled = false
+local function publishExplosiveImpact(impact)
+	for i = 1, #nets do
+		local iads = Medusa.Core.IadsById[nets[i].id]
+		if iads then
+			local ok, err = pcall(iads.enqueueExplosiveImpact, iads, impact)
+			if not ok then
+				_entryLog:error(
+					string.format(
+						"explosive impact delivery failed for IADS %s: %s",
+						tostring(nets[i].id),
+						tostring(err)
+					)
+				)
+			end
+		end
+	end
+end
 for i = 1, #nets do
 	local n = nets[i]
 	local iads = Medusa.Core.IadsNetwork:new({
@@ -37,9 +59,15 @@ for i = 1, #nets do
 		doctrine = n.doctrine,
 		borderZones = n.borderZones,
 		aaaBarrageState = aaaBarrageState,
+		blackBoxWeaponStore = blackBoxWeaponStore,
+		blackBoxImpactSink = publishExplosiveImpact,
 	})
 	Medusa.Core.IadsById[n.id] = iads
 	iads:initialize()
+	suppressionEnabled = suppressionEnabled or iads:getDoctrine().CrewSuppression.Enabled
+end
+if suppressionEnabled and not Medusa.Services.BlackBoxService.start(blackBoxWeaponStore, HarnessWorldEventBus) then
+	_entryLog:error("crew suppression weapon tracker failed to start")
 end
 for i = 1, #nets do
 	local n = nets[i]

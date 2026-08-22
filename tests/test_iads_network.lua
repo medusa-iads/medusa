@@ -170,6 +170,31 @@ function TestIadsNetwork:test_battery_datalink_excludes_independent_aaa()
 	lu.assertEquals(iads:_buildPollList(), {})
 end
 
+function TestIadsNetwork:test_battery_datalink_polls_warm_radar_directed_aaa()
+	local iads = makeIads()
+	iads:initialize()
+	iads._doctrine = { BatteryTargetDatalink = true }
+	local battery = Medusa.Entities.Battery.new({
+		NetworkId = "T",
+		GroupId = 203,
+		GroupName = "iads.alpha.aaa.radar",
+		Role = Medusa.Constants.BatteryRole.AAA,
+		ActivationState = Medusa.Constants.ActivationState.STATE_WARM,
+		DetectionRangeMax = 20000,
+	})
+	battery.Units = {
+		{ Roles = { Medusa.Constants.BatteryUnitRole.AAA } },
+		{ Roles = { Medusa.Constants.BatteryUnitRole.SEARCH_RADAR } },
+	}
+	iads:getAssetIndex():batteries():add(battery)
+
+	local pollList = iads:_buildPollList()
+
+	lu.assertEquals(#pollList, 1)
+	lu.assertEquals(pollList[1].groupName, battery.GroupName)
+	lu.assertEquals(pollList[1].sourceType, Medusa.Constants.TrackSource.SAM_BATTERY)
+end
+
 function TestIadsNetwork:test_poll_list_classifies_track_origin_sources()
 	local iads = makeIads()
 	iads:initialize()

@@ -128,6 +128,11 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.counter("medusa_roe_changes_total", "Runtime ROE changes via API", netLabel)
 	MetricsService.counter("medusa_track_promotions_total", "Track identification promotions", netLabel)
 	MetricsService.counter(
+		"medusa_battery_unit_position_refreshes_total",
+		"Managed battery-unit position refreshes",
+		netLabel
+	)
+	MetricsService.counter(
 		"medusa_crew_suppression_applications_total",
 		"Crew suppression applications",
 		crewCauseLabel
@@ -155,15 +160,27 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 		"Validated HIT events awaiting damage processing",
 		netLabel
 	)
-
-	local defaultQuantiles = { 0.5, 0.9, 0.99 }
-	MetricsService.summary(
-		"medusa_tick_duration_seconds",
-		"Total tick processing time",
-		defaultQuantiles,
-		nil,
+	MetricsService.gauge(
+		"medusa_crew_suppression_impact_queue_depth",
+		"Explosive impacts awaiting proximity evaluation",
 		netLabel
 	)
+	MetricsService.gauge(
+		"medusa_crew_suppression_weapons_tracked",
+		"Weapon candidates in the bounded explosive-impact tracker"
+	)
+	MetricsService.counter(
+		"medusa_crew_suppression_weapon_outcomes_total",
+		"Bounded weapon-tracking outcomes",
+		{ "outcome" }
+	)
+	for _, outcome in pairs(Medusa.Constants.CrewSuppressionWeaponOutcome) do
+		MetricsService.inc("medusa_crew_suppression_weapon_outcomes_total", 0, { outcome = outcome })
+	end
+
+	local defaultQuantiles = { 0.5, 0.9, 0.99 }
+	local tickQuantiles = { 0.5, 0.9, 0.95, 0.99 }
+	MetricsService.summary("medusa_tick_duration_seconds", "Total tick processing time", tickQuantiles, nil, netLabel)
 	MetricsService.summary(
 		"medusa_poll_sensors_duration_seconds",
 		"Sensor polling step time",
@@ -707,8 +724,6 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 				end
 			end
 
-			local HDS = Medusa.Services.HarmDetectionService
-			local networkStates = HDS._networkStates
 			en = en + 1
 			extLines[en] = "# HELP medusa_track_sprt_llr SPRT log-likelihood ratio"
 			en = en + 1
@@ -742,10 +757,13 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 				local tm = iads:getTrackManager()
 				if tm then
 					local trackStore = tm:getStore()
-					local states = networkStates[trackStore]
-					if states then
-						for trackId, state in pairs(states) do
-							local displayTid = displayTrackId(trackStore:get(trackId))
+					local tracks = trackStore:getAll()
+					for ti = 1, #tracks do
+						local track = tracks[ti]
+						local state = track.HarmAssessment
+						if state then
+							local trackId = track.TrackId
+							local displayTid = displayTrackId(track)
 							en = en + 1
 							extLines[en] = string.format(
 								'medusa_track_sprt_llr{network="%s",track="%s",display_track="%s"} %.3f',

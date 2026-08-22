@@ -102,8 +102,46 @@ function TestGetDoctrine:test_nil_input_uses_defaults()
 	lu.assertAlmostEquals(d.AAA.BarrageChance, 0.25, 0.001)
 	lu.assertEquals(d.AAA.MaxBarrageGroups, 15)
 	lu.assertTrue(d.CrewSuppression.Enabled)
-	lu.assertEquals(d.CrewSuppression.DamageDurationSec, 120)
+	lu.assertEquals(d.CrewSuppression.DurationMinSec, 30)
+	lu.assertEquals(d.CrewSuppression.DurationMaxSec, 120)
 	lu.assertAlmostEquals(d.CrewSuppression.MaxGroupDiameterM, 609.6, 0.001)
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusScaleM, 10)
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusMaxM, 500)
+	lu.assertEquals(d.CrewSuppression.ExplosiveEffectiveness, 1)
+end
+
+function TestGetDoctrine:test_crew_suppression_explosive_settings_are_bounded()
+	Medusa.Config:initialize()
+	local d = Medusa.Config:getDoctrine({
+		CrewSuppression = {
+			ExplosiveRadiusScaleM = 1000,
+			ExplosiveRadiusMaxM = -1,
+			ExplosiveEffectiveness = 2,
+		},
+	})
+
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusScaleM, 500)
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusMaxM, 1)
+	lu.assertEquals(d.CrewSuppression.ExplosiveEffectiveness, 1)
+end
+
+function TestGetDoctrine:test_crew_suppression_non_finite_settings_use_defaults()
+	Medusa.Config:initialize()
+	local d = Medusa.Config:getDoctrine({
+		CrewSuppression = {
+			DurationMinSec = 0 / 0,
+			DurationMaxSec = math.huge,
+			ExplosiveRadiusScaleM = math.huge,
+			ExplosiveRadiusMaxM = -math.huge,
+			ExplosiveEffectiveness = 0 / 0,
+		},
+	})
+
+	lu.assertEquals(d.CrewSuppression.DurationMinSec, 30)
+	lu.assertEquals(d.CrewSuppression.DurationMaxSec, 120)
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusScaleM, 10)
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusMaxM, 500)
+	lu.assertEquals(d.CrewSuppression.ExplosiveEffectiveness, 1)
 end
 
 function TestGetDoctrine:test_crew_suppression_enabled_requires_boolean()
@@ -115,19 +153,23 @@ function TestGetDoctrine:test_crew_suppression_enabled_requires_boolean()
 	lu.assertTrue(invalid.CrewSuppression.Enabled)
 end
 
-function TestGetDoctrine:test_crew_suppression_damage_duration_is_bounded()
+function TestGetDoctrine:test_crew_suppression_duration_range_is_bounded()
 	Medusa.Config:initialize()
-	local negative = Medusa.Config:getDoctrine({ CrewSuppression = { DamageDurationSec = -1 } })
-	local text = Medusa.Config:getDoctrine({ CrewSuppression = { DamageDurationSec = "invalid" } })
-	local numericText = Medusa.Config:getDoctrine({ CrewSuppression = { DamageDurationSec = "75" } })
-	local excessive = Medusa.Config:getDoctrine({ CrewSuppression = { DamageDurationSec = 3601 } })
-	local valid = Medusa.Config:getDoctrine({ CrewSuppression = { DamageDurationSec = 75 } })
+	local belowMinimum = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMinSec = 0 } })
+	local invalid = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMinSec = "invalid" } })
+	local numericText = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMinSec = "15" } })
+	local aboveMaximum = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMaxSec = 3601 } })
+	local valid = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMinSec = 15, DurationMaxSec = 90 } })
+	local reversed = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMinSec = 120, DurationMaxSec = 30 } })
 
-	lu.assertEquals(negative.CrewSuppression.DamageDurationSec, 1)
-	lu.assertEquals(text.CrewSuppression.DamageDurationSec, 120)
-	lu.assertEquals(numericText.CrewSuppression.DamageDurationSec, 75)
-	lu.assertEquals(excessive.CrewSuppression.DamageDurationSec, 3600)
-	lu.assertEquals(valid.CrewSuppression.DamageDurationSec, 75)
+	lu.assertEquals(belowMinimum.CrewSuppression.DurationMinSec, 1)
+	lu.assertEquals(invalid.CrewSuppression.DurationMinSec, 30)
+	lu.assertEquals(numericText.CrewSuppression.DurationMinSec, 15)
+	lu.assertEquals(aboveMaximum.CrewSuppression.DurationMaxSec, 3600)
+	lu.assertEquals(valid.CrewSuppression.DurationMinSec, 15)
+	lu.assertEquals(valid.CrewSuppression.DurationMaxSec, 90)
+	lu.assertEquals(reversed.CrewSuppression.DurationMinSec, 30)
+	lu.assertEquals(reversed.CrewSuppression.DurationMaxSec, 120)
 end
 
 function TestGetDoctrine:test_crew_suppression_group_diameter_is_bounded()

@@ -10,12 +10,20 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Added
 
 - Damage-based crew suppression for managed AAA and MANPAD groups, with doctrine controls, a configurable group-diameter eligibility limit, bounded HIT processing, group-level weapon hold, recovery, and Prometheus observability.
+- Bomb- and missile-impact crew suppression with a mission-shared bounded weapon tracker, cube-root blast-radius policy, exact per-unit proximity, bounded spatial queries, and refreshed positions for all managed battery units.
 
 ### Changed
 
 - Updated the vendored dcs-harness dependency to 1.0.1 for validated unit-health snapshots.
+- Crew suppression now samples each damage or explosive suppression duration from a doctrine-configured range that defaults to 30–120 seconds.
 
 ### Fixed
+
+- Radar-capable batteries with `BatteryTargetDatalink` enabled now report detections while WARM, allowing their own periodic or continuous radar scans to produce tracks and trigger doctrine-controlled engagement.
+- Re-associated tracks now preserve their identification dwell time, allowing `BANDIT` tracks observed during periodic scans to become `HOSTILE` under `TIGHT` rules of engagement.
+- Track re-association now accounts for movement during sensor gaps by checking the last observed position and its constant-velocity projection.
+- HARM assessment now retains cumulative evidence across decisions and track re-association, and reverses an existing classification only after evidence crosses the opposing decision threshold.
+- HARM evidence and track-identification promotion now process each sensor observation once, preventing retained tracks from accumulating evidence or changing identification while unobserved.
 
 ### Removed
 

@@ -8,6 +8,7 @@ require("entities.Entities")
 require("entities.Battery")
 require("services.Services")
 require("services.stores.BatteryStore")
+require("services.stores.UnitGeoGrid")
 require("services.BatteryActivationService")
 require("services.AaaService")
 require("services.ManpadService")
@@ -85,11 +86,18 @@ local function makeContext(test, battery)
 		doctrine = {
 			CrewSuppression = {
 				Enabled = C.CrewSuppression.DEFAULT_ENABLED,
-				DamageDurationSec = C.CrewSuppression.DEFAULT_DAMAGE_DURATION_SEC,
+				DurationMinSec = C.CrewSuppression.DEFAULT_DURATION_MIN_SEC,
+				DurationMaxSec = C.CrewSuppression.DEFAULT_DURATION_MAX_SEC,
 				MaxGroupDiameterM = C.CrewSuppression.DEFAULT_MAX_GROUP_DIAMETER_M,
+				ExplosiveRadiusScaleM = C.CrewSuppression.DEFAULT_EXPLOSIVE_RADIUS_SCALE_M,
+				ExplosiveRadiusMaxM = C.CrewSuppression.EXPLOSIVE_RADIUS_MAX_M,
+				ExplosiveEffectiveness = C.CrewSuppression.DEFAULT_EXPLOSIVE_EFFECTIVENESS,
 			},
 		},
 		now = test.now,
+		random = function()
+			return 1
+		end,
 	}
 end
 
@@ -254,6 +262,25 @@ function TestCrewSuppressionService:test_new_damage_suppresses_complete_aaa_grou
 	lu.assertEquals(self.popCount, 1)
 	lu.assertEquals(self.roe[#self.roe], "WEAPON_HOLD")
 	lu.assertEquals(self.scheduled[1].delay, 120)
+end
+
+function TestCrewSuppressionService:test_damage_duration_is_sampled_from_doctrine_range()
+	local cases = {
+		{ sample = 0, duration = C.CrewSuppression.DEFAULT_DURATION_MIN_SEC },
+		{ sample = 0.5, duration = 75 },
+		{ sample = 1, duration = C.CrewSuppression.DEFAULT_DURATION_MAX_SEC },
+	}
+
+	for i = 1, #cases do
+		local battery = makeBattery(C.BatteryRole.AAA)
+		local ctx = makeContext(self, battery)
+		ctx.random = function()
+			return cases[i].sample
+		end
+
+		lu.assertTrue(CrewSuppressionService.processDamage(ctx, 101))
+		lu.assertEquals(battery.CrewSuppressionUntil, self.now + cases[i].duration)
+	end
 end
 
 function TestCrewSuppressionService:test_hit_without_new_live_damage_does_not_suppress()
@@ -487,4 +514,86 @@ function TestCrewSuppressionService:test_recovery_reschedule_failure_does_not_le
 
 	lu.assertEquals(battery.CrewSuppressionState, C.CrewSuppressionState.CLEAR)
 	lu.assertNil(battery.CrewSuppressionUntil)
+end
+
+function TestCrewSuppressionService:test_explosive_radius_uses_cube_root_mass_scaling_and_maximum()
+	local policy = {
+		ExplosiveRadiusScaleM = 10,
+		ExplosiveRadiusMaxM = 50,
+		ExplosiveEffectiveness = 1,
+	}
+
+	lu.assertAlmostEquals(CrewSuppressionService.explosiveRadius(policy, 1), 10, 0.0001)
+	lu.assertAlmostEquals(CrewSuppressionService.explosiveRadius(policy, 8), 20, 0.0001)
+	lu.assertAlmostEquals(CrewSuppressionService.explosiveRadius(policy, 1000), 50, 0.0001)
+	lu.assertNil(CrewSuppressionService.explosiveRadius(policy, 0))
+end
+
+function TestCrewSuppressionService:test_explosive_probability_never_increases_with_distance()
+	local policy = { ExplosiveEffectiveness = 0.8 }
+
+	local near = CrewSuppressionService.explosiveProbability(policy, 20, 2)
+	local middle = CrewSuppressionService.explosiveProbability(policy, 20, 10)
+	local far = CrewSuppressionService.explosiveProbability(policy, 20, 19)
+
+	lu.assertTrue(near >= middle)
+	lu.assertTrue(middle >= far)
+	lu.assertEquals(CrewSuppressionService.explosiveProbability(policy, 20, 20), 0)
+end
+
+function TestCrewSuppressionService:test_explosive_impact_uses_exact_member_distance_and_suppresses_group()
+	local battery = makeBattery(C.BatteryRole.AAA)
+	battery.Units[1].Position = { x = 3, y = 0, z = 0 }
+	local ctx = makeContext(self, battery)
+	ctx.random = function()
+		return 0.5
+	end
+	ctx.suppressibleUnitGeoGrid = Medusa.Services.UnitGeoGrid:new(500)
+	ctx.suppressibleUnitGeoGrid:add(101, battery.Units[1].Position)
+	local impact = {
+		ImpactId = 7,
+		Position = { x = 0, y = 0, z = 0 },
+		EffectiveExplosiveMassKg = 1,
+		ObservedAt = self.now,
+		Source = C.CrewSuppressionImpactSource.HIT,
+	}
+
+	local work = CrewSuppressionService.beginExplosiveImpact(ctx, impact)
+	local visited, complete, candidates, applications =
+		CrewSuppressionService.continueExplosiveImpact(ctx, work, 32, {})
+
+	lu.assertEquals(visited, 1)
+	lu.assertTrue(complete)
+	lu.assertEquals(candidates, 1)
+	lu.assertEquals(applications, 1)
+	lu.assertEquals(battery.CrewSuppressionCause, C.CrewSuppressionCause.EXPLOSIVE)
+	lu.assertEquals(battery.CrewSuppressionUntil, 175)
+	lu.assertEquals(battery.LastExplosiveImpactId, 7)
+	lu.assertEquals(battery.Units[1].LastExplosiveImpactId, 7)
+end
+
+function TestCrewSuppressionService:test_explosive_impact_rejects_member_outside_exact_three_dimensional_radius()
+	local battery = makeBattery(C.BatteryRole.MANPAD)
+	battery.Units[1].Position = { x = 0, y = 11, z = 0 }
+	local ctx = makeContext(self, battery)
+	ctx.random = function()
+		return 0
+	end
+	ctx.suppressibleUnitGeoGrid = Medusa.Services.UnitGeoGrid:new(500)
+	ctx.suppressibleUnitGeoGrid:add(101, battery.Units[1].Position)
+	local impact = {
+		ImpactId = 8,
+		Position = { x = 0, y = 0, z = 0 },
+		EffectiveExplosiveMassKg = 1,
+		ObservedAt = self.now,
+		Source = C.CrewSuppressionImpactSource.TERRAIN,
+	}
+
+	local work = CrewSuppressionService.beginExplosiveImpact(ctx, impact)
+	local _, complete, candidates, applications = CrewSuppressionService.continueExplosiveImpact(ctx, work, 32, {})
+
+	lu.assertTrue(complete)
+	lu.assertEquals(candidates, 1)
+	lu.assertEquals(applications, 0)
+	lu.assertEquals(battery.CrewSuppressionState, C.CrewSuppressionState.CLEAR)
 end

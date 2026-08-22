@@ -7,12 +7,13 @@
   "links": [],
   "panels": [
     {
-      "title": "Tick Duration p50 / p90 / p99",
+      "title": "Tick Duration p50 / p90 / p95 / p99",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
       "targets": [
         { "expr": "medusa_tick_duration_seconds{network=~\"$network\",quantile=\"0.5\"}", "legendFormat": "{{network}} p50" },
         { "expr": "medusa_tick_duration_seconds{network=~\"$network\",quantile=\"0.9\"}", "legendFormat": "{{network}} p90" },
+        { "expr": "medusa_tick_duration_seconds{network=~\"$network\",quantile=\"0.95\"}", "legendFormat": "{{network}} p95" },
         { "expr": "medusa_tick_duration_seconds{network=~\"$network\",quantile=\"0.99\"}", "legendFormat": "{{network}} p99" }
       ],
       "fieldConfig": { "defaults": { "unit": "s" } }

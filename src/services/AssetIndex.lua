@@ -74,6 +74,10 @@ function Medusa.Services.AssetIndex:localGeoGrid()
 	return self._stores.localGeoGrid
 end
 
+function Medusa.Services.AssetIndex:suppressibleUnitGeoGrid()
+	return self._stores.suppressibleUnitGeoGrid
+end
+
 function Medusa.Services.AssetIndex:spatialIndex()
 	return self._stores.spatialIndex
 end

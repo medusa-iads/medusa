@@ -146,16 +146,40 @@ local AAA_SCHEMA = {
 
 local CREW_SUPPRESSION_SCHEMA = {
 	{
-		name = "DamageDurationSec",
-		default = Medusa.Constants.CrewSuppression.DEFAULT_DAMAGE_DURATION_SEC,
+		name = "DurationMinSec",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_DURATION_MIN_SEC,
 		min = 1,
-		max = Medusa.Constants.CrewSuppression.MAX_DAMAGE_DURATION_SEC,
+		max = Medusa.Constants.CrewSuppression.MAX_DURATION_SEC,
+	},
+	{
+		name = "DurationMaxSec",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_DURATION_MAX_SEC,
+		min = 1,
+		max = Medusa.Constants.CrewSuppression.MAX_DURATION_SEC,
 	},
 	{
 		name = "MaxGroupDiameterM",
 		default = Medusa.Constants.CrewSuppression.DEFAULT_MAX_GROUP_DIAMETER_M,
 		min = 1,
 		max = Medusa.Constants.CrewSuppression.MAX_GROUP_DIAMETER_M,
+	},
+	{
+		name = "ExplosiveRadiusScaleM",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_EXPLOSIVE_RADIUS_SCALE_M,
+		min = 0.1,
+		max = Medusa.Constants.CrewSuppression.EXPLOSIVE_RADIUS_MAX_M,
+	},
+	{
+		name = "ExplosiveRadiusMaxM",
+		default = Medusa.Constants.CrewSuppression.EXPLOSIVE_RADIUS_MAX_M,
+		min = 1,
+		max = Medusa.Constants.CrewSuppression.EXPLOSIVE_RADIUS_MAX_M,
+	},
+	{
+		name = "ExplosiveEffectiveness",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_EXPLOSIVE_EFFECTIVENESS,
+		min = 0,
+		max = 1,
 	},
 }
 
@@ -170,7 +194,10 @@ local function resolveNumericSubtable(schema, overrides, legacyOverrides)
 		if raw == nil and setting.legacyName and legacyOverrides then
 			raw = legacyOverrides[setting.legacyName]
 		end
-		local value = tonumber(raw) or setting.default
+		local value = tonumber(raw)
+		if not value or value ~= value or value == math.huge or value == -math.huge then
+			value = setting.default
+		end
 		if setting.min and value < setting.min then
 			value = setting.min
 		elseif setting.max and value > setting.max then
@@ -255,6 +282,17 @@ function Medusa.Entities.Doctrine.new(overrides)
 	doctrine.AAA = resolveNumericSubtable(AAA_SCHEMA, d.AAA)
 	local crewSuppressionOverrides = type(d.CrewSuppression) == "table" and d.CrewSuppression or {}
 	doctrine.CrewSuppression = resolveNumericSubtable(CREW_SUPPRESSION_SCHEMA, crewSuppressionOverrides)
+	if doctrine.CrewSuppression.DurationMinSec > doctrine.CrewSuppression.DurationMaxSec then
+		_logger:error(
+			string.format(
+				"CrewSuppression.DurationMinSec '%s' exceeds DurationMaxSec '%s', using defaults",
+				tostring(doctrine.CrewSuppression.DurationMinSec),
+				tostring(doctrine.CrewSuppression.DurationMaxSec)
+			)
+		)
+		doctrine.CrewSuppression.DurationMinSec = Medusa.Constants.CrewSuppression.DEFAULT_DURATION_MIN_SEC
+		doctrine.CrewSuppression.DurationMaxSec = Medusa.Constants.CrewSuppression.DEFAULT_DURATION_MAX_SEC
+	end
 	local enabled = crewSuppressionOverrides.Enabled
 	if enabled ~= nil and type(enabled) ~= "boolean" then
 		_logger:error(

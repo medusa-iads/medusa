@@ -142,6 +142,8 @@ function TestAaaObservability:test_snapshot_exports_bounded_state_and_excludes_g
 	lu.assertTrue(
 		contains(output, 'medusa_crew_suppression_dropped_events_total{network="red",reason="QUEUE_OVERFLOW"} 1')
 	)
+	lu.assertTrue(contains(output, 'medusa_crew_suppression_weapon_outcomes_total{outcome="TRACKER_FULL"} 0'))
+	lu.assertEquals(MS._registry.medusa_tick_duration_seconds.quantiles, { 0.5, 0.9, 0.95, 0.99 })
 	lu.assertEquals(MS._registry.medusa_crew_suppression_applications_total.label_keys, { "network", "cause" })
 	lu.assertEquals(MS._registry.medusa_crew_suppression_dropped_events_total.label_keys, { "network", "reason" })
 end

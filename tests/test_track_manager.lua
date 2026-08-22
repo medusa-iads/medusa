@@ -259,6 +259,61 @@ function TestTrackManagerPruneStale:test_reassociation_retains_display_id_with_n
 	lu.assertEquals(reacquired.OriginSourceType, Medusa.Constants.TrackSource.AWACS)
 end
 
+function TestTrackManagerPruneStale:test_reassociation_uses_projected_position()
+	local original = self.mgr:processReport(makeReport({ SourceType = Medusa.Constants.TrackSource.AWACS }))
+	original.TrackIdentification = Medusa.Constants.TrackIdentification.BANDIT
+	local pruneTime = mockTime + 61
+	self.mgr:pruneStale(pruneTime)
+	self.mgr:pruneStale(pruneTime)
+
+	mockTime = pruneTime + 10
+	local reacquired = self.mgr:processReport(makeReport({
+		SourceType = Medusa.Constants.TrackSource.SAM_BATTERY,
+		Position = { x = 8200, y = 500, z = 5600 },
+	}))
+
+	lu.assertEquals(reacquired.TrackIdentification, Medusa.Constants.TrackIdentification.BANDIT)
+	lu.assertEquals(reacquired.OriginSourceType, Medusa.Constants.TrackSource.AWACS)
+end
+
+function TestTrackManagerPruneStale:test_reassociation_preserves_identification_transition_time()
+	local original = self.mgr:processReport(makeReport())
+	original.TrackIdentification = Medusa.Constants.TrackIdentification.BANDIT
+	original.LastIdentificationTime = mockTime
+	local pruneTime = mockTime + 61
+	self.mgr:pruneStale(pruneTime)
+	self.mgr:pruneStale(pruneTime)
+
+	mockTime = pruneTime + 10
+	local reacquired = self.mgr:processReport(makeReport({
+		Position = { x = 1100, y = 500, z = 2100 },
+	}))
+
+	lu.assertEquals(reacquired.TrackIdentification, Medusa.Constants.TrackIdentification.BANDIT)
+	lu.assertEquals(reacquired.LastIdentificationTime, 1000)
+end
+
+function TestTrackManagerPruneStale:test_reassociation_preserves_harm_evidence()
+	local original = self.mgr:processReport(makeReport())
+	original.HarmAssessment = {
+		label = "CLEARED",
+		llr = -24.82,
+		scanCount = 21,
+	}
+	local pruneTime = mockTime + 61
+	self.mgr:pruneStale(pruneTime)
+	self.mgr:pruneStale(pruneTime)
+
+	mockTime = pruneTime + 10
+	local reacquired = self.mgr:processReport(makeReport({
+		Position = { x = 1100, y = 500, z = 2100 },
+	}))
+
+	lu.assertEquals(reacquired.HarmAssessment.label, "CLEARED")
+	lu.assertEquals(reacquired.HarmAssessment.llr, -24.82)
+	lu.assertEquals(reacquired.HarmAssessment.scanCount, 21)
+end
+
 -- == TestTrackManagerMergeSplit ==
 
 TestTrackManagerMergeSplit = {}

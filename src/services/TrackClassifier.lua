@@ -469,6 +469,11 @@ end
 --- @param ctx table Pipeline context: trackStore, batteryStore, geoGrid, now, maxRange, doctrine, borderPolygons, adizPolygon
 --- @return table|nil promotion {track=track, newId=newId} if promoted, nil otherwise
 function Medusa.Services.TrackClassifier.classifyTrack(track, ctx)
+	if track.LifecycleState ~= LS.ACTIVE or track.LastClassificationObservationTime == track.LastDetectionTime then
+		return nil
+	end
+	track.LastClassificationObservationTime = track.LastDetectionTime
+
 	local trackStore = ctx.trackStore
 	local now = ctx.now
 	local doctrine = ctx.doctrine
