@@ -152,6 +152,7 @@ do
 			CellIndex = 1,
 			Position = copyPosition(position),
 			RadiusSquared = radiusMeters * radiusMeters,
+			NearestVisitedDistanceSquared = nil,
 		}
 	end
 
@@ -192,8 +193,17 @@ do
 			local location = self._locations[unitId]
 			if location then
 				local dx = location.Position.x - cursor.Position.x
+				local dy = location.Position.y - cursor.Position.y
 				local dz = location.Position.z - cursor.Position.z
-				if dx * dx + dz * dz <= cursor.RadiusSquared then
+				local horizontalDistanceSquared = dx * dx + dz * dz
+				local distanceSquared = horizontalDistanceSquared + dy * dy
+				if
+					not cursor.NearestVisitedDistanceSquared
+					or distanceSquared < cursor.NearestVisitedDistanceSquared
+				then
+					cursor.NearestVisitedDistanceSquared = distanceSquared
+				end
+				if horizontalDistanceSquared <= cursor.RadiusSquared then
 					written = written + 1
 					result[written] = unitId
 				end

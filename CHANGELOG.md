@@ -11,11 +11,15 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 - Damage-based crew suppression for managed AAA and MANPAD groups, with doctrine controls, a configurable group-diameter eligibility limit, bounded HIT processing, group-level weapon hold, recovery, and Prometheus observability.
 - Bomb- and missile-impact crew suppression with a mission-shared bounded weapon tracker, cube-root blast-radius policy, exact per-unit proximity, bounded spatial queries, and refreshed positions for all managed battery units.
+- Aircraft cannon-burst crew suppression with bounded gravity-aware terrain-point estimation and shared terminal-event evaluation.
+- Defender crew skill from mission ground-unit data, with doctrine-controlled fallback and resistance effects on suppression probability and duration.
 
 ### Changed
 
 - Updated the vendored dcs-harness dependency to 1.0.1 for validated unit-health snapshots.
-- Crew suppression now samples each damage or explosive suppression duration from a doctrine-configured range that defaults to 30–120 seconds.
+- Crew suppression now samples each damage, explosive, or cannon suppression duration from a doctrine-configured range that defaults to 30–120 seconds.
+- Cannon suppression now defaults to a 150-metre uncertainty radius for forward-vector impact estimates.
+- Cannon suppression DEBUG logs now identify subscription handles, the exact boundary or ballistic-projection rejection stage, and the estimate's distance from the nearest indexed defender visited by the bounded spatial query.
 
 ### Fixed
 
@@ -23,6 +27,7 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 - Re-associated tracks now preserve their identification dwell time, allowing `BANDIT` tracks observed during periodic scans to become `HOSTILE` under `TIGHT` rules of engagement.
 - Track re-association now accounts for movement during sensor gaps by checking the last observed position and its constant-velocity projection.
 - HARM assessment now retains cumulative evidence across decisions and track re-association, and reverses an existing classification only after evidence crosses the opposing decision threshold.
+- HARM assessment now accumulates evidence during its 25-observation decision floor, preventing a short aircraft attack arc from discarding its preceding non-HARM evidence.
 - HARM evidence and track-identification promotion now process each sensor observation once, preventing retained tracks from accumulating evidence or changing identification while unobserved.
 
 ### Removed

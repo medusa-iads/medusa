@@ -142,12 +142,39 @@ Medusa.Constants.CrewSuppressionState = {
 Medusa.Constants.CrewSuppressionCause = {
 	DAMAGE = "DAMAGE",
 	EXPLOSIVE = "EXPLOSIVE",
+	CANNON = "CANNON",
 }
 
-Medusa.Constants.CrewSuppressionImpactSource = {
+Medusa.Constants.CrewSkill = {
+	AVERAGE = "AVERAGE",
+	GOOD = "GOOD",
+	HIGH = "HIGH",
+	EXCELLENT = "EXCELLENT",
+}
+
+Medusa.Constants.CrewSkillLevel = {
+	[Medusa.Constants.CrewSkill.AVERAGE] = 0,
+	[Medusa.Constants.CrewSkill.GOOD] = 1,
+	[Medusa.Constants.CrewSkill.HIGH] = 2,
+	[Medusa.Constants.CrewSkill.EXCELLENT] = 3,
+}
+
+Medusa.Constants.CrewSuppressionTerminalKind = {
+	EXPLOSIVE = "EXPLOSIVE",
+	CANNON = "CANNON",
+}
+
+Medusa.Constants.CrewSuppressionTerminalSource = {
 	HIT = "HIT",
 	TERRAIN = "TERRAIN",
+	FORWARD_VECTOR = "FORWARD_VECTOR",
 }
+Medusa.Constants.CrewSuppressionTerminalKindBySource = {
+	[Medusa.Constants.CrewSuppressionTerminalSource.HIT] = Medusa.Constants.CrewSuppressionTerminalKind.EXPLOSIVE,
+	[Medusa.Constants.CrewSuppressionTerminalSource.TERRAIN] = Medusa.Constants.CrewSuppressionTerminalKind.EXPLOSIVE,
+	[Medusa.Constants.CrewSuppressionTerminalSource.FORWARD_VECTOR] = Medusa.Constants.CrewSuppressionTerminalKind.CANNON,
+}
+Medusa.Constants.CrewSuppressionImpactSource = Medusa.Constants.CrewSuppressionTerminalSource
 
 Medusa.Constants.CrewSuppressionWeaponOutcome = {
 	TRACKED = "TRACKED",
@@ -157,6 +184,15 @@ Medusa.Constants.CrewSuppressionWeaponOutcome = {
 	IMPACT_HIT = "IMPACT_HIT",
 	IMPACT_TERRAIN = "IMPACT_TERRAIN",
 	NO_TERRAIN_INTERSECTION = "NO_TERRAIN_INTERSECTION",
+}
+
+Medusa.Constants.CrewSuppressionCannonOutcome = {
+	QUEUED = "QUEUED",
+	QUEUE_FULL = "QUEUE_FULL",
+	EXPIRED = "EXPIRED",
+	UNTRACKABLE = "UNTRACKABLE",
+	NO_TERRAIN_INTERSECTION = "NO_TERRAIN_INTERSECTION",
+	ESTIMATED_FORWARD = "ESTIMATED_FORWARD",
 }
 
 Medusa.Constants.CrewSuppressionDropReason = {
@@ -194,6 +230,19 @@ Medusa.Constants.CrewSuppression = {
 	DEFAULT_EXPLOSIVE_RADIUS_SCALE_M = 10,
 	EXPLOSIVE_RADIUS_MAX_M = 500,
 	DEFAULT_EXPLOSIVE_EFFECTIVENESS = 1,
+	DEFAULT_CREW_SKILL = Medusa.Constants.CrewSkill.AVERAGE,
+	DEFAULT_SKILL_RESISTANCE_PER_LEVEL = 0.1,
+	MAX_SKILL_RESISTANCE_PER_LEVEL = 0.3,
+	DEFAULT_CANNON_RADIUS_M = 150,
+	CANNON_RADIUS_MAX_M = 500,
+	DEFAULT_CANNON_EFFECTIVENESS = 0.5,
+	CANNON_CANDIDATE_CAPACITY = 128,
+	CANNON_ESTIMATES_PER_UPDATE = 5,
+	CANNON_CANDIDATE_MAX_AGE_SEC = 5,
+	CANNON_MAX_PROJECTION_M = 5000,
+	CANNON_EFFECTIVE_MUZZLE_VELOCITY_MPS = 900,
+	CANNON_GRAVITY_MPS2 = 9.81,
+	CANNON_TRAJECTORY_SEGMENTS = 4,
 }
 
 Medusa.Constants.TacticalState = {
@@ -424,7 +473,7 @@ Medusa.Constants.HARM_SHUTDOWN_SAFETY_MARGIN_SEC = 20
 Medusa.Constants.HARM_MAX_RANGE_M = 130000
 Medusa.Constants.HARM_DEFAULT_SPEED_MPS = 300
 
-Medusa.Constants.HARM_SPRT_MIN_SCANS = 15
+Medusa.Constants.HARM_SPRT_MIN_SCANS = 25
 Medusa.Constants.HARM_SPRT_MIN_TRACK_AGE_SEC = 10
 Medusa.Constants.HARM_SPRT_MIN_DT_SEC = 0.01
 Medusa.Constants.HARM_SPRT_SPEED_GATE = 50

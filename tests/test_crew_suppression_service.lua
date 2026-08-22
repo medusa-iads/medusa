@@ -92,6 +92,10 @@ local function makeContext(test, battery)
 				ExplosiveRadiusScaleM = C.CrewSuppression.DEFAULT_EXPLOSIVE_RADIUS_SCALE_M,
 				ExplosiveRadiusMaxM = C.CrewSuppression.EXPLOSIVE_RADIUS_MAX_M,
 				ExplosiveEffectiveness = C.CrewSuppression.DEFAULT_EXPLOSIVE_EFFECTIVENESS,
+				DefaultCrewSkill = C.CrewSuppression.DEFAULT_CREW_SKILL,
+				SkillResistancePerLevel = C.CrewSuppression.DEFAULT_SKILL_RESISTANCE_PER_LEVEL,
+				CannonRadiusM = C.CrewSuppression.DEFAULT_CANNON_RADIUS_M,
+				CannonEffectiveness = C.CrewSuppression.DEFAULT_CANNON_EFFECTIVENESS,
 			},
 		},
 		now = test.now,
@@ -541,6 +545,106 @@ function TestCrewSuppressionService:test_explosive_probability_never_increases_w
 	lu.assertEquals(CrewSuppressionService.explosiveProbability(policy, 20, 20), 0)
 end
 
+function TestCrewSuppressionService:test_defender_skill_levels_reduce_multiplier_and_damage_duration()
+	local policy = {
+		DefaultCrewSkill = C.CrewSkill.AVERAGE,
+		SkillResistancePerLevel = 0.1,
+	}
+	lu.assertEquals(CrewSuppressionService.crewSkillMultiplier(policy, { CrewSkill = C.CrewSkill.AVERAGE }), 1)
+	lu.assertEquals(CrewSuppressionService.crewSkillMultiplier(policy, { CrewSkill = C.CrewSkill.GOOD }), 0.9)
+	lu.assertEquals(CrewSuppressionService.crewSkillMultiplier(policy, { CrewSkill = C.CrewSkill.HIGH }), 0.8)
+	lu.assertEquals(CrewSuppressionService.crewSkillMultiplier(policy, { CrewSkill = C.CrewSkill.EXCELLENT }), 0.7)
+
+	local battery = makeBattery(C.BatteryRole.AAA)
+	battery.Units[1].CrewSkill = C.CrewSkill.EXCELLENT
+	local ctx = makeContext(self, battery)
+	local randomCalls = 0
+	ctx.random = function()
+		randomCalls = randomCalls + 1
+		return 1
+	end
+
+	lu.assertTrue(CrewSuppressionService.processDamage(ctx, 101))
+	lu.assertEquals(randomCalls, 1)
+	lu.assertEquals(battery.CrewSuppressionUntil, 184)
+end
+
+function TestCrewSuppressionService:test_cannon_terminal_event_uses_defender_skill_and_group_suppression()
+	local battery = makeBattery(C.BatteryRole.AAA)
+	battery.Units[1].CrewSkill = C.CrewSkill.GOOD
+	battery.Units[1].Position = { x = 0, y = 0, z = 0 }
+	local ctx = makeContext(self, battery)
+	local samples = { 0.44, 1 }
+	ctx.random = function()
+		return table.remove(samples, 1)
+	end
+	ctx.suppressibleUnitGeoGrid = Medusa.Services.UnitGeoGrid:new(500)
+	ctx.suppressibleUnitGeoGrid:add(101, battery.Units[1].Position)
+	local terminalEvent = {
+		TerminalEventId = 9,
+		Kind = C.CrewSuppressionTerminalKind.CANNON,
+		Position = { x = 0, y = 0, z = 0 },
+		ObservedAt = self.now,
+		Source = C.CrewSuppressionTerminalSource.FORWARD_VECTOR,
+	}
+
+	local work = CrewSuppressionService.beginTerminalEvent(ctx, terminalEvent)
+	local _, complete, candidates, applications = CrewSuppressionService.continueTerminalEvent(ctx, work, 32, {})
+
+	lu.assertTrue(complete)
+	lu.assertEquals(candidates, 1)
+	lu.assertEquals(applications, 1)
+	lu.assertEquals(battery.CrewSuppressionCause, C.CrewSuppressionCause.CANNON)
+	lu.assertEquals(battery.CrewSuppressionUntil, 208)
+	lu.assertStrContains(self.infoMessages[1], "cause=CANNON")
+end
+
+function TestCrewSuppressionService:test_cannon_debug_reports_estimate_distance_to_nearest_indexed_defender()
+	local battery = makeBattery(C.BatteryRole.AAA)
+	battery.Units[1].Position = { x = 200, y = 0, z = 0 }
+	local ctx = makeContext(self, battery)
+	Medusa.Logger:setLevel(C.LogLevel.DEBUG)
+	ctx.suppressibleUnitGeoGrid = Medusa.Services.UnitGeoGrid:new(500)
+	ctx.suppressibleUnitGeoGrid:add(101, battery.Units[1].Position)
+	local terminalEvent = {
+		TerminalEventId = 10,
+		Kind = C.CrewSuppressionTerminalKind.CANNON,
+		Position = { x = 0, y = 0, z = 0 },
+		ObservedAt = self.now,
+		Source = C.CrewSuppressionTerminalSource.FORWARD_VECTOR,
+	}
+
+	local work = CrewSuppressionService.beginTerminalEvent(ctx, terminalEvent)
+	local _, complete, candidates, applications = CrewSuppressionService.continueTerminalEvent(ctx, work, 32, {})
+
+	lu.assertTrue(complete)
+	lu.assertEquals(candidates, 0)
+	lu.assertEquals(applications, 0)
+	lu.assertStrContains(self.infoMessages[#self.infoMessages], "nearestIndexedUnitDistance=200.0m")
+end
+
+function TestCrewSuppressionService:test_initial_damage_uses_longest_member_adjusted_duration_once()
+	local battery = makeBattery(C.BatteryRole.AAA)
+	battery.Units[1].CrewSkill = C.CrewSkill.EXCELLENT
+	battery.Units[1].InitialDamagePending = true
+	battery.Units[2] = Battery.newUnit({
+		UnitId = 102,
+		UnitName = "gunner-2",
+		Roles = { C.BatteryUnitRole.AAA },
+		CrewSkill = C.CrewSkill.AVERAGE,
+		InitialDamagePending = true,
+	})
+	local ctx = makeContext(self, battery)
+	ctx.random = function()
+		return 1
+	end
+
+	lu.assertTrue(CrewSuppressionService.applyInitialDamage(ctx, battery))
+	lu.assertEquals(battery.CrewSuppressionUntil, 220)
+	lu.assertFalse(battery.Units[1].InitialDamagePending)
+	lu.assertFalse(battery.Units[2].InitialDamagePending)
+end
+
 function TestCrewSuppressionService:test_explosive_impact_uses_exact_member_distance_and_suppresses_group()
 	local battery = makeBattery(C.BatteryRole.AAA)
 	battery.Units[1].Position = { x = 3, y = 0, z = 0 }
@@ -551,16 +655,16 @@ function TestCrewSuppressionService:test_explosive_impact_uses_exact_member_dist
 	ctx.suppressibleUnitGeoGrid = Medusa.Services.UnitGeoGrid:new(500)
 	ctx.suppressibleUnitGeoGrid:add(101, battery.Units[1].Position)
 	local impact = {
-		ImpactId = 7,
+		TerminalEventId = 7,
+		Kind = C.CrewSuppressionTerminalKind.EXPLOSIVE,
 		Position = { x = 0, y = 0, z = 0 },
 		EffectiveExplosiveMassKg = 1,
 		ObservedAt = self.now,
-		Source = C.CrewSuppressionImpactSource.HIT,
+		Source = C.CrewSuppressionTerminalSource.HIT,
 	}
 
-	local work = CrewSuppressionService.beginExplosiveImpact(ctx, impact)
-	local visited, complete, candidates, applications =
-		CrewSuppressionService.continueExplosiveImpact(ctx, work, 32, {})
+	local work = CrewSuppressionService.beginTerminalEvent(ctx, impact)
+	local visited, complete, candidates, applications = CrewSuppressionService.continueTerminalEvent(ctx, work, 32, {})
 
 	lu.assertEquals(visited, 1)
 	lu.assertTrue(complete)
@@ -568,8 +672,8 @@ function TestCrewSuppressionService:test_explosive_impact_uses_exact_member_dist
 	lu.assertEquals(applications, 1)
 	lu.assertEquals(battery.CrewSuppressionCause, C.CrewSuppressionCause.EXPLOSIVE)
 	lu.assertEquals(battery.CrewSuppressionUntil, 175)
-	lu.assertEquals(battery.LastExplosiveImpactId, 7)
-	lu.assertEquals(battery.Units[1].LastExplosiveImpactId, 7)
+	lu.assertEquals(battery.LastTerminalEventId, 7)
+	lu.assertEquals(battery.Units[1].LastTerminalEventId, 7)
 end
 
 function TestCrewSuppressionService:test_explosive_impact_rejects_member_outside_exact_three_dimensional_radius()
@@ -582,15 +686,16 @@ function TestCrewSuppressionService:test_explosive_impact_rejects_member_outside
 	ctx.suppressibleUnitGeoGrid = Medusa.Services.UnitGeoGrid:new(500)
 	ctx.suppressibleUnitGeoGrid:add(101, battery.Units[1].Position)
 	local impact = {
-		ImpactId = 8,
+		TerminalEventId = 8,
+		Kind = C.CrewSuppressionTerminalKind.EXPLOSIVE,
 		Position = { x = 0, y = 0, z = 0 },
 		EffectiveExplosiveMassKg = 1,
 		ObservedAt = self.now,
-		Source = C.CrewSuppressionImpactSource.TERRAIN,
+		Source = C.CrewSuppressionTerminalSource.TERRAIN,
 	}
 
-	local work = CrewSuppressionService.beginExplosiveImpact(ctx, impact)
-	local _, complete, candidates, applications = CrewSuppressionService.continueExplosiveImpact(ctx, work, 32, {})
+	local work = CrewSuppressionService.beginTerminalEvent(ctx, impact)
+	local _, complete, candidates, applications = CrewSuppressionService.continueTerminalEvent(ctx, work, 32, {})
 
 	lu.assertTrue(complete)
 	lu.assertEquals(candidates, 1)

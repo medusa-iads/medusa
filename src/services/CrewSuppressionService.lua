@@ -45,6 +45,27 @@ do
 		return policy.DurationMinSec + random() * (policy.DurationMaxSec - policy.DurationMinSec)
 	end
 
+	local function skillMultiplier(policy, unit)
+		local skill = unit and unit.CrewSkill or policy.DefaultCrewSkill
+		local level = C.CrewSkillLevel[skill]
+		if level == nil then
+			level = C.CrewSkillLevel[C.CrewSuppression.DEFAULT_CREW_SKILL]
+		end
+		local resistance = policy.SkillResistancePerLevel
+		if type(resistance) ~= "number" then
+			resistance = C.CrewSuppression.DEFAULT_SKILL_RESISTANCE_PER_LEVEL
+		end
+		return 1 - level * resistance
+	end
+
+	local function adjustedDuration(ctx, unit)
+		return math.max(1, sampleDuration(ctx) * skillMultiplier(ctx.doctrine.CrewSuppression, unit))
+	end
+
+	local function distanceProbability(effectiveness, radiusM, distanceM)
+		return math.max(0, math.min(1, effectiveness * (1 - distanceM / radiusM)))
+	end
+
 	local function getEligibilityDropReason(ctx, battery)
 		if not isSuppressibleBattery(battery) then
 			return C.CrewSuppressionDropReason.UNMANAGED_TARGET
@@ -273,12 +294,12 @@ do
 		return active
 	end
 
-	local function applyDamage(ctx, battery)
+	local function applyDamage(ctx, battery, unit)
 		return Medusa.Services.CrewSuppressionService.apply(
 			ctx,
 			battery,
 			C.CrewSuppressionCause.DAMAGE,
-			sampleDuration(ctx)
+			adjustedDuration(ctx, unit)
 		)
 	end
 
@@ -300,7 +321,7 @@ do
 				tostring(unit.UnitId)
 			)
 		)
-		return applyDamage(ctx, battery)
+		return applyDamage(ctx, battery, unit)
 	end
 
 	function Medusa.Services.CrewSuppressionService.processDamage(ctx, unitId)
@@ -381,7 +402,7 @@ do
 				tostring(health.CurrentLife)
 			)
 		)
-		return applyDamage(ctx, battery)
+		return applyDamage(ctx, battery, unit)
 	end
 
 	function Medusa.Services.CrewSuppressionService.applyInitialDamage(ctx, battery)
@@ -390,11 +411,13 @@ do
 			return false
 		end
 		local found = false
+		local duration = 0
 		for i = 1, #(battery.Units or {}) do
 			local unit = battery.Units[i]
 			if unit.InitialDamagePending and isSuppressibleUnit(unit) then
 				unit.InitialDamagePending = false
 				found = true
+				duration = math.max(duration, adjustedDuration(ctx, unit))
 			end
 		end
 		if not found then
@@ -409,7 +432,7 @@ do
 		logger:debug(
 			string.format("battery %s processing pending initial damage", battery.GroupName or battery.BatteryId)
 		)
-		return applyDamage(ctx, battery)
+		return Medusa.Services.CrewSuppressionService.apply(ctx, battery, C.CrewSuppressionCause.DAMAGE, duration)
 	end
 
 	function Medusa.Services.CrewSuppressionService.explosiveRadius(policy, effectiveExplosiveMassKg)
@@ -459,100 +482,124 @@ do
 		then
 			return 0
 		end
-		return math.min(1, effectiveness * (1 - distanceM / radiusM))
+		return distanceProbability(effectiveness, radiusM, distanceM)
 	end
 
-	local function validImpact(impact)
-		local position = impact and impact.Position
-		return type(impact) == "table"
-			and impact.ImpactId ~= nil
-			and type(position) == "table"
+	function Medusa.Services.CrewSuppressionService.crewSkillMultiplier(policy, unit)
+		return skillMultiplier(policy, unit)
+	end
+
+	local function validTerminalEvent(terminalEvent)
+		if type(terminalEvent) ~= "table" or terminalEvent.TerminalEventId == nil then
+			return false
+		end
+		local position = terminalEvent.Position
+		return type(position) == "table"
 			and type(position.x) == "number"
 			and type(position.y) == "number"
 			and type(position.z) == "number"
-			and C.CrewSuppressionImpactSource[impact.Source] == impact.Source
+			and C.CrewSuppressionTerminalKindBySource[terminalEvent.Source] == terminalEvent.Kind
 	end
 
-	function Medusa.Services.CrewSuppressionService.beginExplosiveImpact(ctx, impact)
-		if not isEnabled(ctx) or not validImpact(impact) or not ctx.suppressibleUnitGeoGrid then
+	local function terminalPolicy(policy, terminalEvent)
+		if terminalEvent.Kind == C.CrewSuppressionTerminalKind.EXPLOSIVE then
+			local radius =
+				Medusa.Services.CrewSuppressionService.explosiveRadius(policy, terminalEvent.EffectiveExplosiveMassKg)
+			return radius, policy.ExplosiveEffectiveness, C.CrewSuppressionCause.EXPLOSIVE
+		end
+		return policy.CannonRadiusM, policy.CannonEffectiveness, C.CrewSuppressionCause.CANNON
+	end
+
+	local function evaluateTerminalCandidate(ctx, work, unitId, random)
+		local terminalEvent = work.TerminalEvent
+		local battery, unit = ctx.batteryRepository:getByUnitId(unitId)
+		if
+			not unit
+			or unit.LastTerminalEventId == terminalEvent.TerminalEventId
+			or unit.OperationalStatus == C.UnitOperationalStatus.DESTROYED
+			or not isSuppressibleUnit(unit)
+		then
+			return false, false
+		end
+		unit.LastTerminalEventId = terminalEvent.TerminalEventId
+		if battery.LastTerminalEventId == terminalEvent.TerminalEventId then
+			return true, false
+		end
+		local distance = Distance3D(terminalEvent.Position, unit.Position)
+		local probability = distanceProbability(work.Effectiveness, work.RadiusM, distance)
+		probability = probability * skillMultiplier(ctx.doctrine.CrewSuppression, unit)
+		if not (probability > 0 and random() < probability) then
+			return true, false
+		end
+		local applied =
+			Medusa.Services.CrewSuppressionService.apply(ctx, battery, work.Cause, adjustedDuration(ctx, unit))
+		if not applied then
+			return true, false
+		end
+		battery.LastTerminalEventId = terminalEvent.TerminalEventId
+		return true, true
+	end
+
+	function Medusa.Services.CrewSuppressionService.beginTerminalEvent(ctx, terminalEvent)
+		if not isEnabled(ctx) or not validTerminalEvent(terminalEvent) or not ctx.suppressibleUnitGeoGrid then
 			return nil
 		end
-		local radius = Medusa.Services.CrewSuppressionService.explosiveRadius(
-			ctx.doctrine.CrewSuppression,
-			impact.EffectiveExplosiveMassKg
-		)
-		if not radius then
+		local radius, effectiveness, cause = terminalPolicy(ctx.doctrine.CrewSuppression, terminalEvent)
+		if type(radius) ~= "number" or radius <= 0 or type(effectiveness) ~= "number" or effectiveness < 0 then
 			return nil
 		end
-		local cursor = ctx.suppressibleUnitGeoGrid:beginQuery(impact.Position, radius)
+		local cursor = ctx.suppressibleUnitGeoGrid:beginQuery(terminalEvent.Position, radius)
 		if not cursor then
 			return nil
 		end
 		logger:debug(
 			string.format(
-				"explosive impact evaluation started: id=%s source=%s mass=%.3fkg radius=%.3fm",
-				tostring(impact.ImpactId),
-				impact.Source,
-				impact.EffectiveExplosiveMassKg,
+				"terminal-event evaluation started: id=%s kind=%s source=%s radius=%.3fm",
+				tostring(terminalEvent.TerminalEventId),
+				terminalEvent.Kind,
+				terminalEvent.Source,
 				radius
 			)
 		)
 		return {
-			Impact = impact,
+			TerminalEvent = terminalEvent,
 			RadiusM = radius,
+			Effectiveness = effectiveness,
+			Cause = cause,
 			Cursor = cursor,
 		}
 	end
 
-	function Medusa.Services.CrewSuppressionService.continueExplosiveImpact(ctx, work, visitBudget, output)
+	function Medusa.Services.CrewSuppressionService.continueTerminalEvent(ctx, work, visitBudget, output)
 		if type(work) ~= "table" or not work.Cursor then
 			return 0, true, 0, 0
 		end
 		local written, visited, complete = ctx.suppressibleUnitGeoGrid:continueQuery(work.Cursor, visitBudget, output)
 		local candidates = 0
 		local applications = 0
-		local impact = work.Impact
+		local terminalEvent = work.TerminalEvent
 		local random = ctx.random or math.random
 		for i = 1, written do
-			local battery, unit = ctx.batteryRepository:getByUnitId(output[i])
-			if
-				unit
-				and unit.LastExplosiveImpactId ~= impact.ImpactId
-				and unit.OperationalStatus ~= C.UnitOperationalStatus.DESTROYED
-				and isSuppressibleUnit(unit)
-			then
-				unit.LastExplosiveImpactId = impact.ImpactId
+			local candidate, applied = evaluateTerminalCandidate(ctx, work, output[i], random)
+			if candidate then
 				candidates = candidates + 1
-				if battery.LastExplosiveImpactId ~= impact.ImpactId then
-					local distance = Distance3D(impact.Position, unit.Position)
-					local probability = Medusa.Services.CrewSuppressionService.explosiveProbability(
-						ctx.doctrine.CrewSuppression,
-						work.RadiusM,
-						distance
-					)
-					if probability > 0 and random() < probability then
-						local applied = Medusa.Services.CrewSuppressionService.apply(
-							ctx,
-							battery,
-							C.CrewSuppressionCause.EXPLOSIVE,
-							sampleDuration(ctx)
-						)
-						if applied then
-							battery.LastExplosiveImpactId = impact.ImpactId
-							applications = applications + 1
-						end
-					end
-				end
+			end
+			if applied then
+				applications = applications + 1
 			end
 		end
 		logger:debug(
 			string.format(
-				"explosive impact evaluation: id=%s visited=%d candidates=%d applications=%d complete=%s",
-				tostring(impact.ImpactId),
+				"terminal-event evaluation: id=%s kind=%s visited=%d candidates=%d applications=%d complete=%s nearestIndexedUnitDistance=%s",
+				tostring(terminalEvent.TerminalEventId),
+				terminalEvent.Kind,
 				visited,
 				candidates,
 				applications,
-				tostring(complete)
+				tostring(complete),
+				work.Cursor.NearestVisitedDistanceSquared
+						and string.format("%.1fm", math.sqrt(work.Cursor.NearestVisitedDistanceSquared))
+					or "unavailable"
 			)
 		)
 		return visited, complete, candidates, applications

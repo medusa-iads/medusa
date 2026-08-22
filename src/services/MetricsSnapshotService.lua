@@ -162,7 +162,7 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	)
 	MetricsService.gauge(
 		"medusa_crew_suppression_impact_queue_depth",
-		"Explosive impacts awaiting proximity evaluation",
+		"Terminal events awaiting crew-suppression proximity evaluation",
 		netLabel
 	)
 	MetricsService.gauge(
@@ -176,6 +176,18 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	)
 	for _, outcome in pairs(Medusa.Constants.CrewSuppressionWeaponOutcome) do
 		MetricsService.inc("medusa_crew_suppression_weapon_outcomes_total", 0, { outcome = outcome })
+	end
+	MetricsService.gauge(
+		"medusa_crew_suppression_cannon_queue_depth",
+		"Cannon bursts awaiting bounded terminal-point estimation"
+	)
+	MetricsService.counter(
+		"medusa_crew_suppression_cannon_outcomes_total",
+		"Bounded cannon terminal-estimation outcomes",
+		{ "outcome" }
+	)
+	for _, outcome in pairs(Medusa.Constants.CrewSuppressionCannonOutcome) do
+		MetricsService.inc("medusa_crew_suppression_cannon_outcomes_total", 0, { outcome = outcome })
 	end
 
 	local defaultQuantiles = { 0.5, 0.9, 0.99 }

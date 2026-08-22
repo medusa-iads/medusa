@@ -391,9 +391,8 @@ local function updateEmitterPosition(state, emitterPos)
 	saved.z = emitterPos.z
 end
 
-local function addEvidence(state, scanLlr)
+local function accumulateEvidence(state, scanLlr)
 	state.llr = state.llr + math.max(-C.HARM_SPRT_MAX_SCAN_LLR, math.min(C.HARM_SPRT_MAX_SCAN_LLR, scanLlr))
-	return updateLabel(state)
 end
 
 local function logStateChange(track, previousLabel, state, feat)
@@ -425,7 +424,7 @@ end
 --- @param batteryStore table BatteryStore for emitter lookup
 --- @param ballisticDt number|nil Ballistic sim step size
 --- @param ballisticMaxT number|nil Ballistic sim max steps
---- @param effectiveMinScans number|nil Minimum scans before SPRT accumulation (defaults to HARM_SPRT_MIN_SCANS)
+--- @param effectiveMinScans number|nil Minimum scans before an SPRT decision (defaults to HARM_SPRT_MIN_SCANS)
 --- @return string label Current SPRT label for this track
 --- @return table|nil state The SPRT state table, or nil if track has insufficient data
 local function evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisticMaxT, effectiveMinScans)
@@ -458,10 +457,10 @@ local function evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisti
 		local previousLabel = state.label
 		if state.label == HAS.EVALUATING or state.label == HAS.SUSPECT or state.label == HAS.PROBABLE then
 			state.llr = math.min(state.llr - C.HARM_SPRT_MAX_SCAN_LLR, C.HARM_SPRT_THRESH_CLEAR)
-			updateLabel(state)
 		else
-			addEvidence(state, -C.HARM_SPRT_MAX_SCAN_LLR)
+			accumulateEvidence(state, -C.HARM_SPRT_MAX_SCAN_LLR)
 		end
+		updateLabel(state)
 		logStateChange(track, previousLabel, state)
 		return state.label, state
 	end
@@ -501,11 +500,13 @@ local function evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisti
 	lf[8] = feat[8]
 
 	local minScans = effectiveMinScans or C.HARM_SPRT_MIN_SCANS
+	local scanLlr = computeScanLLR(feat)
+	accumulateEvidence(state, scanLlr)
 	if state.scanCount < minScans then
 		return state.label, state
 	end
 
-	addEvidence(state, computeScanLLR(feat))
+	updateLabel(state)
 	logStateChange(track, previousLabel, state, feat)
 
 	return state.label, state
@@ -536,8 +537,7 @@ function Medusa.Services.HarmDetectionService.assessSingleTrack(
 	geoGrid,
 	batteryStore,
 	ballisticDt,
-	ballisticMaxT,
-	effectiveMinScans
+	ballisticMaxT
 )
 	local LS = Medusa.Constants.TrackLifecycleState
 	local vel = track.Velocity
@@ -553,7 +553,7 @@ function Medusa.Services.HarmDetectionService.assessSingleTrack(
 	end
 
 	local previousLabel = track.HarmAssessment and track.HarmAssessment.label
-	local label, state = evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisticMaxT, effectiveMinScans)
+	local label, state = evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisticMaxT)
 
 	if state then
 		track.HarmLikelihoodScore = math.max(0, math.min(1, state.llr / math.max(0.001, C.HARM_SPRT_THRESH_CONFIRM)))
@@ -623,8 +623,7 @@ function Medusa.Services.HarmDetectionService.assessHarmThreats(ctx)
 				geoGrid,
 				batteryStore,
 				ballisticDt,
-				ballisticMaxT,
-				C.HARM_SPRT_MIN_SCANS
+				ballisticMaxT
 			)
 		then
 			reclassified = reclassified + 1

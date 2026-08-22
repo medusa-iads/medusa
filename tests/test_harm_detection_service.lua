@@ -235,6 +235,24 @@ function TestEvaluateTrack:test_evaluating_during_min_scans()
 	lu.assertEquals(label, "EVALUATING")
 	lu.assertNotNil(state)
 	lu.assertEquals(state.scanCount, 1)
+	lu.assertTrue(state.llr > 0)
+end
+
+function TestEvaluateTrack:test_predecision_non_arm_evidence_prevents_single_popup_scan_from_confirming()
+	local track = makeTrack({ AssessedAircraftType = "MISSILE" })
+	local emitterPos = { x = 10000, y = 0, z = 6000 }
+	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = emitterPos })
+	local store, grid = makeBatteryStoreAndGrid({ battery })
+
+	populateNonArmHistory(track, 2, mockTime)
+	local label, state = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, nil, nil, 2)
+	lu.assertEquals(label, "EVALUATING")
+	lu.assertTrue(state.llr < 0)
+
+	populateArmHistory(track, 2, mockTime + 100, emitterPos)
+	label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, nil, nil, 2)
+
+	lu.assertNotEquals(label, "CONFIRMED")
 end
 
 function TestEvaluateTrack:test_observation_contributes_evidence_once()
@@ -257,18 +275,20 @@ end
 function TestEvaluateTrack:test_arm_track_reaches_confirmed()
 	local track = makeTrack({ AssessedAircraftType = "MISSILE" })
 	local emitterPos = { x = 10000, y = 0, z = 6000 }
-	populateArmHistory(track, 15, mockTime, emitterPos)
+	populateArmHistory(track, 2, mockTime, emitterPos)
 	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = emitterPos })
 	local store, grid = makeBatteryStoreAndGrid({ battery })
 
 	local label
-	for j = 1, 15 do
+	for j = 1, 24 do
 		populateArmHistory(track, 2, mockTime + j * 100, emitterPos)
 		label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
-		if label == "CONFIRMED" then
-			break
-		end
 	end
+	lu.assertEquals(label, "EVALUATING")
+
+	populateArmHistory(track, 2, mockTime + 2500, emitterPos)
+	label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
+
 	lu.assertEquals(label, "CONFIRMED")
 end
 

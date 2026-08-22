@@ -108,6 +108,29 @@ function TestGetDoctrine:test_nil_input_uses_defaults()
 	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusScaleM, 10)
 	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusMaxM, 500)
 	lu.assertEquals(d.CrewSuppression.ExplosiveEffectiveness, 1)
+	lu.assertEquals(d.CrewSuppression.DefaultCrewSkill, Medusa.Constants.CrewSkill.AVERAGE)
+	lu.assertEquals(d.CrewSuppression.SkillResistancePerLevel, 0.1)
+	lu.assertEquals(d.CrewSuppression.CannonRadiusM, 150)
+	lu.assertEquals(d.CrewSuppression.CannonEffectiveness, 0.5)
+end
+
+function TestGetDoctrine:test_crew_suppression_skill_and_cannon_settings_are_validated()
+	Medusa.Config:initialize()
+	local bounded = Medusa.Config:getDoctrine({
+		CrewSuppression = {
+			DefaultCrewSkill = Medusa.Constants.CrewSkill.EXCELLENT,
+			SkillResistancePerLevel = 1,
+			CannonRadiusM = 1000,
+			CannonEffectiveness = -1,
+		},
+	})
+	local invalid = Medusa.Config:getDoctrine({ CrewSuppression = { DefaultCrewSkill = "Random" } })
+
+	lu.assertEquals(bounded.CrewSuppression.DefaultCrewSkill, Medusa.Constants.CrewSkill.EXCELLENT)
+	lu.assertEquals(bounded.CrewSuppression.SkillResistancePerLevel, 0.3)
+	lu.assertEquals(bounded.CrewSuppression.CannonRadiusM, 500)
+	lu.assertEquals(bounded.CrewSuppression.CannonEffectiveness, 0)
+	lu.assertEquals(invalid.CrewSuppression.DefaultCrewSkill, Medusa.Constants.CrewSkill.AVERAGE)
 end
 
 function TestGetDoctrine:test_crew_suppression_explosive_settings_are_bounded()

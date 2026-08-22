@@ -5,6 +5,7 @@ require("core.Logger")
 require("core.IadsNetwork")
 require("services.ApiService")
 require("services.BlackBoxService")
+require("services.stores.MissionUnitSkillIndex")
 require("services.stores.BlackBoxWeaponStore")
 
 --[[
@@ -32,19 +33,16 @@ local nets = Medusa.Config:getNetworks()
 local aaaBarrageState = Medusa.Services.AaaService.newBarrageState()
 local blackBoxWeaponStore =
 	Medusa.Services.BlackBoxWeaponStore:new(Medusa.Constants.CrewSuppression.WEAPON_TRACK_CAPACITY)
+local crewSkillIndex = Medusa.Services.MissionUnitSkillIndex.new(env and env.mission)
 local suppressionEnabled = false
-local function publishExplosiveImpact(impact)
+local function publishTerminalEvent(terminalEvent)
 	for i = 1, #nets do
 		local iads = Medusa.Core.IadsById[nets[i].id]
 		if iads then
-			local ok, err = pcall(iads.enqueueExplosiveImpact, iads, impact)
+			local ok, err = pcall(iads.enqueueTerminalEvent, iads, terminalEvent)
 			if not ok then
 				_entryLog:error(
-					string.format(
-						"explosive impact delivery failed for IADS %s: %s",
-						tostring(nets[i].id),
-						tostring(err)
-					)
+					string.format("terminal-event delivery failed for IADS %s: %s", tostring(nets[i].id), tostring(err))
 				)
 			end
 		end
@@ -60,7 +58,8 @@ for i = 1, #nets do
 		borderZones = n.borderZones,
 		aaaBarrageState = aaaBarrageState,
 		blackBoxWeaponStore = blackBoxWeaponStore,
-		blackBoxImpactSink = publishExplosiveImpact,
+		blackBoxTerminalSink = publishTerminalEvent,
+		crewSkillIndex = crewSkillIndex,
 	})
 	Medusa.Core.IadsById[n.id] = iads
 	iads:initialize()

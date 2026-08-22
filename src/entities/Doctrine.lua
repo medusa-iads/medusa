@@ -181,6 +181,24 @@ local CREW_SUPPRESSION_SCHEMA = {
 		min = 0,
 		max = 1,
 	},
+	{
+		name = "SkillResistancePerLevel",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_SKILL_RESISTANCE_PER_LEVEL,
+		min = 0,
+		max = Medusa.Constants.CrewSuppression.MAX_SKILL_RESISTANCE_PER_LEVEL,
+	},
+	{
+		name = "CannonRadiusM",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_CANNON_RADIUS_M,
+		min = 1,
+		max = Medusa.Constants.CrewSuppression.CANNON_RADIUS_MAX_M,
+	},
+	{
+		name = "CannonEffectiveness",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_CANNON_EFFECTIVENESS,
+		min = 0,
+		max = 1,
+	},
 }
 
 local _logger
@@ -308,6 +326,19 @@ function Medusa.Entities.Doctrine.new(overrides)
 		enabled = Medusa.Constants.CrewSuppression.DEFAULT_ENABLED
 	end
 	doctrine.CrewSuppression.Enabled = enabled
+	local defaultCrewSkill = Medusa.Constants.CrewSuppression.DEFAULT_CREW_SKILL
+	local crewSkill = crewSuppressionOverrides.DefaultCrewSkill
+	if crewSkill ~= nil and Medusa.Constants.CrewSkill[crewSkill] ~= crewSkill then
+		_logger:error(
+			string.format(
+				"invalid CrewSuppression.DefaultCrewSkill value '%s', using '%s'",
+				tostring(crewSkill),
+				defaultCrewSkill
+			)
+		)
+		crewSkill = nil
+	end
+	doctrine.CrewSuppression.DefaultCrewSkill = crewSkill or defaultCrewSkill
 
 	return doctrine
 end

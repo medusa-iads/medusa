@@ -206,11 +206,12 @@ function Medusa.Core.IadsNetwork:new(opts)
 		_hitQueue = nil,
 		_hitSubscriptionId = nil,
 		_hitEventBus = nil,
-		_explosiveImpactQueue = RingBuffer(Medusa.Constants.CrewSuppression.IMPACT_QUEUE_CAPACITY, false),
-		_activeExplosiveImpact = nil,
-		_explosiveUnitBuffer = {},
+		_terminalEventQueue = RingBuffer(Medusa.Constants.CrewSuppression.IMPACT_QUEUE_CAPACITY, false),
+		_activeTerminalEvent = nil,
+		_terminalUnitBuffer = {},
 		_blackBoxWeaponStore = opts and opts.blackBoxWeaponStore,
-		_blackBoxImpactSink = opts and opts.blackBoxImpactSink,
+		_blackBoxTerminalSink = opts and opts.blackBoxTerminalSink,
+		_crewSkillIndex = opts and opts.crewSkillIndex,
 		_crewSuppressionCtx = {},
 		_networkedGeoGrid = nil,
 		_maxEngagementRange = 0,
@@ -444,6 +445,7 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 	local batteryRepository = self._assetIndex:batteryRepository()
 	local harmSystems = self._harmCapableSystems
 	local doctrine = self._doctrine
+	local crewSkillIndex = self._crewSkillIndex
 
 	local iads = self
 	self._discovery:setListener({
@@ -457,8 +459,14 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 			local path = (dto.parsed and dto.parsed.echelonPath) and table.concat(dto.parsed.echelonPath, ".") or ""
 			logger:info(string.format("added: '%s' roles=[%s] path='%s'", tostring(dto.groupName), roles, path))
 
-			local classification =
-				Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, harmSystems, doctrine)
+			local classification = Medusa.Services.EntityFactory.createFromDTO(
+				dto,
+				stores,
+				networkId,
+				harmSystems,
+				doctrine,
+				crewSkillIndex
+			)
 			if classification == "battery" then
 				local battery = stores.batteries:getByGroupId(dto.groupId)
 				if battery then
@@ -645,127 +653,151 @@ local function validPosition(position)
 		and validFiniteNumber(position.z)
 end
 
-function Medusa.Core.IadsNetwork:enqueueExplosiveImpact(impact)
-	local source = impact and impact.Source
+local function validTerminalKindPayload(terminalEvent, kind, source)
+	if Medusa.Constants.CrewSuppressionTerminalKindBySource[source] ~= kind then
+		return false
+	end
+	return kind ~= Medusa.Constants.CrewSuppressionTerminalKind.EXPLOSIVE
+		or (validFiniteNumber(terminalEvent.EffectiveExplosiveMassKg) and terminalEvent.EffectiveExplosiveMassKg > 0)
+end
+
+function Medusa.Core.IadsNetwork:enqueueTerminalEvent(terminalEvent)
+	local source = terminalEvent and terminalEvent.Source
+	local kind = terminalEvent and terminalEvent.Kind
 	if not self._running or not self._doctrine or not self._doctrine.CrewSuppression.Enabled then
-		self._logger:debug("explosive impact ignored: crew suppression inactive")
+		self._logger:debug("terminal event ignored: crew suppression inactive")
 		return false
 	end
 	if
-		type(impact) ~= "table"
-		or impact.ImpactId == nil
-		or not validPosition(impact.Position)
-		or not validFiniteNumber(impact.EffectiveExplosiveMassKg)
-		or impact.EffectiveExplosiveMassKg <= 0
-		or not validFiniteNumber(impact.ObservedAt)
-		or Medusa.Constants.CrewSuppressionImpactSource[source] ~= source
+		type(terminalEvent) ~= "table"
+		or not validFiniteNumber(terminalEvent.TerminalEventId)
+		or terminalEvent.TerminalEventId <= 0
+		or not validPosition(terminalEvent.Position)
+		or not validFiniteNumber(terminalEvent.ObservedAt)
+		or Medusa.Constants.CrewSuppressionTerminalKind[kind] ~= kind
+		or Medusa.Constants.CrewSuppressionTerminalSource[source] ~= source
 	then
 		self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.INVALID_EVENT)
-		self._logger:debug("explosive impact rejected at IADS boundary")
+		self._logger:debug("terminal event rejected at IADS boundary")
 		return false
 	end
-	local accepted = self._explosiveImpactQueue:push({
-		ImpactId = impact.ImpactId,
-		Position = { x = impact.Position.x, y = impact.Position.y, z = impact.Position.z },
-		EffectiveExplosiveMassKg = impact.EffectiveExplosiveMassKg,
-		ObservedAt = impact.ObservedAt,
+	if not validTerminalKindPayload(terminalEvent, kind, source) then
+		self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.INVALID_EVENT)
+		self._logger:debug("terminal event rejected: kind payload mismatch")
+		return false
+	end
+	local accepted = self._terminalEventQueue:push({
+		TerminalEventId = terminalEvent.TerminalEventId,
+		Kind = kind,
+		Position = { x = terminalEvent.Position.x, y = terminalEvent.Position.y, z = terminalEvent.Position.z },
+		EffectiveExplosiveMassKg = kind == Medusa.Constants.CrewSuppressionTerminalKind.EXPLOSIVE
+				and terminalEvent.EffectiveExplosiveMassKg
+			or nil,
+		ObservedAt = terminalEvent.ObservedAt,
 		Source = source,
 	})
 	if not accepted then
 		self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.QUEUE_OVERFLOW)
 		self._logger:debug(
 			string.format(
-				"explosive impact queue full: rejected id=%s depth=%d",
-				tostring(impact.ImpactId),
-				self._explosiveImpactQueue:size()
+				"terminal-event queue full: rejected id=%s kind=%s depth=%d",
+				tostring(terminalEvent.TerminalEventId),
+				kind,
+				self._terminalEventQueue:size()
 			)
 		)
 		return false
 	end
 	self._logger:debug(
 		string.format(
-			"explosive impact queued: id=%s source=%s depth=%d",
-			tostring(impact.ImpactId),
+			"terminal event queued: id=%s kind=%s source=%s depth=%d",
+			tostring(terminalEvent.TerminalEventId),
+			kind,
 			source,
-			self._explosiveImpactQueue:size()
+			self._terminalEventQueue:size()
 		)
 	)
 	return true
 end
 
-function Medusa.Core.IadsNetwork:_processExplosiveImpacts(taskBudget, visitBudget)
+function Medusa.Core.IadsNetwork:_processTerminalEvents(taskBudget, visitBudget)
 	local steps = 0
 	local visits = 0
 	local now = GetTime()
 	local ctx = self:_updateCrewSuppressionContext(now)
 	while steps < taskBudget and visits < visitBudget do
 		if
-			self._activeExplosiveImpact
-			and now - self._activeExplosiveImpact.Impact.ObservedAt
+			self._activeTerminalEvent
+			and now - self._activeTerminalEvent.TerminalEvent.ObservedAt
 				> Medusa.Constants.CrewSuppression.IMPACT_MAX_AGE_SEC
 		then
 			self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.IMPACT_EXPIRED)
 			self._logger:debug(
 				string.format(
-					"active explosive impact expired: id=%s",
-					tostring(self._activeExplosiveImpact.Impact.ImpactId)
+					"active terminal event expired: id=%s",
+					tostring(self._activeTerminalEvent.TerminalEvent.TerminalEventId)
 				)
 			)
-			self._activeExplosiveImpact = nil
+			self._activeTerminalEvent = nil
 			steps = steps + 1
 		end
 		if steps >= taskBudget then
 			break
 		end
-		if not self._activeExplosiveImpact then
-			local impact = self._explosiveImpactQueue:pop()
-			if not impact then
+		if not self._activeTerminalEvent then
+			local terminalEvent = self._terminalEventQueue:pop()
+			if not terminalEvent then
 				break
 			end
-			if now - impact.ObservedAt > Medusa.Constants.CrewSuppression.IMPACT_MAX_AGE_SEC then
+			if now - terminalEvent.ObservedAt > Medusa.Constants.CrewSuppression.IMPACT_MAX_AGE_SEC then
 				self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.IMPACT_EXPIRED)
-				self._logger:debug(string.format("explosive impact expired: id=%s", tostring(impact.ImpactId)))
+				self._logger:debug(
+					string.format("terminal event expired: id=%s", tostring(terminalEvent.TerminalEventId))
+				)
 				steps = steps + 1
 			else
-				local work = Medusa.Services.CrewSuppressionService.beginExplosiveImpact(ctx, impact)
+				local work = Medusa.Services.CrewSuppressionService.beginTerminalEvent(ctx, terminalEvent)
 				if work then
-					self._activeExplosiveImpact = work
+					self._activeTerminalEvent = work
 				else
 					self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.INVALID_EVENT)
 					self._logger:debug(
-						string.format("explosive impact evaluation rejected: id=%s", tostring(impact.ImpactId))
+						string.format(
+							"terminal event evaluation rejected: id=%s",
+							tostring(terminalEvent.TerminalEventId)
+						)
 					)
 					steps = steps + 1
 				end
 			end
 		end
-		if self._activeExplosiveImpact then
-			local visited, complete = Medusa.Services.CrewSuppressionService.continueExplosiveImpact(
+		if self._activeTerminalEvent then
+			local visited, complete = Medusa.Services.CrewSuppressionService.continueTerminalEvent(
 				ctx,
-				self._activeExplosiveImpact,
+				self._activeTerminalEvent,
 				visitBudget - visits,
-				self._explosiveUnitBuffer
+				self._terminalUnitBuffer
 			)
 			visits = visits + visited
 			steps = steps + 1
 			if complete then
-				self._activeExplosiveImpact = nil
+				self._activeTerminalEvent = nil
 			end
 		end
 	end
 	Medusa.Services.MetricsService.set(
 		"medusa_crew_suppression_impact_queue_depth",
-		self._explosiveImpactQueue:size(),
+		self._terminalEventQueue:size(),
 		self._metricLabels
 	)
 	return steps, visits
 end
 
-function Medusa.Core.IadsNetwork:_runBlackBoxWeaponTracker(now)
-	if not self._blackBoxWeaponStore or not self._blackBoxWeaponStore:isStarted() or not self._blackBoxImpactSink then
+function Medusa.Core.IadsNetwork:_runBlackBoxWeaponObservations(now)
+	if not self._blackBoxWeaponStore or not self._blackBoxWeaponStore:isStarted() or not self._blackBoxTerminalSink then
 		return 0
 	end
-	return Medusa.Services.BlackBoxService.updateDue(self._blackBoxWeaponStore, now, self._blackBoxImpactSink)
+	return Medusa.Services.BlackBoxService.updateDue(self._blackBoxWeaponStore, now, self._blackBoxTerminalSink)
 end
 
 function Medusa.Core.IadsNetwork:_unsubscribeSuppressionEvents()
@@ -777,8 +809,8 @@ function Medusa.Core.IadsNetwork:_unsubscribeSuppressionEvents()
 	if self._hitQueue then
 		self._hitQueue:clear()
 	end
-	self._explosiveImpactQueue:clear()
-	self._activeExplosiveImpact = nil
+	self._terminalEventQueue:clear()
+	self._activeTerminalEvent = nil
 	self._logger:debug("crew suppression HIT subscription removed and queue cleared")
 end
 
@@ -1684,11 +1716,7 @@ function Medusa.Core.IadsNetwork:_phaseHarmAndPD(ctx)
 	local trackCount = #allTracks
 	local ballisticDt, ballisticMaxT = HDS.getAssessContext(ctx)
 
-	-- Adaptive min-scans: reduce when track count exceeds budget
 	local totalBudget = math.max(step.budget, math.ceil(trackCount * 0.25))
-	local HARM_MIN_SCANS = Medusa.Constants.HARM_SPRT_MIN_SCANS
-	local effectiveMinScans =
-		math.min(HARM_MIN_SCANS, math.max(5, math.floor(HARM_MIN_SCANS * totalBudget / math.max(1, trackCount))))
 
 	-- Build priority keys: confirmed HARMs first, then altitude times speed.
 	local AAT = Medusa.Constants.AssessedAircraftType
@@ -1725,15 +1753,7 @@ function Medusa.Core.IadsNetwork:_phaseHarmAndPD(ctx)
 	for i = 1, priorityCount do
 		local track = allTracks[sortBuf[i]]
 		if track and track.LifecycleState == _LS.ACTIVE then
-			HDS.assessSingleTrack(
-				track,
-				allTracks,
-				ctx.geoGrid,
-				ctx.batteryStore,
-				ballisticDt,
-				ballisticMaxT,
-				effectiveMinScans
-			)
+			HDS.assessSingleTrack(track, allTracks, ctx.geoGrid, ctx.batteryStore, ballisticDt, ballisticMaxT)
 			priorityProcessed = priorityProcessed + 1
 		end
 	end
@@ -1762,15 +1782,7 @@ function Medusa.Core.IadsNetwork:_phaseHarmAndPD(ctx)
 		if not track then
 			break
 		end
-		HDS.assessSingleTrack(
-			track,
-			allTracks,
-			ctx.geoGrid,
-			ctx.batteryStore,
-			ballisticDt,
-			ballisticMaxT,
-			effectiveMinScans
-		)
+		HDS.assessSingleTrack(track, allTracks, ctx.geoGrid, ctx.batteryStore, ballisticDt, ballisticMaxT)
 		normalProcessed = normalProcessed + 1
 	end
 
@@ -2078,7 +2090,7 @@ function Medusa.Core.IadsNetwork:tick()
 	local hpt = Medusa.hpTimer
 	local t0 = hpt()
 	local memBefore = collectgarbage("count")
-	self:_runBlackBoxWeaponTracker(now)
+	self:_runBlackBoxWeaponObservations(now)
 
 	if self._tickCounter == 1 then
 		self._lastScanTime = now
@@ -2119,7 +2131,7 @@ function Medusa.Core.IadsNetwork:tick()
 	self._discovery:processDynamicAdds(2)
 	self:_processDeathEvents(2)
 	self:_processHitEvents(Medusa.Constants.CrewSuppression.HIT_EVENT_PROCESSING_BUDGET)
-	self:_processExplosiveImpacts(
+	self:_processTerminalEvents(
 		Medusa.Constants.CrewSuppression.IMPACT_PROCESSING_BUDGET,
 		Medusa.Constants.CrewSuppression.IMPACT_UNIT_VISIT_BUDGET
 	)

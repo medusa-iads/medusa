@@ -1,26 +1,30 @@
 require("_header")
 require("services.Services")
+require("core.Constants")
 
 Medusa.Services.BlackBoxWeaponStore = {}
 
 do
 	local Store = Medusa.Services.BlackBoxWeaponStore
 
-	function Store:new(capacity)
+	function Store:new(capacity, cannonCapacity)
 		if type(capacity) ~= "number" or capacity < 1 then
 			error("BlackBoxWeaponStore capacity must be positive")
 		end
+		cannonCapacity = cannonCapacity or Medusa.Constants.CrewSuppression.CANNON_CANDIDATE_CAPACITY
+		if type(cannonCapacity) ~= "number" or cannonCapacity < 1 then
+			error("BlackBoxWeaponStore cannon capacity must be positive")
+		end
 		local o = {
-			_capacity = math.floor(capacity),
 			_tracks = RingBuffer(math.floor(capacity), false),
 			_byWeapon = {},
-			_nextImpactId = 0,
+			_cannonCandidates = RingBuffer(math.floor(cannonCapacity), false),
+			_nextTerminalEventId = 0,
 			_nextUpdateAt = nil,
 			_eventBus = nil,
 			_shotSubscriptionId = nil,
 			_hitSubscriptionId = nil,
-			_shotSink = nil,
-			_hitSink = nil,
+			_shootingStartSubscriptionId = nil,
 		}
 		setmetatable(o, { __index = self })
 		return o
@@ -50,7 +54,7 @@ do
 	end
 
 	function Store:isFull()
-		return self._tracks:size() >= self._capacity
+		return self._tracks:isFull()
 	end
 
 	function Store:markHit(weapon, position, observedAt)
@@ -86,6 +90,21 @@ do
 		return self._tracks:size()
 	end
 
+	function Store:admitCannon(initiator, observedAt)
+		return self._cannonCandidates:push({
+			Initiator = initiator,
+			ObservedAt = observedAt,
+		})
+	end
+
+	function Store:popCannon()
+		return self._cannonCandidates:pop()
+	end
+
+	function Store:cannonSize()
+		return self._cannonCandidates:size()
+	end
+
 	function Store:beginUpdate(now, intervalSec)
 		if self._nextUpdateAt and now < self._nextUpdateAt then
 			return false
@@ -96,36 +115,36 @@ do
 
 	function Store:clear()
 		self._tracks:clear()
+		self._cannonCandidates:clear()
 		self._byWeapon = {}
 		self._nextUpdateAt = nil
 	end
 
-	function Store:nextImpactId()
-		self._nextImpactId = self._nextImpactId + 1
-		return self._nextImpactId
+	function Store:nextTerminalEventId()
+		self._nextTerminalEventId = self._nextTerminalEventId + 1
+		return self._nextTerminalEventId
 	end
 
 	function Store:isStarted()
-		return self._shotSubscriptionId ~= nil or self._hitSubscriptionId ~= nil
+		return self._eventBus ~= nil
 	end
 
-	function Store:setSubscriptions(bus, shotId, hitId, shotSink, hitSink)
+	function Store:setSubscriptions(bus, shotId, hitId, shootingStartId)
 		self._eventBus = bus
 		self._shotSubscriptionId = shotId
 		self._hitSubscriptionId = hitId
-		self._shotSink = shotSink
-		self._hitSink = hitSink
+		self._shootingStartSubscriptionId = shootingStartId
 	end
 
 	function Store:clearSubscriptions()
 		local bus = self._eventBus
 		local shotId = self._shotSubscriptionId
 		local hitId = self._hitSubscriptionId
+		local shootingStartId = self._shootingStartSubscriptionId
 		self._eventBus = nil
 		self._shotSubscriptionId = nil
 		self._hitSubscriptionId = nil
-		self._shotSink = nil
-		self._hitSink = nil
-		return bus, shotId, hitId
+		self._shootingStartSubscriptionId = nil
+		return bus, shotId, hitId, shootingStartId
 	end
 end

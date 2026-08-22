@@ -365,7 +365,7 @@ local function createHQ(dto, stores, networkId, units, inventory)
 	return "hq", 1
 end
 
-local function createBatteryUnit(unit, unitId, batteryRole, roles, position)
+local function createBatteryUnit(unit, unitId, batteryRole, roles, position, context)
 	local unitName = getUnitName(unit)
 	local unitTypeName = unitName and GetUnitType(unitName) or nil
 	local desc = GetUnitDesc(unit)
@@ -375,6 +375,7 @@ local function createBatteryUnit(unit, unitId, batteryRole, roles, position)
 	local life = health and health.CurrentLife or nil
 	local initialLife = health and health.InitialLife or nil
 	local initiallyDamaged = health and health.IsDamaged == true
+	local crewSkill = context.crewSkillIndex and context.crewSkillIndex:get(unitName) or nil
 
 	local ammoTypes, ammoCount = nil, 0
 	if unitName then
@@ -400,6 +401,7 @@ local function createBatteryUnit(unit, unitId, batteryRole, roles, position)
 		InitialLife = initialLife,
 		InitialDamagePending = initiallyDamaged,
 		Position = position,
+		CrewSkill = crewSkill or context.defaultCrewSkill,
 	})
 	logger:debug(
 		string.format("[%s] roles=%s, ammo=%d", unitTypeName or "unknown", table.concat(roles, ","), ammoCount)
@@ -407,7 +409,7 @@ local function createBatteryUnit(unit, unitId, batteryRole, roles, position)
 	return batteryUnit
 end
 
-local function populateBatteryUnits(battery, units, inventory, batteryRole)
+local function populateBatteryUnits(battery, units, inventory, batteryRole, context)
 	battery.Units = {}
 	local hasTelar = false
 	local hasCommandPost = false
@@ -416,7 +418,7 @@ local function populateBatteryUnits(battery, units, inventory, batteryRole)
 		if unitId then
 			local roles = inventory.rolesByIndex[i]
 			battery.Units[#battery.Units + 1] =
-				createBatteryUnit(units[i], unitId, batteryRole, roles, inventory.positionsByIndex[i])
+				createBatteryUnit(units[i], unitId, batteryRole, roles, inventory.positionsByIndex[i], context)
 			if hasRole(roles, BUR.TELAR) then
 				hasTelar = true
 			end
@@ -641,7 +643,7 @@ local function clusterLaunchers(batteryUnits)
 	return { clusters = clusters, centroid = centroid, spreadRadius = math.sqrt(maxSpread2) }
 end
 
-local function createBattery(dto, stores, networkId, harmSystems, units, inventory, batteryRole)
+local function createBattery(dto, stores, networkId, harmSystems, units, inventory, batteryRole, context)
 	cacheUnitPositions(units, inventory)
 	local position = nil
 	for i = 1, #units do
@@ -664,7 +666,7 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 			or nil,
 	})
 
-	local hasTelar, hasCommandPost = populateBatteryUnits(battery, units, inventory, batteryRole)
+	local hasTelar, hasCommandPost = populateBatteryUnits(battery, units, inventory, batteryRole, context)
 	Medusa.Entities.Battery.selectPositionAnchor(battery, batteryRole == BR.AAA and BUR.AAA or nil)
 	if hasTelar then
 		battery.HasTelar = true
@@ -730,8 +732,9 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 	return "battery", 1
 end
 
-local function createManpad(dto, stores, networkId, units, inventory, doctrine)
+local function createManpad(dto, stores, networkId, units, inventory, context)
 	cacheUnitPositions(units, inventory)
+	local doctrine = context.doctrine
 	local audioRangeM = doctrine and doctrine.MANPAD and doctrine.MANPAD.AudioRangeM
 		or Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M
 	local position = nil
@@ -766,7 +769,7 @@ local function createManpad(dto, stores, networkId, units, inventory, doctrine)
 		},
 	})
 
-	populateBatteryUnits(battery, units, inventory, BR.MANPAD)
+	populateBatteryUnits(battery, units, inventory, BR.MANPAD, context)
 	Medusa.Entities.Battery.selectPositionAnchor(battery, BUR.MANPAD)
 
 	local defaults = Medusa.Constants.SystemTypeDefaults[BR.MANPAD]
@@ -786,9 +789,16 @@ local function createManpad(dto, stores, networkId, units, inventory, doctrine)
 	return "manpad", 1
 end
 
-function Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, harmSystems, doctrine)
+function Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, harmSystems, doctrine, crewSkillIndex)
 	local units = GetGroupUnits(dto.groupName) or {}
 	local inventory = inspectInventory(units)
+	local crewSuppression = doctrine and doctrine.CrewSuppression
+	local context = {
+		doctrine = doctrine,
+		crewSkillIndex = crewSkillIndex,
+		defaultCrewSkill = crewSuppression and crewSuppression.DefaultCrewSkill
+			or Medusa.Constants.CrewSuppression.DEFAULT_CREW_SKILL,
+	}
 	local namedAwacs = hasNamedRole(dto, Role.AWACS)
 	local namedSensor = hasNamedRole(dto, Role.EWR) or hasNamedRole(dto, Role.GCI)
 	local autoDiscoverEwrs = not doctrine or doctrine.AutoDiscoverEwrs ~= false
@@ -807,16 +817,16 @@ function Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, har
 		return "hq", 1
 	end
 	if inventory.launcherCount > 0 then
-		return createBattery(dto, stores, networkId, harmSystems, units, inventory, inventory.batteryRole)
+		return createBattery(dto, stores, networkId, harmSystems, units, inventory, inventory.batteryRole, context)
 	end
 	if inventory.manpadCount > 0 and inventory.manpadCount >= inventory.aaaCount then
-		return createManpad(dto, stores, networkId, units, inventory, doctrine)
+		return createManpad(dto, stores, networkId, units, inventory, context)
 	end
 	if
 		inventory.aaaCount > inventory.manpadCount
 		and (inventory.searchRadarCount == 0 or inventory.aaaCount >= 2 * inventory.searchRadarCount)
 	then
-		return createBattery(dto, stores, networkId, harmSystems, units, inventory, BR.AAA)
+		return createBattery(dto, stores, networkId, harmSystems, units, inventory, BR.AAA, context)
 	end
 	if namedSensor or (inventory.searchRadarCount > 0 and autoDiscoverEwrs) then
 		if not namedSensor then
@@ -824,5 +834,5 @@ function Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, har
 		end
 		return createSensors(dto, stores, networkId, units, inventory)
 	end
-	return createBattery(dto, stores, networkId, harmSystems, units, inventory, inventory.batteryRole)
+	return createBattery(dto, stores, networkId, harmSystems, units, inventory, inventory.batteryRole, context)
 end

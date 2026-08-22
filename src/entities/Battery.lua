@@ -195,7 +195,7 @@ function Medusa.Entities.Battery.new(data)
 		CrewSuppressionCause = nil,
 		CrewSuppressionUntil = nil,
 		CrewSuppressionTimerId = nil,
-		LastExplosiveImpactId = data.LastExplosiveImpactId,
+		LastTerminalEventId = data.LastTerminalEventId,
 		IsActingAsEWR = data.IsActingAsEWR or false,
 		PkRangeOptimal = data.PkRangeOptimal,
 		PkRangeSigma = data.PkRangeSigma,
@@ -257,7 +257,8 @@ function Medusa.Entities.Battery.newUnit(data)
 		LastPositionRefreshTime = data.LastPositionRefreshTime,
 		HeadingDegrees = data.HeadingDegrees,
 		HeadingIndex = data.HeadingIndex,
-		LastExplosiveImpactId = data.LastExplosiveImpactId,
+		CrewSkill = data.CrewSkill,
+		LastTerminalEventId = data.LastTerminalEventId,
 	}
 end
 
