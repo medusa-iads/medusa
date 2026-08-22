@@ -9,6 +9,18 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+### Deprecated
+
+
+## [1.5.0] - 2026-08-21
+### Added
+
 - Damage-based crew suppression for managed AAA and MANPAD groups, with doctrine controls, a configurable group-diameter eligibility limit, bounded HIT processing, group-level weapon hold, recovery, and Prometheus observability.
 - Bomb- and missile-impact crew suppression with a mission-shared bounded weapon tracker, cube-root blast-radius policy, exact per-unit proximity, bounded spatial queries, and refreshed positions for all managed battery units.
 - Aircraft cannon-burst crew suppression with bounded gravity-aware terrain-point estimation and shared terminal-event evaluation.
@@ -29,11 +41,6 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 - HARM assessment now retains cumulative evidence across decisions and track re-association, and reverses an existing classification only after evidence crosses the opposing decision threshold.
 - HARM assessment now accumulates evidence during its 25-observation decision floor, preventing a short aircraft attack arc from discarding its preceding non-HARM evidence.
 - HARM evidence and track-identification promotion now process each sensor observation once, preventing retained tracks from accumulating evidence or changing identification while unobserved.
-
-### Removed
-
-### Deprecated
-
 
 ## [1.4.0] - 2026-08-20
 ### Added
@@ -168,7 +175,8 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Added
 	- Initial Release
 
-[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/medusa-iads/medusa/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/medusa-iads/medusa/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/medusa-iads/medusa/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/medusa-iads/medusa/compare/v1.2.0...v1.3.0
