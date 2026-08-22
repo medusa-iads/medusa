@@ -189,6 +189,23 @@ function TestBatteryStore:test_unit_index_tracks_add_unit_removal_and_battery_re
 	lu.assertIsNil(self.store:getByUnitId(301))
 end
 
+function TestBatteryStore:test_position_refresh_cursor_rotates_live_units()
+	local manpad = makeManpad("manpad-1", 200, 300)
+	manpad.Units[2] = { UnitId = 301 }
+	self.store:add(manpad)
+
+	local _, first = self.store:nextUnitForPositionRefresh()
+	local _, second = self.store:nextUnitForPositionRefresh()
+	local _, wrapped = self.store:nextUnitForPositionRefresh()
+	lu.assertEquals(first.UnitId, 300)
+	lu.assertEquals(second.UnitId, 301)
+	lu.assertEquals(wrapped.UnitId, 300)
+
+	self.store:removeUnit(300)
+	local _, remaining = self.store:nextUnitForPositionRefresh()
+	lu.assertEquals(remaining.UnitId, 301)
+end
+
 function TestBatteryStore:test_rejects_duplicate_group_and_unit_identifiers_without_partial_add()
 	self.store:add(makeManpad("manpad-1", 200, 300))
 

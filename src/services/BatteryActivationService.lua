@@ -56,6 +56,10 @@ function Medusa.Services.BatteryActivationService.goAutonomous(battery, batteryR
 end
 
 function Medusa.Services.BatteryActivationService.goHot(battery, now)
+	if Battery.isCrewSuppressed(battery) then
+		Medusa.Services.MetricsService.inc("medusa_goHot_blocked_total")
+		return false
+	end
 	if not Battery.canTransition(battery, AS.STATE_HOT, now) then
 		Medusa.Services.MetricsService.inc("medusa_goHot_blocked_total")
 		return false
@@ -65,6 +69,10 @@ end
 
 -- Skips StateChangeHoldDownSec: emergency HARM/MANPAD response requires instant activation.
 function Medusa.Services.BatteryActivationService.forceGoHot(battery, now)
+	if Battery.isCrewSuppressed(battery) then
+		Medusa.Services.MetricsService.inc("medusa_goHot_blocked_total")
+		return false
+	end
 	if battery.ActivationState == AS.STATE_HOT then
 		return false
 	end
@@ -72,6 +80,10 @@ function Medusa.Services.BatteryActivationService.forceGoHot(battery, now)
 end
 
 function Medusa.Services.BatteryActivationService._activateHot(battery, now)
+	if Battery.isCrewSuppressed(battery) then
+		Medusa.Services.MetricsService.inc("medusa_goHot_blocked_total")
+		return false
+	end
 	local controller = GetGroupController(battery.GroupName)
 	if not controller then
 		Medusa.Services.MetricsService.inc("medusa_goHot_blocked_total")
@@ -91,6 +103,22 @@ function Medusa.Services.BatteryActivationService._activateHot(battery, now)
 	Battery.transitionTo(battery, AS.STATE_HOT, now)
 	Medusa.Services.MetricsService.inc("medusa_battery_go_hot_total")
 	_logger:info(string.format("battery %s going HOT", battery.GroupName))
+	return true
+end
+
+function Medusa.Services.BatteryActivationService.goCrewSuppressed(battery, now, trackStore)
+	Battery.releaseTrack(battery, trackStore)
+	local controller = GetGroupController(battery.GroupName)
+	if not controller then
+		return false
+	end
+	ControllerSetROE(controller, "WEAPON_HOLD")
+	ControllerSetAlarmState(controller, "RED")
+	local group = GetGroup(battery.GroupName)
+	if group then
+		EnableGroupEmissions(group, false)
+	end
+	Battery.transitionTo(battery, AS.STATE_COLD, now)
 	return true
 end
 
@@ -160,6 +188,9 @@ function Medusa.Services.BatteryActivationService.goGreen(battery, now, trackSto
 end
 
 function Medusa.Services.BatteryActivationService.goWarm(battery, now)
+	if Battery.isCrewSuppressed(battery) then
+		return false
+	end
 	if not Battery.canTransition(battery, AS.STATE_WARM, now) then
 		return false
 	end

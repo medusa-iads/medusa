@@ -690,6 +690,18 @@ function TestAaaService:test_hold_roe_suppresses_local_response()
 	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
 end
 
+function TestAaaService:test_crew_suppression_blocks_local_response()
+	local site = battery()
+	site.CrewSuppressionState = C.CrewSuppressionState.SUPPRESSED
+	site.CrewSuppressionUntil = 120
+	local ctx = context(site, { target("aircraft", 1000, 100, 0) })
+
+	Medusa.Services.AaaService.evaluate(ctx)
+
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+	lu.assertEquals(site.ActivationState, C.ActivationState.STATE_COLD)
+end
+
 function TestAaaService:test_hold_roe_cancels_pending_response()
 	local site = battery()
 	local ctx = context(site, { target("aircraft", 1000, 100, 0) })

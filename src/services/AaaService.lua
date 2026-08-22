@@ -113,7 +113,13 @@ local function pruneBarrageParticipants(state, now)
 	local count = 0
 	for batteryId, battery in pairs(state.participants) do
 		local aaa = battery.Aaa
-		if not aaa or not aaa.BarrageUntil or aaa.BarrageUntil <= now or battery.OperationalStatus ~= BOS.ACTIVE then
+		if
+			not aaa
+			or not aaa.BarrageUntil
+			or aaa.BarrageUntil <= now
+			or battery.OperationalStatus ~= BOS.ACTIVE
+			or Battery.isCrewSuppressed(battery)
+		then
 			state.participants[batteryId] = nil
 		else
 			count = count + 1
@@ -169,16 +175,29 @@ local function stopFireTask(battery)
 	end
 end
 
-local function finishResponse(ctx, battery)
-	local aaa = battery.Aaa
+local function cancelResponseWork(ctx, battery)
 	cancelPendingInfection(battery)
 	stopFireTask(battery)
 	releaseBarrageParticipant(ctx.barrageState, battery)
+end
+
+local function finishResponse(ctx, battery)
+	local aaa = battery.Aaa
+	cancelResponseWork(ctx, battery)
 	if battery.ActivationState ~= AS.STATE_COLD and not BAS.goCold(battery, ctx.now, ctx.trackStore) then
 		return false
 	end
 	resetResponse(aaa)
 	logger:debug(string.format("AAA %s returned to IDLE", battery.GroupName))
+	return true
+end
+
+function Medusa.Services.AaaService.suppressBattery(ctx, battery)
+	if battery.Role ~= BR.AAA then
+		return false
+	end
+	cancelResponseWork(ctx, battery)
+	resetResponse(battery.Aaa)
 	return true
 end
 
@@ -438,6 +457,7 @@ local function isInfectionEligible(battery)
 	end
 	local state = battery.Aaa.ResponseState
 	return battery.OperationalStatus == BOS.ACTIVE
+		and not Battery.isCrewSuppressed(battery)
 		and (battery.TotalAmmoStatus or 0) > 0
 		and (state == ARS.IDLE or state == ARS.ALERT)
 end
@@ -507,7 +527,7 @@ local function sourceAimTarget(ctx, battery)
 end
 
 function Medusa.Services.AaaService.onShot(ctx, battery, unit, now)
-	if battery.Role ~= BR.AAA or not battery.Position or not unit then
+	if battery.Role ~= BR.AAA or Battery.isCrewSuppressed(battery) or not battery.Position or not unit then
 		return 0
 	end
 	registerBarrageLimit(ctx)
@@ -660,6 +680,7 @@ function Medusa.Services.AaaService.evaluate(ctx)
 			if
 				mode == AM.INDEPENDENT
 				and battery.OperationalStatus == BOS.ACTIVE
+				and not Battery.isCrewSuppressed(battery)
 				and (battery.TotalAmmoStatus or 0) > 0
 			then
 				independentBuffer[#independentBuffer + 1] = battery

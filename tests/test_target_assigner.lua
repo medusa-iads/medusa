@@ -437,6 +437,25 @@ function TestAssignTargets:test_skips_destroyed_batteries()
 	lu.assertEquals(#assignments, 0)
 end
 
+function TestAssignTargets:test_skips_crew_suppressed_batteries()
+	local track = makeTrack({ TrackId = "T1" })
+	self.trackStore:add(track)
+	local battery = makeBattery({ BatteryId = "B1", GroupId = 1, GroupName = "SAM-1" })
+	battery.CrewSuppressionState = Medusa.Constants.CrewSuppressionState.SUPPRESSED
+	battery.CrewSuppressionUntil = 1100
+	self.batteryStore:add(battery)
+
+	local assignments = Medusa.Services.TargetAssigner.assignTargets(makeCtx({
+		trackStore = self.trackStore,
+		batteryStore = self.batteryStore,
+		geoGrid = self.geoGrid,
+		doctrine = makeFreeDoctrine(),
+	}))
+
+	lu.assertEquals(#assignments, 0)
+	lu.assertNil(battery.CurrentTargetTrackId)
+end
+
 function TestAssignTargets:test_skips_battery_without_position()
 	local track = makeTrack({ TrackId = "T1" })
 	self.trackStore:add(track)

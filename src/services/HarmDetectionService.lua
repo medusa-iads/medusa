@@ -34,12 +34,10 @@ local _logger = Medusa.Logger:ns("HarmDetectionService")
 local C = Medusa.Constants
 --- @type table Enum mapping for assessed aircraft types (e.g. AAT.HARM)
 local AAT = Medusa.Constants.AssessedAircraftType
+local HAS = Medusa.Constants.HarmAssessmentState
 --- @type table Reusable buffer for track iteration
 Medusa.Services.HarmDetectionService._trackBuffer = {}
 local _trackBuffer = Medusa.Services.HarmDetectionService._trackBuffer
---- @type table<TrackStore, table<string, SPRTState>> Per-network SPRT evaluation states keyed by trackStore then trackId
-Medusa.Services.HarmDetectionService._networkStates = {}
-local _networkStates = Medusa.Services.HarmDetectionService._networkStates
 --- @type number[] Pre-allocated 8-element feature vector reused each extraction call
 Medusa.Services.HarmDetectionService._feat = { 0, 0, 0, 0, 0, 0, 0, 0 }
 local _feat = Medusa.Services.HarmDetectionService._feat
@@ -336,103 +334,153 @@ local function formatFeatureLLRs(feat)
 	return table.concat(parts, " ")
 end
 
-local function updateLabel(state, maxScans)
-	if state.label == "CONFIRMED" then
+local function updateLabel(state)
+	if state.label == HAS.CONFIRMED then
+		if state.llr <= C.HARM_SPRT_THRESH_CLEAR then
+			state.label = HAS.CLEARED
+		end
+		return state.label
+	end
+	if state.label == HAS.CLEARED then
+		if state.llr >= C.HARM_SPRT_THRESH_CONFIRM then
+			state.label = HAS.CONFIRMED
+		end
 		return state.label
 	end
 	if state.llr >= C.HARM_SPRT_THRESH_CONFIRM then
-		state.label = "CONFIRMED"
-		return state.label
-	end
-	if state.llr <= C.HARM_SPRT_THRESH_CLEAR then
-		state.label = "CLEARED"
-		return state.label
-	end
-	if state.scanCount >= maxScans then
-		state.label = (state.llr >= C.HARM_SPRT_THRESH_PROBABLE) and "CONFIRMED" or "CLEARED"
-		return state.label
-	end
-	if state.llr >= C.HARM_SPRT_THRESH_PROBABLE then
-		state.label = "PROBABLE"
+		state.label = HAS.CONFIRMED
+	elseif state.llr <= C.HARM_SPRT_THRESH_CLEAR then
+		state.label = HAS.CLEARED
+	elseif state.llr >= C.HARM_SPRT_THRESH_PROBABLE then
+		state.label = HAS.PROBABLE
 	elseif state.llr >= C.HARM_SPRT_THRESH_SUSPECT then
-		state.label = "SUSPECT"
+		state.label = HAS.SUSPECT
 	else
-		state.label = "EVALUATING"
+		state.label = HAS.EVALUATING
 	end
 	return state.label
+end
+
+local function createAssessment(track, emitterPos)
+	local confirmed = track.AssessedAircraftType == AAT.HARM
+	local state = {
+		llr = confirmed and C.HARM_SPRT_THRESH_CONFIRM or 0,
+		scanCount = 0,
+		label = confirmed and HAS.CONFIRMED or HAS.EVALUATING,
+		prevCpa = nil,
+		prevTime = nil,
+		emitterPosition = { x = emitterPos.x, y = emitterPos.y, z = emitterPos.z },
+	}
+	if confirmed then
+		state.previousAircraftType = AAT.UNKNOWN
+		state.previousIsSeadThreat = false
+	end
+	track.HarmAssessment = state
+	_logger:info(string.format("track %s entered ARM evaluation", Medusa.Entities.Track.displayId(track)))
+	return state
+end
+
+local function updateEmitterPosition(state, emitterPos)
+	local saved = state.emitterPosition
+	if not saved then
+		saved = {}
+		state.emitterPosition = saved
+	end
+	saved.x = emitterPos.x
+	saved.y = emitterPos.y
+	saved.z = emitterPos.z
+end
+
+local function accumulateEvidence(state, scanLlr)
+	state.llr = state.llr + math.max(-C.HARM_SPRT_MAX_SCAN_LLR, math.min(C.HARM_SPRT_MAX_SCAN_LLR, scanLlr))
+end
+
+local function logStateChange(track, previousLabel, state, feat)
+	if state.label == previousLabel then
+		return
+	end
+	local detail = feat and (" [" .. formatFeatureLLRs(feat) .. "]") or ""
+	_logger:info(
+		string.format(
+			"track %s ARM %s -> %s (LLR=%.2f, scans=%d)%s",
+			Medusa.Entities.Track.displayId(track),
+			previousLabel,
+			state.label,
+			state.llr,
+			state.scanCount,
+			detail
+		)
+	)
 end
 
 --- Run one SPRT evaluation cycle for a single track.
 --- This is the per-track workhorse called each tick. It manages the full
 --- lifecycle: creating SPRT state on first sight, gating on minimum scans and
 --- speed, extracting features, accumulating the LLR, and updating the label.
---- Tracks that drop below the speed gate are immediately cleared (slow objects
---- are not ARMs). Tracks that were previously cleared can re-enter evaluation
---- if they are younger than HARM_REEVAL_MAX_AGE_SEC, which handles the case
---- where an aircraft initially looked benign but then turned toward an emitter.
+--- Decision evidence persists after confirmation or clearance. A decision changes
+--- only after cumulative evidence crosses the opposite threshold.
 --- @param track table Track entity with PositionHistory, TrackId, FirstDetectionTime
 --- @param geoGrid table GeoGrid spatial index
 --- @param batteryStore table BatteryStore for emitter lookup
---- @param states table<string, table> Per-trackId SPRT state map for this network
 --- @param ballisticDt number|nil Ballistic sim step size
 --- @param ballisticMaxT number|nil Ballistic sim max steps
---- @param effectiveMinScans number|nil Minimum scans before SPRT accumulation (defaults to HARM_SPRT_MIN_SCANS)
+--- @param effectiveMinScans number|nil Minimum scans before an SPRT decision (defaults to HARM_SPRT_MIN_SCANS)
 --- @return string label Current SPRT label for this track
 --- @return table|nil state The SPRT state table, or nil if track has insufficient data
-local function evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, ballisticMaxT, effectiveMinScans)
+local function evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisticMaxT, effectiveMinScans)
 	local n = track.PositionHistory:size()
 	if n < 2 then
-		return "EVALUATING", nil
+		local state = track.HarmAssessment
+		return state and state.label or HAS.EVALUATING, state
 	end
 
 	local curr = track.PositionHistory:get(n)
 	local prev = track.PositionHistory:get(n - 1)
 	local dt = curr.timestamp - prev.timestamp
 	if dt < C.HARM_SPRT_MIN_DT_SEC then
-		local s = states[track.TrackId]
-		return s and s.label or "EVALUATING", s
+		local state = track.HarmAssessment
+		return state and state.label or HAS.EVALUATING, state
 	end
 
-	-- Speed gate
+	local state = track.HarmAssessment
+	if state and state.prevTime and curr.timestamp <= state.prevTime then
+		return state.label, state
+	end
 	local cv = curr.velocity
 	local speedSq = cv.x * cv.x + cv.y * cv.y + cv.z * cv.z
 	if speedSq < C.HARM_SPRT_SPEED_GATE * C.HARM_SPRT_SPEED_GATE then
-		local s = states[track.TrackId]
-		if s then
-			s.label = "CLEARED"
+		if not state then
+			return HAS.CLEARED, nil
 		end
-		return "CLEARED", s
+		state.prevTime = curr.timestamp
+		state.scanCount = state.scanCount + 1
+		local previousLabel = state.label
+		if state.label == HAS.EVALUATING or state.label == HAS.SUSPECT or state.label == HAS.PROBABLE then
+			state.llr = math.min(state.llr - C.HARM_SPRT_MAX_SCAN_LLR, C.HARM_SPRT_THRESH_CLEAR)
+		else
+			accumulateEvidence(state, -C.HARM_SPRT_MAX_SCAN_LLR)
+		end
+		updateLabel(state)
+		logStateChange(track, previousLabel, state)
+		return state.label, state
 	end
 
 	local emitterPos = findClosestEmitter(track, geoGrid, batteryStore)
-	if not emitterPos then
-		return "EVALUATING", nil
-	end
-
-	local state = states[track.TrackId]
-	if not state then
-		state = { llr = 0, scanCount = 0, label = "EVALUATING", prevCpa = nil, prevTime = nil }
-		states[track.TrackId] = state
-		_logger:info(string.format("track %s entered ARM evaluation", Medusa.Entities.Track.displayId(track)))
-	end
-
-	if state.label == "CONFIRMED" then
-		return state.label, state
-	end
-	-- CLEARED tracks older than HARM_REEVAL_MAX_AGE_SEC are not re-evaluated
-	if state.label == "CLEARED" then
-		local trackAge = track.FirstDetectionTime and (GetTime() - track.FirstDetectionTime) or 0
-		if trackAge > Medusa.Constants.HARM_REEVAL_MAX_AGE_SEC then
-			return state.label, state
+	if emitterPos then
+		if not state then
+			state = createAssessment(track, emitterPos)
+		else
+			updateEmitterPosition(state, emitterPos)
 		end
-		state.llr = 0
-		state.scanCount = 0
-		state.label = "EVALUATING"
-		state.prevCpa = nil
-		state.prevTime = nil
+	elseif state then
+		emitterPos = state.emitterPosition
+	end
+	if not state or not emitterPos then
+		return state and state.label or HAS.EVALUATING, state
 	end
 
 	state.scanCount = state.scanCount + 1
+	local previousLabel = state.label
 
 	local feat = extractFeatures(curr, prev, dt, emitterPos, state, ballisticDt, ballisticMaxT)
 
@@ -452,49 +500,27 @@ local function evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, 
 	lf[8] = feat[8]
 
 	local minScans = effectiveMinScans or C.HARM_SPRT_MIN_SCANS
-	if state.scanCount < minScans then
-		return "EVALUATING", state
-	end
-
-	local prevLabel = state.label
 	local scanLlr = computeScanLLR(feat)
-	state.llr = state.llr + math.max(-C.HARM_SPRT_MAX_SCAN_LLR, math.min(C.HARM_SPRT_MAX_SCAN_LLR, scanLlr))
-	updateLabel(state, track.PositionHistory:capacity())
-
-	if state.label ~= prevLabel then
-		_logger:info(
-			string.format(
-				"track %s ARM %s -> %s (LLR=%.2f, scans=%d) [%s]",
-				Medusa.Entities.Track.displayId(track),
-				prevLabel,
-				state.label,
-				state.llr,
-				state.scanCount,
-				formatFeatureLLRs(feat)
-			)
-		)
+	accumulateEvidence(state, scanLlr)
+	if state.scanCount < minScans then
+		return state.label, state
 	end
+
+	updateLabel(state)
+	logStateChange(track, previousLabel, state, feat)
 
 	return state.label, state
 end
 
---- Returns the SPRT context needed by assessSingleTrack: per-network state map
---- and ballistic simulation parameters from doctrine.
---- @param ctx table Pipeline context with trackStore and doctrine
---- @return table states Per-trackId SPRT state map
+--- Returns the ballistic simulation parameters needed by assessSingleTrack.
+--- @param ctx table Pipeline context with doctrine
 --- @return number ballisticDt Ballistic sim time step
 --- @return number ballisticMaxT Ballistic sim max steps
 function Medusa.Services.HarmDetectionService.getAssessContext(ctx)
-	local trackStore = ctx.trackStore
 	local doctrine = ctx.doctrine
-	local states = _networkStates[trackStore]
-	if not states then
-		states = {}
-		_networkStates[trackStore] = states
-	end
 	local ballisticDt = doctrine and doctrine.BallisticSimStepSec or 1.0
 	local ballisticMaxT = doctrine and doctrine.BallisticSimMaxSec or 120
-	return states, ballisticDt, ballisticMaxT
+	return ballisticDt, ballisticMaxT
 end
 
 --- Assesses a single track for HARM classification via SPRT.
@@ -502,7 +528,6 @@ end
 --- @param tracks table Array of all tracks (for launcher backtracking)
 --- @param geoGrid table GeoGrid spatial index
 --- @param batteryStore table BatteryStore for emitter proximity lookups
---- @param states table Per-trackId SPRT state map
 --- @param ballisticDt number Ballistic sim time step
 --- @param ballisticMaxT number Ballistic sim max steps
 --- @return boolean reclassified True if this track was newly classified as HARM
@@ -511,10 +536,8 @@ function Medusa.Services.HarmDetectionService.assessSingleTrack(
 	tracks,
 	geoGrid,
 	batteryStore,
-	states,
 	ballisticDt,
-	ballisticMaxT,
-	effectiveMinScans
+	ballisticMaxT
 )
 	local LS = Medusa.Constants.TrackLifecycleState
 	local vel = track.Velocity
@@ -522,21 +545,25 @@ function Medusa.Services.HarmDetectionService.assessSingleTrack(
 	local trackAge = track.FirstDetectionTime and (GetTime() - track.FirstDetectionTime) or 0
 	if
 		track.LifecycleState ~= LS.ACTIVE
-		or track.AssessedAircraftType == AAT.HARM
-		or speedSq < C.HARM_SPRT_SPEED_GATE * C.HARM_SPRT_SPEED_GATE
-		or trackAge < C.HARM_SPRT_MIN_TRACK_AGE_SEC
+		or not vel
+		or (not track.HarmAssessment and speedSq < C.HARM_SPRT_SPEED_GATE * C.HARM_SPRT_SPEED_GATE)
+		or (not track.HarmAssessment and trackAge < C.HARM_SPRT_MIN_TRACK_AGE_SEC)
 	then
 		return false
 	end
 
-	local label, state =
-		evaluateTrack(track, geoGrid, batteryStore, states, ballisticDt, ballisticMaxT, effectiveMinScans)
+	local previousLabel = track.HarmAssessment and track.HarmAssessment.label
+	local label, state = evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisticMaxT)
 
 	if state then
 		track.HarmLikelihoodScore = math.max(0, math.min(1, state.llr / math.max(0.001, C.HARM_SPRT_THRESH_CONFIRM)))
 	end
 
-	if label == "CONFIRMED" then
+	if label == HAS.CONFIRMED and previousLabel ~= HAS.CONFIRMED then
+		if not state.previousAircraftType then
+			state.previousAircraftType = track.AssessedAircraftType
+			state.previousIsSeadThreat = track.IsSeadThreat == true
+		end
 		Medusa.Services.MetricsService.inc("medusa_harm_confirmed_total")
 		track.AssessedAircraftType = AAT.HARM
 		track.IsSeadThreat = true
@@ -549,22 +576,34 @@ function Medusa.Services.HarmDetectionService.assessSingleTrack(
 		)
 		Medusa.Services.HarmDetectionService._backtrackLauncher(track, tracks)
 		return true
-	elseif label == "CLEARED" then
+	elseif label == HAS.CLEARED then
 		track.HarmLikelihoodScore = 0
+		if previousLabel == HAS.CONFIRMED then
+			local restoredType = state.previousAircraftType or AAT.UNKNOWN
+			local restoredSeadThreat = state.previousIsSeadThreat == true
+			track.AssessedAircraftType = restoredType
+			track.IsSeadThreat = restoredSeadThreat
+			state.previousAircraftType = nil
+			state.previousIsSeadThreat = nil
+			_logger:info(
+				string.format(
+					"track %s HARM classification cleared (LLR=%.2f)",
+					Medusa.Entities.Track.displayId(track),
+					state.llr
+				)
+			)
+		end
 	end
 	return false
 end
 
 --- Top-level entry point called by IadsNetwork each tick.
---- Iterates all active tracks in the network, skipping any that are already
---- classified as HARM, too slow, or too young. For each eligible track, runs
+--- Iterates all active tracks in the network. For each eligible track, runs
 --- evaluateTrack to accumulate SPRT evidence and update the label.
 --- When a track reaches CONFIRMED, this function promotes it: sets
 --- AssessedAircraftType to HARM, flags IsSeadThreat, and increments the
 --- Prometheus counter. HarmResponseService reads these flags on its next
 --- tick to decide whether batteries should shut down or defend.
---- Also garbage-collects SPRT state for tracks that have been dropped from
---- the track store (e.g. the aircraft left detection range or was destroyed).
 --- @param ctx table Pipeline context with trackStore, batteryStore, geoGrid, doctrine
 --- @return number reclassified Count of tracks newly classified as HARM this tick
 function Medusa.Services.HarmDetectionService.assessHarmThreats(ctx)
@@ -574,13 +613,7 @@ function Medusa.Services.HarmDetectionService.assessHarmThreats(ctx)
 	local tracks = trackStore:getAll(_trackBuffer)
 	local reclassified = 0
 
-	local states, ballisticDt, ballisticMaxT = Medusa.Services.HarmDetectionService.getAssessContext(ctx)
-
-	for trackId in pairs(states) do
-		if not trackStore:get(trackId) then
-			states[trackId] = nil
-		end
-	end
+	local ballisticDt, ballisticMaxT = Medusa.Services.HarmDetectionService.getAssessContext(ctx)
 
 	for i = 1, #tracks do
 		if
@@ -589,10 +622,8 @@ function Medusa.Services.HarmDetectionService.assessHarmThreats(ctx)
 				tracks,
 				geoGrid,
 				batteryStore,
-				states,
 				ballisticDt,
-				ballisticMaxT,
-				C.HARM_SPRT_MIN_SCANS
+				ballisticMaxT
 			)
 		then
 			reclassified = reclassified + 1

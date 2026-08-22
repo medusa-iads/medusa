@@ -101,6 +101,111 @@ function TestGetDoctrine:test_nil_input_uses_defaults()
 	lu.assertAlmostEquals(d.AAA.AreaFireChance, 0.20, 0.001)
 	lu.assertAlmostEquals(d.AAA.BarrageChance, 0.25, 0.001)
 	lu.assertEquals(d.AAA.MaxBarrageGroups, 15)
+	lu.assertTrue(d.CrewSuppression.Enabled)
+	lu.assertEquals(d.CrewSuppression.DurationMinSec, 30)
+	lu.assertEquals(d.CrewSuppression.DurationMaxSec, 120)
+	lu.assertAlmostEquals(d.CrewSuppression.MaxGroupDiameterM, 609.6, 0.001)
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusScaleM, 10)
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusMaxM, 500)
+	lu.assertEquals(d.CrewSuppression.ExplosiveEffectiveness, 1)
+	lu.assertEquals(d.CrewSuppression.DefaultCrewSkill, Medusa.Constants.CrewSkill.AVERAGE)
+	lu.assertEquals(d.CrewSuppression.SkillResistancePerLevel, 0.1)
+	lu.assertEquals(d.CrewSuppression.CannonRadiusM, 150)
+	lu.assertEquals(d.CrewSuppression.CannonEffectiveness, 0.5)
+end
+
+function TestGetDoctrine:test_crew_suppression_skill_and_cannon_settings_are_validated()
+	Medusa.Config:initialize()
+	local bounded = Medusa.Config:getDoctrine({
+		CrewSuppression = {
+			DefaultCrewSkill = Medusa.Constants.CrewSkill.EXCELLENT,
+			SkillResistancePerLevel = 1,
+			CannonRadiusM = 1000,
+			CannonEffectiveness = -1,
+		},
+	})
+	local invalid = Medusa.Config:getDoctrine({ CrewSuppression = { DefaultCrewSkill = "Random" } })
+
+	lu.assertEquals(bounded.CrewSuppression.DefaultCrewSkill, Medusa.Constants.CrewSkill.EXCELLENT)
+	lu.assertEquals(bounded.CrewSuppression.SkillResistancePerLevel, 0.3)
+	lu.assertEquals(bounded.CrewSuppression.CannonRadiusM, 500)
+	lu.assertEquals(bounded.CrewSuppression.CannonEffectiveness, 0)
+	lu.assertEquals(invalid.CrewSuppression.DefaultCrewSkill, Medusa.Constants.CrewSkill.AVERAGE)
+end
+
+function TestGetDoctrine:test_crew_suppression_explosive_settings_are_bounded()
+	Medusa.Config:initialize()
+	local d = Medusa.Config:getDoctrine({
+		CrewSuppression = {
+			ExplosiveRadiusScaleM = 1000,
+			ExplosiveRadiusMaxM = -1,
+			ExplosiveEffectiveness = 2,
+		},
+	})
+
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusScaleM, 500)
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusMaxM, 1)
+	lu.assertEquals(d.CrewSuppression.ExplosiveEffectiveness, 1)
+end
+
+function TestGetDoctrine:test_crew_suppression_non_finite_settings_use_defaults()
+	Medusa.Config:initialize()
+	local d = Medusa.Config:getDoctrine({
+		CrewSuppression = {
+			DurationMinSec = 0 / 0,
+			DurationMaxSec = math.huge,
+			ExplosiveRadiusScaleM = math.huge,
+			ExplosiveRadiusMaxM = -math.huge,
+			ExplosiveEffectiveness = 0 / 0,
+		},
+	})
+
+	lu.assertEquals(d.CrewSuppression.DurationMinSec, 30)
+	lu.assertEquals(d.CrewSuppression.DurationMaxSec, 120)
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusScaleM, 10)
+	lu.assertEquals(d.CrewSuppression.ExplosiveRadiusMaxM, 500)
+	lu.assertEquals(d.CrewSuppression.ExplosiveEffectiveness, 1)
+end
+
+function TestGetDoctrine:test_crew_suppression_enabled_requires_boolean()
+	Medusa.Config:initialize()
+	local disabled = Medusa.Config:getDoctrine({ CrewSuppression = { Enabled = false } })
+	local invalid = Medusa.Config:getDoctrine({ CrewSuppression = { Enabled = "false" } })
+
+	lu.assertFalse(disabled.CrewSuppression.Enabled)
+	lu.assertTrue(invalid.CrewSuppression.Enabled)
+end
+
+function TestGetDoctrine:test_crew_suppression_duration_range_is_bounded()
+	Medusa.Config:initialize()
+	local belowMinimum = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMinSec = 0 } })
+	local invalid = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMinSec = "invalid" } })
+	local numericText = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMinSec = "15" } })
+	local aboveMaximum = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMaxSec = 3601 } })
+	local valid = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMinSec = 15, DurationMaxSec = 90 } })
+	local reversed = Medusa.Config:getDoctrine({ CrewSuppression = { DurationMinSec = 120, DurationMaxSec = 30 } })
+
+	lu.assertEquals(belowMinimum.CrewSuppression.DurationMinSec, 1)
+	lu.assertEquals(invalid.CrewSuppression.DurationMinSec, 30)
+	lu.assertEquals(numericText.CrewSuppression.DurationMinSec, 15)
+	lu.assertEquals(aboveMaximum.CrewSuppression.DurationMaxSec, 3600)
+	lu.assertEquals(valid.CrewSuppression.DurationMinSec, 15)
+	lu.assertEquals(valid.CrewSuppression.DurationMaxSec, 90)
+	lu.assertEquals(reversed.CrewSuppression.DurationMinSec, 30)
+	lu.assertEquals(reversed.CrewSuppression.DurationMaxSec, 120)
+end
+
+function TestGetDoctrine:test_crew_suppression_group_diameter_is_bounded()
+	Medusa.Config:initialize()
+	local belowMinimum = Medusa.Config:getDoctrine({ CrewSuppression = { MaxGroupDiameterM = 0 } })
+	local aboveMaximum = Medusa.Config:getDoctrine({ CrewSuppression = { MaxGroupDiameterM = 100001 } })
+	local invalid = Medusa.Config:getDoctrine({ CrewSuppression = { MaxGroupDiameterM = "invalid" } })
+	local valid = Medusa.Config:getDoctrine({ CrewSuppression = { MaxGroupDiameterM = 500 } })
+
+	lu.assertEquals(belowMinimum.CrewSuppression.MaxGroupDiameterM, 1)
+	lu.assertEquals(aboveMaximum.CrewSuppression.MaxGroupDiameterM, 100000)
+	lu.assertAlmostEquals(invalid.CrewSuppression.MaxGroupDiameterM, 609.6, 0.001)
+	lu.assertEquals(valid.CrewSuppression.MaxGroupDiameterM, 500)
 end
 
 function TestGetDoctrine:test_aaa_overrides_are_validated()

@@ -18,8 +18,9 @@ require("services.EntityFactory")
 
 local ulidCounter = 0
 local origGetGroupUnits
+local origGetUnitHealth
 
-local function makeMockUnit(id, name, desc)
+local function makeMockUnit(id, name, desc, position)
 	return {
 		getID = function()
 			return id
@@ -28,8 +29,11 @@ local function makeMockUnit(id, name, desc)
 			return name
 		end,
 		getPosition = function()
+			if position == false then
+				return nil
+			end
 			return {
-				p = { x = 100, y = 50, z = 200 },
+				p = position or { x = 100, y = 50, z = 200 },
 				x = { x = 1, y = 0, z = 0 },
 				y = { x = 0, y = 1, z = 0 },
 				z = { x = 0, y = 0, z = 1 },
@@ -93,6 +97,7 @@ function TestEntityFactory:setUp()
 		return string.format("ULID-%d", ulidCounter)
 	end
 	origGetGroupUnits = GetGroupUnits
+	origGetUnitHealth = GetUnitHealth
 	-- Default mock: two units with unique IDs; first unit has launcher attributes
 	-- so the battery is not skipped by the hasLauncher guard.
 	GetGroupUnits = function()
@@ -105,6 +110,7 @@ end
 
 function TestEntityFactory:tearDown()
 	GetGroupUnits = origGetGroupUnits
+	GetUnitHealth = origGetUnitHealth
 end
 
 function TestEntityFactory:test_battery_classification()
@@ -130,6 +136,69 @@ function TestEntityFactory:test_battery_has_units()
 	lu.assertTrue(#battery.Units > 0)
 end
 
+function TestEntityFactory:test_every_battery_unit_caches_its_discovery_position()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "launcher", { attributes = { ["SAM LL"] = true } }, { x = 10, y = 20, z = 30 }),
+			makeMockUnit(102, "radar", { attributes = { ["SAM SR"] = true } }, { x = 40, y = 50, z = 60 }),
+		}
+	end
+	local stores = makeStores()
+
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net-1")
+
+	local units = stores.batteries:getAll()[1].Units
+	lu.assertEquals(units[1].Position, { x = 10, y = 20, z = 30 })
+	lu.assertEquals(units[2].Position, { x = 40, y = 50, z = 60 })
+end
+
+function TestEntityFactory:test_battery_unit_caches_validated_discovery_health()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "unit-1", { attributes = { ["AAA"] = true } }),
+		}
+	end
+	GetUnitHealth = function(unitName)
+		if unitName == "unit-1" then
+			return { CurrentLife = 60, InitialLife = 100, IsAlive = true, IsDamaged = true }
+		end
+		return nil
+	end
+	local stores = makeStores()
+
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net-1")
+
+	local unit = stores.batteries:getAll()[1].Units[1]
+	lu.assertEquals(unit.LastKnownLife, 60)
+	lu.assertEquals(unit.InitialLife, 100)
+	lu.assertEquals(unit.OperationalStatus, Medusa.Constants.UnitOperationalStatus.DAMAGED)
+	lu.assertTrue(unit.InitialDamagePending)
+end
+
+function TestEntityFactory:test_battery_units_cache_mission_skill_or_doctrine_fallback()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "gun-1", { attributes = { ["AAA"] = true } }),
+			makeMockUnit(102, "gun-2", { attributes = { ["AAA"] = true } }),
+		}
+	end
+	local stores = makeStores()
+	local doctrine = {
+		CrewSuppression = { DefaultCrewSkill = Medusa.Constants.CrewSkill.GOOD },
+	}
+	local skillIndex = {
+		get = function(_, unitName)
+			return unitName == "gun-1" and Medusa.Constants.CrewSkill.EXCELLENT or nil
+		end,
+	}
+
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net-1", nil, doctrine, skillIndex)
+
+	local units = stores.batteries:getAll()[1].Units
+	lu.assertEquals(units[1].CrewSkill, Medusa.Constants.CrewSkill.EXCELLENT)
+	lu.assertEquals(units[2].CrewSkill, Medusa.Constants.CrewSkill.GOOD)
+end
+
 function TestEntityFactory:test_battery_fields()
 	local stores = makeStores()
 	local dto = makeDTO({ groupId = 42, groupName = "SAM-SA10", category = Group.Category.GROUND })
@@ -142,6 +211,52 @@ function TestEntityFactory:test_battery_fields()
 	lu.assertEquals(battery.GroupName, "SAM-SA10")
 	lu.assertEquals(battery.GroupCategory, Group.Category.GROUND)
 	lu.assertNotNil(battery.Position)
+end
+
+function TestEntityFactory:test_battery_caches_maximum_horizontal_group_diameter()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "gun-1", { attributes = { ["AAA"] = true } }, { x = 0, y = 10, z = 0 }),
+			makeMockUnit(102, "gun-2", { attributes = { ["AAA"] = true } }, { x = 300, y = 20, z = 400 }),
+			makeMockUnit(103, "support", {}, { x = 300, y = 100, z = 0 }),
+		}
+	end
+	local stores = makeStores()
+
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net-1")
+
+	lu.assertEquals(stores.batteries:getAll()[1].GroupDiameterM, 500)
+end
+
+function TestEntityFactory:test_aaa_position_anchor_uses_a_gun_instead_of_its_radar()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "radar", { attributes = { ["SAM SR"] = true } }, { x = 0, y = 0, z = 0 }),
+			makeMockUnit(102, "gun", { attributes = { AAA = true } }, { x = 100, y = 0, z = 100 }),
+			makeMockUnit(103, "gun-2", { attributes = { AAA = true } }, { x = 110, y = 0, z = 100 }),
+		}
+	end
+	local stores = makeStores()
+
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net-1")
+
+	local battery = stores.batteries:getAll()[1]
+	lu.assertEquals(battery.PositionAnchorUnitId, 102)
+	lu.assertEquals(battery.Position, { x = 100, y = 0, z = 100 })
+end
+
+function TestEntityFactory:test_battery_group_diameter_is_unknown_when_a_member_position_is_unavailable()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "gun-1", { attributes = { ["AAA"] = true } }),
+			makeMockUnit(102, "support", {}, false),
+		}
+	end
+	local stores = makeStores()
+
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net-1")
+
+	lu.assertNil(stores.batteries:getAll()[1].GroupDiameterM)
 end
 
 function TestEntityFactory:test_sensor_ewr_classification()

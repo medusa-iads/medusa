@@ -87,6 +87,7 @@ local function isBatteryEligible(battery)
 	return (battery.ActivationState == AS.STATE_COLD or battery.ActivationState == AS.STATE_WARM)
 		and battery.Role ~= BR.MANPAD
 		and not Medusa.Entities.Battery.isIndependentAaa(battery)
+		and not Medusa.Entities.Battery.isCrewSuppressed(battery)
 		and battery.OperationalStatus == BOS.ACTIVE
 		and battery.Position
 		and battery.EngagementRangeMax

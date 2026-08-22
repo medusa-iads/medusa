@@ -91,6 +91,8 @@ function Medusa.Services.BatteryStore:new()
 		_byId = {},
 		_byGroupId = {},
 		_byUnitId = {},
+		_unitOrder = {},
+		_positionRefreshCursor = 0,
 		_batteryIds = {},
 		_manpadIds = {},
 		_count = 0,
@@ -141,7 +143,13 @@ function Medusa.Services.BatteryStore:add(battery)
 	for i = 1, #units do
 		local unit = units[i]
 		if unit.UnitId then
-			self._byUnitId[unit.UnitId] = { Battery = battery, Unit = unit }
+			local refreshIndex = #self._unitOrder + 1
+			self._unitOrder[refreshIndex] = unit.UnitId
+			self._byUnitId[unit.UnitId] = {
+				Battery = battery,
+				Unit = unit,
+				RefreshIndex = refreshIndex,
+			}
 		end
 	end
 
@@ -184,6 +192,41 @@ function Medusa.Services.BatteryStore:getByUnitId(unitId)
 	return indexed.Battery, indexed.Unit
 end
 
+local function removeUnitIndex(repository, unitId)
+	local indexed = repository._byUnitId[unitId]
+	if not indexed then
+		return nil
+	end
+	local order = repository._unitOrder
+	local index = indexed.RefreshIndex
+	local lastIndex = #order
+	local movedUnitId = order[lastIndex]
+	order[index] = movedUnitId
+	order[lastIndex] = nil
+	if movedUnitId and movedUnitId ~= unitId then
+		repository._byUnitId[movedUnitId].RefreshIndex = index
+	end
+	repository._byUnitId[unitId] = nil
+	if repository._positionRefreshCursor > #order then
+		repository._positionRefreshCursor = 0
+	end
+	return indexed
+end
+
+function Medusa.Services.BatteryStore:nextUnitForPositionRefresh()
+	local count = #self._unitOrder
+	if count == 0 then
+		self._positionRefreshCursor = 0
+		return nil
+	end
+	self._positionRefreshCursor = (self._positionRefreshCursor % count) + 1
+	local indexed = self._byUnitId[self._unitOrder[self._positionRefreshCursor]]
+	if not indexed then
+		return nil
+	end
+	return indexed.Battery, indexed.Unit
+end
+
 function Medusa.Services.BatteryStore:removeUnit(unitId)
 	local indexed = self._byUnitId[unitId]
 	if not indexed then
@@ -197,7 +240,7 @@ function Medusa.Services.BatteryStore:removeUnit(unitId)
 			break
 		end
 	end
-	self._byUnitId[unitId] = nil
+	removeUnitIndex(self, unitId)
 	return indexed.Battery, indexed.Unit
 end
 
@@ -214,7 +257,7 @@ function Medusa.Services.BatteryStore:remove(batteryId)
 	local units = battery.Units or {}
 	for i = 1, #units do
 		if units[i].UnitId then
-			self._byUnitId[units[i].UnitId] = nil
+			removeUnitIndex(self, units[i].UnitId)
 		end
 	end
 

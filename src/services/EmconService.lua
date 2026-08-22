@@ -107,6 +107,9 @@ function Medusa.Services.EmconService.getDesiredState(batteryIndex, _batteryCoun
 end
 
 local function _shouldSkip(battery)
+	if Medusa.Entities.Battery.isCrewSuppressed(battery) then
+		return true
+	end
 	if Medusa.Entities.Battery.isIndependentAaa(battery) then
 		return true
 	end

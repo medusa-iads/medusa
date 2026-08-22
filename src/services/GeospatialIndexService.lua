@@ -2,6 +2,7 @@ require("_header")
 require("services.Services")
 require("core.Constants")
 require("entities.Battery")
+require("services.stores.UnitGeoGrid")
 
 --[[
     GEOSPATIAL INDEX SERVICE
@@ -49,9 +50,47 @@ function Medusa.Services.GeospatialIndexService:new(cellSizeMeters)
 	local o = {
 		_networkedGeoGrid = GeoGrid(cellSizeMeters, { "Battery", "Track" }),
 		_localGeoGrid = GeoGrid(cellSizeMeters, { "Manpad", "Aaa" }),
+		_suppressibleUnitGeoGrid = Medusa.Services.UnitGeoGrid:new(
+			Medusa.Constants.CrewSuppression.EXPLOSIVE_RADIUS_MAX_M
+		),
 	}
 	setmetatable(o, { __index = Medusa.Services.GeospatialIndexService })
 	return o
+end
+
+function Medusa.Services.GeospatialIndexService:suppressibleUnitGeoGrid()
+	return self._suppressibleUnitGeoGrid
+end
+
+local function isSuppressibleUnit(unit)
+	return Battery.unitHasRole(unit, Medusa.Constants.BatteryUnitRole.AAA)
+		or Battery.unitHasRole(unit, Medusa.Constants.BatteryUnitRole.MANPAD)
+end
+
+function Medusa.Services.GeospatialIndexService:syncSuppressibleUnit(unit)
+	if not unit or not unit.UnitId then
+		return false
+	end
+	self._suppressibleUnitGeoGrid:remove(unit.UnitId)
+	if
+		not isSuppressibleUnit(unit)
+		or unit.OperationalStatus == Medusa.Constants.UnitOperationalStatus.DESTROYED
+		or not unit.Position
+	then
+		return false
+	end
+	return self._suppressibleUnitGeoGrid:add(unit.UnitId, unit.Position)
+end
+
+function Medusa.Services.GeospatialIndexService:syncSuppressibleUnits(battery)
+	local units = battery and battery.Units or {}
+	for i = 1, #units do
+		self:syncSuppressibleUnit(units[i])
+	end
+end
+
+function Medusa.Services.GeospatialIndexService:removeSuppressibleUnit(unitId)
+	return self._suppressibleUnitGeoGrid:remove(unitId)
 end
 
 function Medusa.Services.GeospatialIndexService:networkedGeoGrid()

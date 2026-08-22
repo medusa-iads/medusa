@@ -111,12 +111,20 @@ function TestAaaObservability:test_snapshot_exports_bounded_state_and_excludes_g
 	local sam = battery(C.BatteryRole.GENERIC_SAM, 6)
 	local aaa = battery(C.BatteryRole.AAA, 250)
 	aaa.Aaa.ResponseState = C.Aaa.ResponseState.ALERT
+	aaa.CrewSuppressionState = C.CrewSuppressionState.SUPPRESSED
+	aaa.CrewSuppressionCause = C.CrewSuppressionCause.DAMAGE
+	aaa.CrewSuppressionUntil = 1120
 	Medusa.Core.IadsById.red = network({ sam, aaa }, {
 		Posture = C.Posture.HOT_WAR,
 		AAA = { AudioRangeM = 6000 },
 	})
 	MSS.register({ "network" })
 	MSS.installSnapshot()
+	local cause = C.CrewSuppressionCause.DAMAGE
+	local dropReason = C.CrewSuppressionDropReason.QUEUE_OVERFLOW
+	MS.inc("medusa_crew_suppression_applications_total", nil, { network = "red", cause = cause })
+	MS.inc("medusa_crew_suppression_dropped_events_total", nil, { network = "red", reason = dropReason })
+	MS.observe("medusa_crew_suppression_duration_seconds", 120, { network = "red", cause = cause })
 
 	local output = MS.serialize()
 
@@ -129,6 +137,15 @@ function TestAaaObservability:test_snapshot_exports_bounded_state_and_excludes_g
 	lu.assertTrue(contains(output, 'medusa_aaa_barrage_responses_total{network="red"} 0'))
 	lu.assertTrue(contains(output, 'medusa_aaa_barrage_bursts_total{network="red"} 0'))
 	lu.assertTrue(contains(output, 'medusa_aaa_barrage_infections_total{network="red"} 0'))
+	lu.assertTrue(contains(output, 'medusa_crew_suppressed_batteries{network="red"} 1'))
+	lu.assertTrue(contains(output, 'medusa_crew_suppression_applications_total{network="red",cause="DAMAGE"} 1'))
+	lu.assertTrue(
+		contains(output, 'medusa_crew_suppression_dropped_events_total{network="red",reason="QUEUE_OVERFLOW"} 1')
+	)
+	lu.assertTrue(contains(output, 'medusa_crew_suppression_weapon_outcomes_total{outcome="TRACKER_FULL"} 0'))
+	lu.assertEquals(MS._registry.medusa_tick_duration_seconds.quantiles, { 0.5, 0.9, 0.95, 0.99 })
+	lu.assertEquals(MS._registry.medusa_crew_suppression_applications_total.label_keys, { "network", "cause" })
+	lu.assertEquals(MS._registry.medusa_crew_suppression_dropped_events_total.label_keys, { "network", "reason" })
 end
 
 function TestAaaObservability:test_extended_snapshot_exports_aaa_state_headings_and_detection_geometry()

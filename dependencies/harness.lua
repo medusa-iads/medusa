@@ -1,8 +1,8 @@
--- harness: 1.0.0 loading...
+-- harness: 1.0.1 loading...
 -- ==== BEGIN: src/_header.lua ====
 -- Version
 ---@type string
-HARNESS_VERSION = "1.0.0"
+HARNESS_VERSION = "1.0.1"
 -- Internal namespace for logger
 _HarnessInternal = _HarnessInternal or {}
 
@@ -16840,6 +16840,12 @@ end
 ==================================================================================================
 ]]
 
+---@class UnitHealthSnapshot
+---@field CurrentLife number
+---@field InitialLife number?
+---@field IsAlive boolean
+---@field IsDamaged boolean?
+
 -- Ensure minimal cache structure in case environment hasn't initialized it yet
 _HarnessInternal = _HarnessInternal or {}
 _HarnessInternal.cache = _HarnessInternal.cache or {}
@@ -16851,6 +16857,10 @@ _HarnessInternal.cache.stats = _HarnessInternal.cache.stats
     or { hits = 0, misses = 0, evictions = 0 }
 
 local UnitInternal = {}
+
+function UnitInternal.isFiniteNumber(value)
+    return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+end
 
 function UnitInternal.validVector(vector)
     return type(vector) == "table"
@@ -17294,6 +17304,47 @@ function GetUnitPlayerName(unitName)
     end
 
     return playerName
+end
+
+--- Get a validated health snapshot for a named unit
+---@param unitName string The name of the unit
+---@return UnitHealthSnapshot? health Validated health state or nil
+---@usage local health = GetUnitHealth("Player")
+function GetUnitHealth(unitName)
+    if type(unitName) ~= "string" or unitName == "" then
+        _HarnessInternal.log.error("GetUnitHealth requires non-empty unit name", "GetUnitHealth")
+        return nil
+    end
+
+    local unit = GetUnit(unitName)
+    if not unit then
+        return nil
+    end
+
+    local currentSuccess, currentLife = pcall(function()
+        return unit:getLife()
+    end)
+    local initialSuccess, initialLife = pcall(function()
+        return unit:getLife0()
+    end)
+    if not currentSuccess or not initialSuccess then
+        _HarnessInternal.log.error("Failed to get unit health", "GetUnitHealth")
+        return nil
+    end
+    if not UnitInternal.isFiniteNumber(currentLife) or currentLife < 0 then
+        _HarnessInternal.log.error("Invalid unit current life", "GetUnitHealth")
+        return nil
+    end
+
+    local health = {
+        CurrentLife = currentLife,
+        IsAlive = currentLife > 0,
+    }
+    if UnitInternal.isFiniteNumber(initialLife) and initialLife > 0 then
+        health.InitialLife = initialLife
+        health.IsDamaged = health.IsAlive and currentLife < initialLife
+    end
+    return health
 end
 
 --- Get unit life/health

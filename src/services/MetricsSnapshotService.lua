@@ -103,6 +103,7 @@ end
 
 function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	local MetricsService = Medusa.Services.MetricsService
+	local crewCauseLabel = { "network", "cause" }
 
 	MetricsService.gauge("medusa_mission_time_seconds", "Seconds since mission start")
 	MetricsService.gauge("medusa_mission_info", "Mission metadata", { "mission", "theatre", "start" })
@@ -126,6 +127,22 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.counter("medusa_last_chance_fired_total", "Shots fired during last-chance salvo", netLabel)
 	MetricsService.counter("medusa_roe_changes_total", "Runtime ROE changes via API", netLabel)
 	MetricsService.counter("medusa_track_promotions_total", "Track identification promotions", netLabel)
+	MetricsService.counter(
+		"medusa_battery_unit_position_refreshes_total",
+		"Managed battery-unit position refreshes",
+		netLabel
+	)
+	MetricsService.counter(
+		"medusa_crew_suppression_applications_total",
+		"Crew suppression applications",
+		crewCauseLabel
+	)
+	MetricsService.counter("medusa_crew_suppression_recoveries_total", "Crew suppression recoveries", crewCauseLabel)
+	MetricsService.counter(
+		"medusa_crew_suppression_dropped_events_total",
+		"Crew suppression events rejected or dropped",
+		{ "network", "reason" }
+	)
 
 	MetricsService.gauge("medusa_rolling_pk", "Network rolling kill probability", netLabel)
 	MetricsService.gauge("medusa_effective_pk_floor", "Effective PkFloor after rolling adjustment", netLabel)
@@ -137,15 +154,45 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.gauge("medusa_tracks_harm", "Tracks assessed as HARM", netLabel)
 	MetricsService.gauge("medusa_ammo_remaining", "Total missiles remaining across all batteries", netLabel)
 	MetricsService.gauge("medusa_batteries_rearming", "Batteries out of ammo awaiting rearm", netLabel)
-
-	local defaultQuantiles = { 0.5, 0.9, 0.99 }
-	MetricsService.summary(
-		"medusa_tick_duration_seconds",
-		"Total tick processing time",
-		defaultQuantiles,
-		nil,
+	MetricsService.gauge("medusa_crew_suppressed_batteries", "AAA and MANPAD groups under crew suppression", netLabel)
+	MetricsService.gauge(
+		"medusa_crew_suppression_event_queue_depth",
+		"Validated HIT events awaiting damage processing",
 		netLabel
 	)
+	MetricsService.gauge(
+		"medusa_crew_suppression_impact_queue_depth",
+		"Terminal events awaiting crew-suppression proximity evaluation",
+		netLabel
+	)
+	MetricsService.gauge(
+		"medusa_crew_suppression_weapons_tracked",
+		"Weapon candidates in the bounded explosive-impact tracker"
+	)
+	MetricsService.counter(
+		"medusa_crew_suppression_weapon_outcomes_total",
+		"Bounded weapon-tracking outcomes",
+		{ "outcome" }
+	)
+	for _, outcome in pairs(Medusa.Constants.CrewSuppressionWeaponOutcome) do
+		MetricsService.inc("medusa_crew_suppression_weapon_outcomes_total", 0, { outcome = outcome })
+	end
+	MetricsService.gauge(
+		"medusa_crew_suppression_cannon_queue_depth",
+		"Cannon bursts awaiting bounded terminal-point estimation"
+	)
+	MetricsService.counter(
+		"medusa_crew_suppression_cannon_outcomes_total",
+		"Bounded cannon terminal-estimation outcomes",
+		{ "outcome" }
+	)
+	for _, outcome in pairs(Medusa.Constants.CrewSuppressionCannonOutcome) do
+		MetricsService.inc("medusa_crew_suppression_cannon_outcomes_total", 0, { outcome = outcome })
+	end
+
+	local defaultQuantiles = { 0.5, 0.9, 0.99 }
+	local tickQuantiles = { 0.5, 0.9, 0.95, 0.99 }
+	MetricsService.summary("medusa_tick_duration_seconds", "Total tick processing time", tickQuantiles, nil, netLabel)
 	MetricsService.summary(
 		"medusa_poll_sensors_duration_seconds",
 		"Sensor polling step time",
@@ -200,6 +247,12 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 		"Number of sensor updates a track received before expiring",
 		Medusa.Constants.TRACK_UPDATE_EXPIRY_BUCKETS,
 		netLabel
+	)
+	MetricsService.histogram(
+		"medusa_crew_suppression_duration_seconds",
+		"Applied crew suppression duration",
+		{ 15, 30, 60, 120, 300, 600, 1800, 3600 },
+		crewCauseLabel
 	)
 	-- Pipeline chunk throughput
 	local phaseLabel = { "network", "phase" }
@@ -349,7 +402,7 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 
 				local batteries = ai:batteries():getAll()
 				local hotCount, warmCount, coldCount, engagedCount = 0, 0, 0, 0
-				local damagedCount, shutdownCount, rearmingCount = 0, 0, 0
+				local damagedCount, shutdownCount, rearmingCount, crewSuppressedCount = 0, 0, 0, 0
 				local suppressedCount, selfDefendCount, pdProtectedCount = 0, 0, 0
 				local totalAmmo = 0
 				for i = 1, #batteries do
@@ -382,6 +435,9 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 					if b.RearmCheckTime then
 						rearmingCount = rearmingCount + 1
 					end
+					if Medusa.Entities.Battery.isCrewSuppressed(b) then
+						crewSuppressedCount = crewSuppressedCount + 1
+					end
 					local HDS = Medusa.Constants.HarmDefenseState
 					if b.HarmDefenseState == HDS.SUPPRESSED then
 						suppressedCount = suppressedCount + 1
@@ -409,11 +465,15 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 				local manpads = ai:manpads():getAll()
 				for i = 1, #manpads do
 					local m = manpads[i]
+					if Medusa.Entities.Battery.isCrewSuppressed(m) then
+						crewSuppressedCount = crewSuppressedCount + 1
+					end
 					local mState = m.Manpad and m.Manpad.SleepWakeState
 					if _manpadStateCounts[mState] ~= nil then
 						_manpadStateCounts[mState] = _manpadStateCounts[mState] + 1
 					end
 				end
+				ms.set("medusa_crew_suppressed_batteries", crewSuppressedCount, labels)
 				local labelBuf = Medusa.Services.MetricsSnapshotService._manpadStateLabel
 				labelBuf.network = id
 				for i = 1, #MANPAD_STATES do
@@ -676,8 +736,6 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 				end
 			end
 
-			local HDS = Medusa.Services.HarmDetectionService
-			local networkStates = HDS._networkStates
 			en = en + 1
 			extLines[en] = "# HELP medusa_track_sprt_llr SPRT log-likelihood ratio"
 			en = en + 1
@@ -711,10 +769,13 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 				local tm = iads:getTrackManager()
 				if tm then
 					local trackStore = tm:getStore()
-					local states = networkStates[trackStore]
-					if states then
-						for trackId, state in pairs(states) do
-							local displayTid = displayTrackId(trackStore:get(trackId))
+					local tracks = trackStore:getAll()
+					for ti = 1, #tracks do
+						local track = tracks[ti]
+						local state = track.HarmAssessment
+						if state then
+							local trackId = track.TrackId
+							local displayTid = displayTrackId(track)
 							en = en + 1
 							extLines[en] = string.format(
 								'medusa_track_sprt_llr{network="%s",track="%s",display_track="%s"} %.3f',

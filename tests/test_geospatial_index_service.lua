@@ -90,3 +90,35 @@ function TestGeospatialIndexService:test_sync_and_remove_are_idempotent()
 	self.index:removeBattery("sam")
 	lu.assertFalse(contains(self.index:networkedGeoGrid(), "Battery", "sam"))
 end
+
+function TestGeospatialIndexService:test_unit_grid_contains_all_aaa_and_manpad_modes_but_not_sam_launchers()
+	local independentAaa = { UnitId = 1, Roles = { BUR.AAA }, Position = { x = 100, y = 0, z = 100 } }
+	local radarAaa = { UnitId = 2, Roles = { BUR.AAA }, Position = { x = 110, y = 0, z = 100 } }
+	local manpad = { UnitId = 3, Roles = { BUR.MANPAD }, Position = { x = 120, y = 0, z = 100 } }
+	local samLauncher = { UnitId = 4, Roles = { BUR.LAUNCHER }, Position = { x = 130, y = 0, z = 100 } }
+
+	for _, unit in ipairs({ independentAaa, radarAaa, manpad, samLauncher }) do
+		self.index:syncSuppressibleUnit(unit)
+	end
+	local grid = self.index:suppressibleUnitGeoGrid()
+	local cursor = grid:beginQuery({ x = 100, y = 0, z = 100 }, 100)
+	local result = {}
+	local written, visited, complete = grid:continueQuery(cursor, 32, result)
+
+	lu.assertEquals(written, 3)
+	lu.assertEquals(visited, 3)
+	lu.assertTrue(complete)
+	lu.assertEquals(result, { 1, 2, 3 })
+	lu.assertEquals(grid:size(), 3)
+end
+
+function TestGeospatialIndexService:test_destroyed_suppressible_unit_is_removed_from_unit_grid()
+	local unit = { UnitId = 1, Roles = { BUR.AAA }, Position = { x = 100, y = 0, z = 100 } }
+	self.index:syncSuppressibleUnit(unit)
+	lu.assertEquals(self.index:suppressibleUnitGeoGrid():size(), 1)
+
+	unit.OperationalStatus = C.UnitOperationalStatus.DESTROYED
+	self.index:syncSuppressibleUnit(unit)
+
+	lu.assertEquals(self.index:suppressibleUnitGeoGrid():size(), 0)
+end

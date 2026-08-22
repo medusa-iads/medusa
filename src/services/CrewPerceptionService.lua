@@ -38,11 +38,14 @@ function Medusa.Services.CrewPerceptionService.rebuildHeadings(battery, observer
 	local units = battery.Units or {}
 	for i = 1, #units do
 		local unit = units[i]
+		unit.HeadingIndex = nil
 		if Medusa.Entities.Battery.unitHasRole(unit, unitRole) and unit.UnitName then
 			local headingDegrees = GetUnitHeading(unit.UnitName)
 			if headingDegrees then
 				local radians = math.rad(headingDegrees)
 				written = written + 1
+				unit.HeadingDegrees = headingDegrees
+				unit.HeadingIndex = written
 				local heading = headings[written]
 				if not heading then
 					heading = {}
@@ -57,6 +60,42 @@ function Medusa.Services.CrewPerceptionService.rebuildHeadings(battery, observer
 		headings[i] = nil
 	end
 	observerState.UnitHeadingCount = written
+end
+
+local function refreshUnitHeading(battery, unit)
+	local observerState
+	local unitRole
+	if battery.Role == Medusa.Constants.BatteryRole.AAA then
+		observerState = battery.Aaa
+		unitRole = Medusa.Constants.BatteryUnitRole.AAA
+	elseif battery.Role == Medusa.Constants.BatteryRole.MANPAD then
+		observerState = battery.Manpad
+		unitRole = Medusa.Constants.BatteryUnitRole.MANPAD
+	end
+	if not observerState or not Medusa.Entities.Battery.unitHasRole(unit, unitRole) then
+		return false
+	end
+	local headingDegrees = GetUnitHeading(unit.UnitName)
+	if not headingDegrees then
+		return false
+	end
+	local index = unit.HeadingIndex
+	if not index then
+		index = (observerState.UnitHeadingCount or 0) + 1
+		unit.HeadingIndex = index
+		observerState.UnitHeadingCount = index
+	end
+	local headings = observerState.UnitHeadings
+	local heading = headings[index]
+	if not heading then
+		heading = {}
+		headings[index] = heading
+	end
+	local radians = math.rad(headingDegrees)
+	unit.HeadingDegrees = headingDegrees
+	heading.hx = math.cos(radians)
+	heading.hz = math.sin(radians)
+	return true
 end
 
 function Medusa.Services.CrewPerceptionService.hears(observerPosition, targetPosition, rangeM)
@@ -161,4 +200,39 @@ function Medusa.Services.CrewPerceptionService.refreshOne(ctx)
 	observerState.LastPositionRefreshTime = ctx.now
 	Medusa.Services.CrewPerceptionService.rebuildHeadings(battery, observerState, ctx.unitRole)
 	return cursorBatteryId, true
+end
+
+function Medusa.Services.CrewPerceptionService.refreshUnitPositions(ctx)
+	local visited = 0
+	local refreshed = 0
+	local aaaRefreshed = 0
+	local manpadRefreshed = 0
+	while visited < ctx.budget do
+		local battery, unit = ctx.batteryRepository:nextUnitForPositionRefresh()
+		if not unit then
+			break
+		end
+		visited = visited + 1
+		local lastRefresh = unit.LastPositionRefreshTime
+		if unit.UnitName and (not lastRefresh or ctx.now - lastRefresh >= D.POSITION_REFRESH_MIN_INTERVAL_SEC) then
+			local position = GetUnitPosition(unit.UnitName)
+			unit.LastPositionRefreshTime = ctx.now
+			if position then
+				unit.Position = position
+				local headingRefreshed = refreshUnitHeading(battery, unit)
+				ctx.spatialIndex:syncSuppressibleUnit(unit)
+				if battery.PositionAnchorUnitId == unit.UnitId then
+					battery.Position = position
+					ctx.spatialIndex:syncBattery(battery)
+				end
+				refreshed = refreshed + 1
+				if headingRefreshed and battery.Role == Medusa.Constants.BatteryRole.AAA then
+					aaaRefreshed = aaaRefreshed + 1
+				elseif headingRefreshed and battery.Role == Medusa.Constants.BatteryRole.MANPAD then
+					manpadRefreshed = manpadRefreshed + 1
+				end
+			end
+		end
+	end
+	return visited, refreshed, aaaRefreshed, manpadRefreshed
 end

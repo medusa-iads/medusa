@@ -2030,6 +2030,9 @@ globals:
   GetUnitPlayerName:
     args:
     - type: string
+  GetUnitHealth:
+    args:
+    - type: string
   GetUnitLife:
     args:
     - type: string

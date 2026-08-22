@@ -16,6 +16,8 @@ require("services.BatteryActivationService")
 require("services.EmconService")
 require("services.ManpadService")
 require("services.AaaService")
+require("services.CrewSuppressionService")
+require("services.CrewPerceptionService")
 require("services.HarmDetectionService")
 require("services.HarmResponseService")
 require("services.EntityFactory")
@@ -183,10 +185,9 @@ function Medusa.Core.IadsNetwork:new(opts)
 		_sensorPollBudget = 3,
 		_assignmentInterval = 2,
 		_manpadInterval = 10,
-		_manpadPosRefreshInterval = Medusa.Constants.Manpad.POS_REFRESH_TICK_INTERVAL,
 		_manpadCtx = {},
 		_aaaInterval = 10,
-		_aaaPosRefreshInterval = Medusa.Constants.LocalAircraftDetection.POSITION_REFRESH_TICK_INTERVAL,
+		_unitPosRefreshInterval = Medusa.Constants.LocalAircraftDetection.POSITION_REFRESH_TICK_INTERVAL,
 		-- IadsNetwork fills this table before each AaaService operation.
 		_aaaCtx = {},
 		_aaaBarrageState = opts and opts.aaaBarrageState or Medusa.Services.AaaService.newBarrageState(),
@@ -202,6 +203,16 @@ function Medusa.Core.IadsNetwork:new(opts)
 		_deathQueue = nil,
 		_shotQueue = nil,
 		_killQueue = nil,
+		_hitQueue = nil,
+		_hitSubscriptionId = nil,
+		_hitEventBus = nil,
+		_terminalEventQueue = RingBuffer(Medusa.Constants.CrewSuppression.IMPACT_QUEUE_CAPACITY, false),
+		_activeTerminalEvent = nil,
+		_terminalUnitBuffer = {},
+		_blackBoxWeaponStore = opts and opts.blackBoxWeaponStore,
+		_blackBoxTerminalSink = opts and opts.blackBoxTerminalSink,
+		_crewSkillIndex = opts and opts.crewSkillIndex,
+		_crewSuppressionCtx = {},
 		_networkedGeoGrid = nil,
 		_maxEngagementRange = 0,
 		_erectComplete = false,
@@ -220,6 +231,7 @@ function Medusa.Core.IadsNetwork:new(opts)
 		_harmNormalBuffer = {},
 		_ctx = {},
 	}
+	o._metricLabels = { network = o._id }
 	o._logger = Medusa.Logger:ns(string.format("%s | Core.IadsNetwork", tostring(o._id)))
 	o._discovery = Medusa.Services.DiscoveryService:new(nil, {
 		id = o._id,
@@ -275,6 +287,7 @@ function Medusa.Core.IadsNetwork:initialize()
 		tracks = self._trackManager:getStore(),
 		networkedGeoGrid = self._networkedGeoGrid,
 		localGeoGrid = self._spatialIndex:localGeoGrid(),
+		suppressibleUnitGeoGrid = self._spatialIndex:suppressibleUnitGeoGrid(),
 		spatialIndex = self._spatialIndex,
 	})
 
@@ -357,7 +370,12 @@ function Medusa.Core.IadsNetwork:start()
 	if not self._initialized then
 		self:initialize()
 	end
+	if self._running then
+		return true
+	end
+	self:_subscribeSuppressionEvents()
 	self._running = true
+	Medusa.Services.CrewSuppressionService.resume(self:_updateCrewSuppressionContext(GetTime()))
 	self._logger:info("started")
 	self._discovery:enableDynamicAdds()
 	self:_onTick()
@@ -381,12 +399,28 @@ end
 function Medusa.Core.IadsNetwork:stop()
 	self._running = false
 	self._logger:info("stopped")
+	if self._initialized then
+		Medusa.Services.CrewSuppressionService.stop(self:_updateCrewSuppressionContext(GetTime()))
+	end
+	self:_unsubscribeSuppressionEvents()
 	self:_releaseLocalDefenses()
 	if self._timerId then
 		CancelSchedule(self._timerId)
 		self._timerId = nil
 	end
 	return true
+end
+
+function Medusa.Core.IadsNetwork:_updateCrewSuppressionContext(now)
+	local ctx = self._crewSuppressionCtx
+	ctx.networkId = self._id
+	ctx.batteryRepository = self._assetIndex:batteryRepository()
+	ctx.trackStore = self._trackManager:getStore()
+	ctx.barrageState = self._aaaBarrageState
+	ctx.doctrine = self._doctrine
+	ctx.suppressibleUnitGeoGrid = self._assetIndex:suppressibleUnitGeoGrid()
+	ctx.now = now
+	return ctx
 end
 
 function Medusa.Core.IadsNetwork:_logDoctrine()
@@ -411,6 +445,7 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 	local batteryRepository = self._assetIndex:batteryRepository()
 	local harmSystems = self._harmCapableSystems
 	local doctrine = self._doctrine
+	local crewSkillIndex = self._crewSkillIndex
 
 	local iads = self
 	self._discovery:setListener({
@@ -424,12 +459,19 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 			local path = (dto.parsed and dto.parsed.echelonPath) and table.concat(dto.parsed.echelonPath, ".") or ""
 			logger:info(string.format("added: '%s' roles=[%s] path='%s'", tostring(dto.groupName), roles, path))
 
-			local classification =
-				Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, harmSystems, doctrine)
+			local classification = Medusa.Services.EntityFactory.createFromDTO(
+				dto,
+				stores,
+				networkId,
+				harmSystems,
+				doctrine,
+				crewSkillIndex
+			)
 			if classification == "battery" then
 				local battery = stores.batteries:getByGroupId(dto.groupId)
 				if battery then
 					spatialIndex:syncBattery(battery)
+					spatialIndex:syncSuppressibleUnits(battery)
 					iads:_updateMaxEngagementRange(battery)
 					if iads._erectComplete then
 						local BatteryActivationService = Medusa.Services.BatteryActivationService
@@ -447,17 +489,26 @@ function Medusa.Core.IadsNetwork:_attachDiscoveryListener()
 							string.format("initialized dynamic battery %s as %s", battery.GroupName, defaultState)
 						)
 						iads:_applyDynamicBatteryRanges(battery)
+						Medusa.Services.CrewSuppressionService.applyInitialDamage(
+							iads:_updateCrewSuppressionContext(now),
+							battery
+						)
 					end
 				end
 			elseif classification == "manpad" then
 				local battery = stores.manpads:getByGroupId(dto.groupId)
 				if battery then
 					spatialIndex:syncBattery(battery)
+					spatialIndex:syncSuppressibleUnits(battery)
 					local now = GetTime()
 					Medusa.Services.BatteryActivationService.goCold(battery, now, iads._trackManager:getStore())
 					if battery.TotalAmmoStatus <= 0 then
 						battery.RearmCheckTime = now + Medusa.Constants.REARM_CHECK_INTERVAL_SEC
 					end
+					Medusa.Services.CrewSuppressionService.applyInitialDamage(
+						iads:_updateCrewSuppressionContext(now),
+						battery
+					)
 				end
 			end
 		end,
@@ -487,7 +538,13 @@ function Medusa.Core.IadsNetwork:_subscribeWorldEvents()
 	end
 
 	local function deathPredicate(event)
-		return validateEventInitiator(event, coalitionId)
+		local accepted = validateEventInitiator(event, coalitionId)
+		if accepted then
+			self._logger:debug(string.format("death event accepted: unitId=%s", tostring(event._unitId)))
+		else
+			self._logger:debug("death event rejected: invalid initiator or coalition mismatch")
+		end
+		return accepted
 	end
 	self._deathQueue = Queue()
 	bus:sub(world.event.S_EVENT_DEAD, self._deathQueue, deathPredicate)
@@ -513,8 +570,287 @@ function Medusa.Core.IadsNetwork:_subscribeWorldEvents()
 	end
 	self._killQueue = Queue()
 	bus:sub(world.event.S_EVENT_KILL, self._killQueue, killPredicate)
+	self:_subscribeSuppressionEvents()
 
 	self._logger:info("world event subscriptions active")
+end
+
+function Medusa.Core.IadsNetwork:_subscribeSuppressionEvents()
+	if self._hitSubscriptionId then
+		self._logger:debug(
+			string.format("crew suppression HIT subscription already active: id=%s", tostring(self._hitSubscriptionId))
+		)
+		return true
+	end
+	if not self._doctrine.CrewSuppression.Enabled then
+		self._logger:debug("crew suppression HIT subscription skipped: doctrine disabled")
+		return true
+	end
+	local network = self
+	local dropReason = Medusa.Constants.CrewSuppressionDropReason
+	if not self._hitQueue then
+		local queue = RingBuffer(Medusa.Constants.CrewSuppression.HIT_EVENT_QUEUE_CAPACITY, true)
+		function queue:enqueue(event)
+			if type(event) ~= "table" or not event.initiator or not event.target then
+				network:_recordCrewSuppressionDrop(dropReason.INVALID_EVENT)
+				network._logger:debug("crew suppression HIT rejected: missing initiator or target")
+				return false
+			end
+			local targetCoalition = GetUnitCoalition(event.target)
+			if targetCoalition ~= network._coalitionId then
+				network:_recordCrewSuppressionDrop(dropReason.INVALID_EVENT)
+				network._logger:debug(
+					string.format(
+						"crew suppression HIT rejected: target coalition=%s expected=%s targetType=%s",
+						tostring(targetCoalition),
+						tostring(network._coalitionId),
+						type(event.target)
+					)
+				)
+				return false
+			end
+			local targetUnitId = GetUnitID(event.target)
+			if not targetUnitId then
+				network:_recordCrewSuppressionDrop(dropReason.INVALID_EVENT)
+				network._logger:debug("crew suppression HIT rejected: target unit ID unavailable")
+				return false
+			end
+			local _, evicted = self:push({ TargetUnitId = targetUnitId, ObservedAt = GetTime() })
+			if evicted then
+				network:_recordCrewSuppressionDrop(dropReason.QUEUE_OVERFLOW)
+				network._logger:debug("crew suppression HIT queue overflow: oldest record evicted")
+			end
+			network._logger:debug(
+				string.format("crew suppression HIT queued: targetUnitId=%d depth=%d", targetUnitId, self:size())
+			)
+			return true
+		end
+		self._hitQueue = queue
+	end
+	self._hitEventBus = HarnessWorldEventBus
+	self._hitSubscriptionId = self._hitEventBus:sub(world.event.S_EVENT_HIT, self._hitQueue)
+	self._logger:debug(
+		string.format("crew suppression HIT subscription result: id=%s", tostring(self._hitSubscriptionId))
+	)
+	return self._hitSubscriptionId ~= nil
+end
+
+function Medusa.Core.IadsNetwork:_recordCrewSuppressionDrop(reason)
+	Medusa.Services.MetricsService.inc("medusa_crew_suppression_dropped_events_total", nil, {
+		network = self._id,
+		reason = reason,
+	})
+end
+
+local function validFiniteNumber(value)
+	return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+end
+
+local function validPosition(position)
+	return type(position) == "table"
+		and validFiniteNumber(position.x)
+		and validFiniteNumber(position.y)
+		and validFiniteNumber(position.z)
+end
+
+local function validTerminalKindPayload(terminalEvent, kind, source)
+	if Medusa.Constants.CrewSuppressionTerminalKindBySource[source] ~= kind then
+		return false
+	end
+	return kind ~= Medusa.Constants.CrewSuppressionTerminalKind.EXPLOSIVE
+		or (validFiniteNumber(terminalEvent.EffectiveExplosiveMassKg) and terminalEvent.EffectiveExplosiveMassKg > 0)
+end
+
+function Medusa.Core.IadsNetwork:enqueueTerminalEvent(terminalEvent)
+	local source = terminalEvent and terminalEvent.Source
+	local kind = terminalEvent and terminalEvent.Kind
+	if not self._running or not self._doctrine or not self._doctrine.CrewSuppression.Enabled then
+		self._logger:debug("terminal event ignored: crew suppression inactive")
+		return false
+	end
+	if
+		type(terminalEvent) ~= "table"
+		or not validFiniteNumber(terminalEvent.TerminalEventId)
+		or terminalEvent.TerminalEventId <= 0
+		or not validPosition(terminalEvent.Position)
+		or not validFiniteNumber(terminalEvent.ObservedAt)
+		or Medusa.Constants.CrewSuppressionTerminalKind[kind] ~= kind
+		or Medusa.Constants.CrewSuppressionTerminalSource[source] ~= source
+	then
+		self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.INVALID_EVENT)
+		self._logger:debug("terminal event rejected at IADS boundary")
+		return false
+	end
+	if not validTerminalKindPayload(terminalEvent, kind, source) then
+		self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.INVALID_EVENT)
+		self._logger:debug("terminal event rejected: kind payload mismatch")
+		return false
+	end
+	local accepted = self._terminalEventQueue:push({
+		TerminalEventId = terminalEvent.TerminalEventId,
+		Kind = kind,
+		Position = { x = terminalEvent.Position.x, y = terminalEvent.Position.y, z = terminalEvent.Position.z },
+		EffectiveExplosiveMassKg = kind == Medusa.Constants.CrewSuppressionTerminalKind.EXPLOSIVE
+				and terminalEvent.EffectiveExplosiveMassKg
+			or nil,
+		ObservedAt = terminalEvent.ObservedAt,
+		Source = source,
+	})
+	if not accepted then
+		self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.QUEUE_OVERFLOW)
+		self._logger:debug(
+			string.format(
+				"terminal-event queue full: rejected id=%s kind=%s depth=%d",
+				tostring(terminalEvent.TerminalEventId),
+				kind,
+				self._terminalEventQueue:size()
+			)
+		)
+		return false
+	end
+	self._logger:debug(
+		string.format(
+			"terminal event queued: id=%s kind=%s source=%s depth=%d",
+			tostring(terminalEvent.TerminalEventId),
+			kind,
+			source,
+			self._terminalEventQueue:size()
+		)
+	)
+	return true
+end
+
+function Medusa.Core.IadsNetwork:_processTerminalEvents(taskBudget, visitBudget)
+	local steps = 0
+	local visits = 0
+	local now = GetTime()
+	local ctx = self:_updateCrewSuppressionContext(now)
+	while steps < taskBudget and visits < visitBudget do
+		if
+			self._activeTerminalEvent
+			and now - self._activeTerminalEvent.TerminalEvent.ObservedAt
+				> Medusa.Constants.CrewSuppression.IMPACT_MAX_AGE_SEC
+		then
+			self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.IMPACT_EXPIRED)
+			self._logger:debug(
+				string.format(
+					"active terminal event expired: id=%s",
+					tostring(self._activeTerminalEvent.TerminalEvent.TerminalEventId)
+				)
+			)
+			self._activeTerminalEvent = nil
+			steps = steps + 1
+		end
+		if steps >= taskBudget then
+			break
+		end
+		if not self._activeTerminalEvent then
+			local terminalEvent = self._terminalEventQueue:pop()
+			if not terminalEvent then
+				break
+			end
+			if now - terminalEvent.ObservedAt > Medusa.Constants.CrewSuppression.IMPACT_MAX_AGE_SEC then
+				self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.IMPACT_EXPIRED)
+				self._logger:debug(
+					string.format("terminal event expired: id=%s", tostring(terminalEvent.TerminalEventId))
+				)
+				steps = steps + 1
+			else
+				local work = Medusa.Services.CrewSuppressionService.beginTerminalEvent(ctx, terminalEvent)
+				if work then
+					self._activeTerminalEvent = work
+				else
+					self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.INVALID_EVENT)
+					self._logger:debug(
+						string.format(
+							"terminal event evaluation rejected: id=%s",
+							tostring(terminalEvent.TerminalEventId)
+						)
+					)
+					steps = steps + 1
+				end
+			end
+		end
+		if self._activeTerminalEvent then
+			local visited, complete = Medusa.Services.CrewSuppressionService.continueTerminalEvent(
+				ctx,
+				self._activeTerminalEvent,
+				visitBudget - visits,
+				self._terminalUnitBuffer
+			)
+			visits = visits + visited
+			steps = steps + 1
+			if complete then
+				self._activeTerminalEvent = nil
+			end
+		end
+	end
+	Medusa.Services.MetricsService.set(
+		"medusa_crew_suppression_impact_queue_depth",
+		self._terminalEventQueue:size(),
+		self._metricLabels
+	)
+	return steps, visits
+end
+
+function Medusa.Core.IadsNetwork:_runBlackBoxWeaponObservations(now)
+	if not self._blackBoxWeaponStore or not self._blackBoxWeaponStore:isStarted() or not self._blackBoxTerminalSink then
+		return 0
+	end
+	return Medusa.Services.BlackBoxService.updateDue(self._blackBoxWeaponStore, now, self._blackBoxTerminalSink)
+end
+
+function Medusa.Core.IadsNetwork:_unsubscribeSuppressionEvents()
+	if self._hitSubscriptionId and self._hitEventBus then
+		self._hitEventBus:unsub(self._hitSubscriptionId)
+	end
+	self._hitSubscriptionId = nil
+	self._hitEventBus = nil
+	if self._hitQueue then
+		self._hitQueue:clear()
+	end
+	self._terminalEventQueue:clear()
+	self._activeTerminalEvent = nil
+	self._logger:debug("crew suppression HIT subscription removed and queue cleared")
+end
+
+function Medusa.Core.IadsNetwork:_processHitEvents(limit)
+	if not self._hitQueue or self._hitQueue:isEmpty() then
+		Medusa.Services.MetricsService.set("medusa_crew_suppression_event_queue_depth", 0, self._metricLabels)
+		return 0
+	end
+	local processed = 0
+	local now = GetTime()
+	local ctx = self:_updateCrewSuppressionContext(now)
+	while processed < limit and not self._hitQueue:isEmpty() do
+		local record = self._hitQueue:pop()
+		local age = now - record.ObservedAt
+		if age <= Medusa.Constants.CrewSuppression.HIT_EVENT_MAX_AGE_SEC then
+			self._logger:debug(
+				string.format("processing crew suppression HIT: targetUnitId=%d age=%.3fs", record.TargetUnitId, age)
+			)
+			local applied = Medusa.Services.CrewSuppressionService.processDamage(ctx, record.TargetUnitId)
+			self._logger:debug(
+				string.format(
+					"crew suppression HIT processed: targetUnitId=%d applied=%s",
+					record.TargetUnitId,
+					tostring(applied)
+				)
+			)
+		else
+			self:_recordCrewSuppressionDrop(Medusa.Constants.CrewSuppressionDropReason.EXPIRED_EVENT)
+			self._logger:debug(
+				string.format("crew suppression HIT expired: targetUnitId=%d age=%.3fs", record.TargetUnitId, age)
+			)
+		end
+		processed = processed + 1
+	end
+	Medusa.Services.MetricsService.set(
+		"medusa_crew_suppression_event_queue_depth",
+		self._hitQueue:size(),
+		self._metricLabels
+	)
+	return processed
 end
 
 function Medusa.Core.IadsNetwork:_processDeathEvents(limit)
@@ -525,7 +861,10 @@ function Medusa.Core.IadsNetwork:_processDeathEvents(limit)
 	while processed < limit and not self._deathQueue:isEmpty() do
 		local event = self._deathQueue:dequeue()
 		if event and event._unitId then
+			self._logger:debug(string.format("processing death event: unitId=%s", tostring(event._unitId)))
 			self:_handleUnitDeath(event._unitId)
+		else
+			self._logger:debug("death event ignored: unit ID unavailable")
 		end
 		processed = processed + 1
 	end
@@ -533,6 +872,7 @@ function Medusa.Core.IadsNetwork:_processDeathEvents(limit)
 end
 
 function Medusa.Core.IadsNetwork:_handleUnitDeath(unitId)
+	self._logger:debug(string.format("resolving death event: unitId=%s", tostring(unitId)))
 	local sensorStore = self._assetIndex:sensors()
 	local sensor = sensorStore:getByUnitId(unitId)
 	if sensor then
@@ -542,21 +882,45 @@ function Medusa.Core.IadsNetwork:_handleUnitDeath(unitId)
 	end
 
 	local batteryRepository = self._assetIndex:batteryRepository()
-	local battery = batteryRepository:getByUnitId(unitId)
+	local battery, destroyedUnit = batteryRepository:getByUnitId(unitId)
 	if not battery then
+		self._logger:debug(string.format("death event ignored: unitId=%s is not managed", tostring(unitId)))
 		return
 	end
+	self._logger:debug(
+		string.format(
+			"death event matched battery %s: unitId=%s role=%s members=%d",
+			battery.GroupName or battery.BatteryId,
+			tostring(unitId),
+			tostring(battery.Role),
+			#(battery.Units or {})
+		)
+	)
 
 	local wasRadarDirectedAaa = Medusa.Entities.Battery.isRadarDirectedAaa(battery)
+	self._spatialIndex:removeSuppressibleUnit(unitId)
 	batteryRepository:removeUnit(unitId)
+	if battery.PositionAnchorUnitId == unitId then
+		local preferredRole = battery.Role == Medusa.Constants.BatteryRole.AAA and Medusa.Constants.BatteryUnitRole.AAA
+			or battery.Role == Medusa.Constants.BatteryRole.MANPAD and Medusa.Constants.BatteryUnitRole.MANPAD
+			or nil
+		local anchor = Medusa.Entities.Battery.selectPositionAnchor(battery, preferredRole)
+		battery.Position = anchor and anchor.Position or nil
+	end
 	if battery.Role == Medusa.Constants.BatteryRole.MANPAD then
 		local newStatus = Medusa.Entities.Battery.recomputeState(battery)
 		if newStatus == Medusa.Constants.BatteryOperationalStatus.DESTROYED then
 			Medusa.Services.ManpadService.cancelPendingWake(battery)
+			Medusa.Services.CrewSuppressionService.cancelRecovery(battery)
 			batteryRepository:remove(battery.BatteryId)
 			self._spatialIndex:removeBattery(battery.BatteryId)
 			self._logger:info(string.format("manpad destroyed: %s (all MANPAD soldiers dead)", battery.GroupName))
 		else
+			Medusa.Services.CrewSuppressionService.processMemberDestruction(
+				self:_updateCrewSuppressionContext(GetTime()),
+				battery,
+				destroyedUnit
+			)
 			Medusa.Services.ManpadService.rebuildHeadings(battery)
 			self._spatialIndex:syncBattery(battery)
 			self._logger:info(
@@ -575,6 +939,7 @@ function Medusa.Core.IadsNetwork:_handleUnitDeath(unitId)
 	local newStatus = Medusa.Entities.Battery.recomputeState(battery)
 
 	if newStatus == Medusa.Constants.BatteryOperationalStatus.DESTROYED then
+		Medusa.Services.CrewSuppressionService.cancelRecovery(battery)
 		if battery.Role == Medusa.Constants.BatteryRole.AAA then
 			Medusa.Services.AaaService.cleanupBattery({
 				barrageState = self._aaaBarrageState,
@@ -589,6 +954,11 @@ function Medusa.Core.IadsNetwork:_handleUnitDeath(unitId)
 		self._logger:info(string.format("battery destroyed: %s (all units dead)", battery.GroupName))
 	else
 		if battery.Role == Medusa.Constants.BatteryRole.AAA then
+			Medusa.Services.CrewSuppressionService.processMemberDestruction(
+				self:_updateCrewSuppressionContext(GetTime()),
+				battery,
+				destroyedUnit
+			)
 			Medusa.Services.AaaService.rebuildHeadings(battery)
 			if wasRadarDirectedAaa and Medusa.Entities.Battery.isIndependentAaa(battery) then
 				Medusa.Entities.Battery.releaseTrack(battery, self._trackManager:getStore())
@@ -958,6 +1328,14 @@ function Medusa.Core.IadsNetwork:_fastErectBatteries()
 	self._logger:info(string.format("fast erect: %d batteries pre-activated", erected))
 end
 
+function Medusa.Core.IadsNetwork:_applyInitialCrewSuppression(now)
+	local batteries = self._assetIndex:batteryRepository():getAll()
+	local ctx = self:_updateCrewSuppressionContext(now)
+	for i = 1, #batteries do
+		Medusa.Services.CrewSuppressionService.applyInitialDamage(ctx, batteries[i])
+	end
+end
+
 function Medusa.Core.IadsNetwork:_initializeBatteryStates()
 	local batteries = self._assetIndex:batteries():getAll()
 	local BatteryActivationService = Medusa.Services.BatteryActivationService
@@ -1060,6 +1438,7 @@ function Medusa.Core.IadsNetwork:_populateGeoGrid()
 	for i = 1, #batteries do
 		local b = batteries[i]
 		self._spatialIndex:syncBattery(b)
+		self._spatialIndex:syncSuppressibleUnits(b)
 		if self._spatialIndex:isNetworkedBattery(b) then
 			networkedCount = networkedCount + 1
 			local r = b.EngagementRangeMax or 0
@@ -1079,6 +1458,7 @@ function Medusa.Core.IadsNetwork:_populateGeoGrid()
 	local manpads = self._assetIndex:manpads():getAll()
 	for i = 1, #manpads do
 		self._spatialIndex:syncBattery(manpads[i])
+		self._spatialIndex:syncSuppressibleUnits(manpads[i])
 	end
 	localCount = localCount + #manpads
 
@@ -1153,10 +1533,9 @@ function Medusa.Core.IadsNetwork:_buildPollList()
 	local batteries = self._assetIndex:batteries():getAll()
 	for i = 1, #batteries do
 		local b = batteries[i]
-		if
-			b.IsActingAsEWR
-			or (datalink and b.ActivationState == AS.STATE_HOT and not Medusa.Entities.Battery.isIndependentAaa(b))
-		then
+		local canReport = b.ActivationState == AS.STATE_HOT
+			or (b.ActivationState == AS.STATE_WARM and Medusa.Entities.Battery.hasSearchRadar(b))
+		if b.IsActingAsEWR or (datalink and canReport and not Medusa.Entities.Battery.isIndependentAaa(b)) then
 			list[#list + 1] = { groupName = b.GroupName, sourceType = trackSourceForBattery(b) }
 		end
 	end
@@ -1335,22 +1714,18 @@ function Medusa.Core.IadsNetwork:_phaseHarmAndPD(ctx)
 
 	local allTracks = ctx.trackStore:getAll(_assignBatteryBuffer)
 	local trackCount = #allTracks
-	local states, ballisticDt, ballisticMaxT = HDS.getAssessContext(ctx)
+	local ballisticDt, ballisticMaxT = HDS.getAssessContext(ctx)
 
-	-- Adaptive min-scans: reduce when track count exceeds budget
 	local totalBudget = math.max(step.budget, math.ceil(trackCount * 0.25))
-	local HARM_MIN_SCANS = Medusa.Constants.HARM_SPRT_MIN_SCANS
-	local effectiveMinScans =
-		math.min(HARM_MIN_SCANS, math.max(5, math.floor(HARM_MIN_SCANS * totalBudget / math.max(1, trackCount))))
 
-	-- Build priority keys: alt*vel for unclassified, 0 for confirmed HARMs
+	-- Build priority keys: confirmed HARMs first, then altitude times speed.
 	local AAT = Medusa.Constants.AssessedAircraftType
 	local keys = self._harmPriorityKeys
 	local sortBuf = self._harmSortBuffer
 	for i = 1, trackCount do
 		local track = allTracks[i]
 		if track.AssessedAircraftType == AAT.HARM then
-			keys[i] = 0
+			keys[i] = math.huge
 		else
 			local vel = track.Velocity
 			local alt = track.Position and track.Position.y or 0
@@ -1378,16 +1753,7 @@ function Medusa.Core.IadsNetwork:_phaseHarmAndPD(ctx)
 	for i = 1, priorityCount do
 		local track = allTracks[sortBuf[i]]
 		if track and track.LifecycleState == _LS.ACTIVE then
-			HDS.assessSingleTrack(
-				track,
-				allTracks,
-				ctx.geoGrid,
-				ctx.batteryStore,
-				states,
-				ballisticDt,
-				ballisticMaxT,
-				effectiveMinScans
-			)
+			HDS.assessSingleTrack(track, allTracks, ctx.geoGrid, ctx.batteryStore, ballisticDt, ballisticMaxT)
 			priorityProcessed = priorityProcessed + 1
 		end
 	end
@@ -1416,16 +1782,7 @@ function Medusa.Core.IadsNetwork:_phaseHarmAndPD(ctx)
 		if not track then
 			break
 		end
-		HDS.assessSingleTrack(
-			track,
-			allTracks,
-			ctx.geoGrid,
-			ctx.batteryStore,
-			states,
-			ballisticDt,
-			ballisticMaxT,
-			effectiveMinScans
-		)
+		HDS.assessSingleTrack(track, allTracks, ctx.geoGrid, ctx.batteryStore, ballisticDt, ballisticMaxT)
 		normalProcessed = normalProcessed + 1
 	end
 
@@ -1601,17 +1958,6 @@ function Medusa.Core.IadsNetwork:_runManpadPhase()
 	MS.observe("medusa_manpad_eval_duration_seconds", hpt() - t1)
 end
 
-function Medusa.Core.IadsNetwork:_runManpadPositionRefreshPhase()
-	local ctx = self._manpadCtx
-	ctx.manpadStore = self._assetIndex:manpads()
-	ctx.localGeoGrid = self._assetIndex:localGeoGrid()
-	ctx.now = GetTime()
-	local ok, err = pcall(Medusa.Services.ManpadService.refreshOnePosition, ctx)
-	if not ok then
-		self._logger:error(string.format("manpad pos refresh failed: %s", tostring(err)))
-	end
-end
-
 function Medusa.Core.IadsNetwork:_runAaaPhase()
 	local ctx = self._aaaCtx
 	ctx.networkId = self._id
@@ -1634,15 +1980,25 @@ function Medusa.Core.IadsNetwork:_runAaaPhase()
 	MS.observe("medusa_aaa_eval_duration_seconds", hpt() - t1)
 end
 
-function Medusa.Core.IadsNetwork:_runAaaPositionRefreshPhase()
-	local ctx = self._aaaCtx
-	ctx.batteryStore = self._assetIndex:batteries()
-	ctx.localGeoGrid = self._assetIndex:localGeoGrid()
-	ctx.spatialIndex = self._spatialIndex
-	ctx.now = GetTime()
-	local ok, err = pcall(Medusa.Services.AaaService.refreshOnePosition, ctx)
-	if not ok then
-		self._logger:error(string.format("AAA position refresh failed: %s", tostring(err)))
+function Medusa.Core.IadsNetwork:_runUnitPositionRefreshPhase()
+	local visited, refreshed, aaaRefreshed, manpadRefreshed =
+		Medusa.Services.CrewPerceptionService.refreshUnitPositions({
+			batteryRepository = self._assetIndex:batteryRepository(),
+			spatialIndex = self._spatialIndex,
+			now = GetTime(),
+			budget = Medusa.Constants.CrewSuppression.UNIT_POSITION_REFRESH_BUDGET,
+		})
+	if refreshed > 0 then
+		Medusa.Services.MetricsService.inc("medusa_battery_unit_position_refreshes_total", refreshed)
+	end
+	if aaaRefreshed > 0 then
+		Medusa.Services.MetricsService.inc("medusa_aaa_position_refreshes_total", aaaRefreshed)
+	end
+	if manpadRefreshed > 0 then
+		Medusa.Services.MetricsService.inc("medusa_manpad_position_refreshes_total", manpadRefreshed)
+	end
+	if Medusa.Logger._level == "DEBUG" or Medusa.Logger._level == "TRACE" then
+		self._logger:debug(string.format("unit position refresh: visited=%d refreshed=%d", visited, refreshed))
 	end
 end
 
@@ -1727,19 +2083,21 @@ function Medusa.Core.IadsNetwork:tick()
 	self._tickCounter = self._tickCounter + 1
 
 	local MetricsService = Medusa.Services.MetricsService
-	MetricsService.setContext({ network = self._id })
+	MetricsService.setContext(self._metricLabels)
 	MetricsService.inc("medusa_ticks_total")
 
 	local now = GetTime()
 	local hpt = Medusa.hpTimer
 	local t0 = hpt()
 	local memBefore = collectgarbage("count")
+	self:_runBlackBoxWeaponObservations(now)
 
 	if self._tickCounter == 1 then
 		self._lastScanTime = now
 		self:_runScanAndLog()
 		self:_populateGeoGrid()
 		self:_fastErectBatteries()
+		self:_applyInitialCrewSuppression(now)
 		self:_probeAirborneSensors()
 		local typePositions = self:_collectProbeTargets()
 		if next(typePositions) then
@@ -1772,6 +2130,11 @@ function Medusa.Core.IadsNetwork:tick()
 
 	self._discovery:processDynamicAdds(2)
 	self:_processDeathEvents(2)
+	self:_processHitEvents(Medusa.Constants.CrewSuppression.HIT_EVENT_PROCESSING_BUDGET)
+	self:_processTerminalEvents(
+		Medusa.Constants.CrewSuppression.IMPACT_PROCESSING_BUDGET,
+		Medusa.Constants.CrewSuppression.IMPACT_UNIT_VISIT_BUDGET
+	)
 	self:_processShotEvents(2)
 	self:_processKillEvents(2)
 	self:_checkRearming(now)
@@ -1792,16 +2155,12 @@ function Medusa.Core.IadsNetwork:tick()
 		self:_runManpadPhase()
 	end
 
-	if self._erectComplete and (self._tickCounter % self._manpadPosRefreshInterval) == 0 then
-		self:_runManpadPositionRefreshPhase()
-	end
-
 	if self._erectComplete and (self._tickCounter % self._aaaInterval) == 0 then
 		self:_runAaaPhase()
 	end
 
-	if self._erectComplete and (self._tickCounter % self._aaaPosRefreshInterval) == 0 then
-		self:_runAaaPositionRefreshPhase()
+	if self._erectComplete and (self._tickCounter % self._unitPosRefreshInterval) == 0 then
+		self:_runUnitPositionRefreshPhase()
 	end
 
 	if (self._tickCounter % 4) ~= 0 then

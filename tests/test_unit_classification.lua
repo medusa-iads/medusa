@@ -17,6 +17,7 @@ require("services.EntityFactory")
 local ulidCounter = 0
 local origGetGroupUnits, origGetUnitDesc, origGetUnitID, origGetUnitType, origGetUnitPosition, origGetUnitHeading
 local origGetUnitAmmo
+local origGetUnitHealth
 
 local function makeMockUnit(id, name)
 	return {
@@ -104,6 +105,7 @@ function TestUnitClassification:setUp()
 	origGetUnitPosition = GetUnitPosition
 	origGetUnitHeading = GetUnitHeading
 	origGetUnitAmmo = GetUnitAmmo
+	origGetUnitHealth = GetUnitHealth
 end
 
 function TestUnitClassification:tearDown()
@@ -114,6 +116,7 @@ function TestUnitClassification:tearDown()
 	GetUnitPosition = origGetUnitPosition
 	GetUnitHeading = origGetUnitHeading
 	GetUnitAmmo = origGetUnitAmmo
+	GetUnitHealth = origGetUnitHealth
 end
 
 function TestUnitClassification:test_classifies_tlar_radar_launcher()
@@ -254,6 +257,26 @@ function TestUnitClassification:test_manpad_wins_tie_with_aaa()
 	local kind = Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
 	lu.assertEquals(kind, "manpad")
 	lu.assertEquals(stores.manpads:count(), 1)
+end
+
+function TestUnitClassification:test_mixed_local_defense_caches_damage_for_each_suppressible_role()
+	setupInventoryTest({ { MANPADS = true }, { AAA = true } })
+	GetUnitHealth = function(unitName)
+		return {
+			CurrentLife = unitName == "unit-2" and 50 or 100,
+			InitialLife = 100,
+			IsAlive = true,
+			IsDamaged = unitName == "unit-2",
+		}
+	end
+	local stores = makeStores()
+
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
+
+	local battery = stores.manpads:getAll()[1]
+	lu.assertFalse(battery.Units[1].InitialDamagePending)
+	lu.assertTrue(battery.Units[2].InitialDamagePending)
+	lu.assertEquals(battery.Units[2].OperationalStatus, Medusa.Constants.UnitOperationalStatus.DAMAGED)
 end
 
 function TestUnitClassification:test_aaa_wins_when_it_outnumbers_manpads()

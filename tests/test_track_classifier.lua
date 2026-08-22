@@ -248,6 +248,23 @@ function TestUpdateIdentifications:test_no_double_promotion_in_one_tick()
 	lu.assertEquals(track.TrackIdentification, "BOGEY")
 end
 
+function TestUpdateIdentifications:test_promotion_waits_for_new_observation()
+	local track = makeTrack({ TrackIdentification = "BOGEY" })
+	track.IntelIdentifyTime = 200
+	track.VIDIdentifyTime = 200
+	self.trackStore:add(track)
+
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ now = 100 }))
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ now = 1000 }))
+
+	lu.assertEquals(track.TrackIdentification, "BOGEY")
+
+	Medusa.Entities.Track.update(track, track.Position, track.Velocity, 1001)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ now = 1001 }))
+
+	lu.assertEquals(track.TrackIdentification, "BANDIT")
+end
+
 function TestUpdateIdentifications:test_bandit_without_identification_time_not_promoted()
 	local track = makeTrack({
 		TrackIdentification = "BANDIT",
@@ -281,7 +298,8 @@ function TestUpdateIdentifications:test_bandit_promoted_to_hostile_via_hostile_i
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 	lu.assertNotNil(track.HostileIntentStart)
 
-	-- Second call at +61s: sustained intent met, promotes to HOSTILE
+	-- Second observation at +61s: sustained intent met, promotes to HOSTILE
+	Medusa.Entities.Track.update(track, { x = 12200, y = 5000, z = 0 }, track.Velocity, 1061)
 	Medusa.Services.TrackClassifier.updateIdentifications(
 		self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 })
 	)

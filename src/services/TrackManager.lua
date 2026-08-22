@@ -81,17 +81,26 @@ function Medusa.Services.TrackManager:processReport(report, now)
 		local dx = report.Position.x - dormant.Position.x
 		local dy = report.Position.y - dormant.Position.y
 		local dz = report.Position.z - dormant.Position.z
-		local dist = math.sqrt(dx * dx + dy * dy + dz * dz)
-		if dist < Medusa.Constants.TRACK_REASSOC_MAX_DIST_M then
+		local lastPositionError = math.sqrt(dx * dx + dy * dy + dz * dz)
+		local elapsed = now - dormant.LastDetectionTime
+		local predictedX = dormant.Position.x + dormant.Velocity.x * elapsed
+		local predictedY = dormant.Position.y + dormant.Velocity.y * elapsed
+		local predictedZ = dormant.Position.z + dormant.Velocity.z * elapsed
+		dx = report.Position.x - predictedX
+		dy = report.Position.y - predictedY
+		dz = report.Position.z - predictedZ
+		local predictedPositionError = math.sqrt(dx * dx + dy * dy + dz * dz)
+		if math.min(lastPositionError, predictedPositionError) < Medusa.Constants.TRACK_REASSOC_MAX_DIST_M then
 			self._dormant[report.NetworkId] = nil
 			return self:_reassociateTrack(report, dormant, now)
 		end
 		self:_releaseDisplayIds(dormant)
 		self._logger:debug(
 			string.format(
-				"dormant re-association failed for network %s: dist=%.0fm > %dm",
+				"dormant re-association failed for network %s: lastError=%.0fm predictedError=%.0fm > %dm",
 				tostring(report.NetworkId),
-				dist,
+				lastPositionError,
+				predictedPositionError,
 				Medusa.Constants.TRACK_REASSOC_MAX_DIST_M
 			)
 		)
@@ -139,11 +148,13 @@ function Medusa.Services.TrackManager:_reassociateTrack(report, dormant, now)
 		OriginSourceType = dormant.OriginSourceType,
 		Position = report.Position,
 		Velocity = report.Velocity,
+		TrackIdentification = dormant.TrackIdentification,
+		AssessedAircraftType = dormant.AssessedAircraftType,
+		LastIdentificationTime = dormant.LastIdentificationTime,
+		HarmAssessment = dormant.HarmAssessment,
+		HarmLikelihoodScore = dormant.HarmLikelihoodScore,
+		IsSeadThreat = dormant.IsSeadThreat,
 	})
-	track.TrackIdentification = dormant.TrackIdentification
-	track.AssessedAircraftType = dormant.AssessedAircraftType
-	track.HarmLikelihoodScore = dormant.HarmLikelihoodScore
-	track.IsSeadThreat = dormant.IsSeadThreat
 	self:_registerTrack(track, report.NetworkId, now)
 	self._logger:info(
 		string.format(
@@ -238,11 +249,15 @@ function Medusa.Services.TrackManager:pruneStale(now)
 			if track.NetworkId then
 				self._dormant[track.NetworkId] = {
 					Position = track.Position,
+					Velocity = track.Velocity,
+					LastDetectionTime = track.LastDetectionTime,
 					DisplayTrackId = track.DisplayTrackId,
 					DisplayTrackIdAliases = track.DisplayTrackIdAliases,
 					OriginSourceType = track.OriginSourceType,
 					TrackIdentification = track.TrackIdentification,
 					AssessedAircraftType = track.AssessedAircraftType,
+					LastIdentificationTime = track.LastIdentificationTime,
+					HarmAssessment = track.HarmAssessment,
 					HarmLikelihoodScore = track.HarmLikelihoodScore,
 					IsSeadThreat = track.IsSeadThreat,
 					expiredAt = now,

@@ -144,6 +144,63 @@ local AAA_SCHEMA = {
 	},
 }
 
+local CREW_SUPPRESSION_SCHEMA = {
+	{
+		name = "DurationMinSec",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_DURATION_MIN_SEC,
+		min = 1,
+		max = Medusa.Constants.CrewSuppression.MAX_DURATION_SEC,
+	},
+	{
+		name = "DurationMaxSec",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_DURATION_MAX_SEC,
+		min = 1,
+		max = Medusa.Constants.CrewSuppression.MAX_DURATION_SEC,
+	},
+	{
+		name = "MaxGroupDiameterM",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_MAX_GROUP_DIAMETER_M,
+		min = 1,
+		max = Medusa.Constants.CrewSuppression.MAX_GROUP_DIAMETER_M,
+	},
+	{
+		name = "ExplosiveRadiusScaleM",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_EXPLOSIVE_RADIUS_SCALE_M,
+		min = 0.1,
+		max = Medusa.Constants.CrewSuppression.EXPLOSIVE_RADIUS_MAX_M,
+	},
+	{
+		name = "ExplosiveRadiusMaxM",
+		default = Medusa.Constants.CrewSuppression.EXPLOSIVE_RADIUS_MAX_M,
+		min = 1,
+		max = Medusa.Constants.CrewSuppression.EXPLOSIVE_RADIUS_MAX_M,
+	},
+	{
+		name = "ExplosiveEffectiveness",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_EXPLOSIVE_EFFECTIVENESS,
+		min = 0,
+		max = 1,
+	},
+	{
+		name = "SkillResistancePerLevel",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_SKILL_RESISTANCE_PER_LEVEL,
+		min = 0,
+		max = Medusa.Constants.CrewSuppression.MAX_SKILL_RESISTANCE_PER_LEVEL,
+	},
+	{
+		name = "CannonRadiusM",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_CANNON_RADIUS_M,
+		min = 1,
+		max = Medusa.Constants.CrewSuppression.CANNON_RADIUS_MAX_M,
+	},
+	{
+		name = "CannonEffectiveness",
+		default = Medusa.Constants.CrewSuppression.DEFAULT_CANNON_EFFECTIVENESS,
+		min = 0,
+		max = 1,
+	},
+}
+
 local _logger
 
 local function resolveNumericSubtable(schema, overrides, legacyOverrides)
@@ -155,7 +212,10 @@ local function resolveNumericSubtable(schema, overrides, legacyOverrides)
 		if raw == nil and setting.legacyName and legacyOverrides then
 			raw = legacyOverrides[setting.legacyName]
 		end
-		local value = tonumber(raw) or setting.default
+		local value = tonumber(raw)
+		if not value or value ~= value or value == math.huge or value == -math.huge then
+			value = setting.default
+		end
 		if setting.min and value < setting.min then
 			value = setting.min
 		elseif setting.max and value > setting.max then
@@ -238,6 +298,47 @@ function Medusa.Entities.Doctrine.new(overrides)
 
 	doctrine.MANPAD = resolveNumericSubtable(MANPAD_SCHEMA, d.MANPAD, d)
 	doctrine.AAA = resolveNumericSubtable(AAA_SCHEMA, d.AAA)
+	local crewSuppressionOverrides = type(d.CrewSuppression) == "table" and d.CrewSuppression or {}
+	doctrine.CrewSuppression = resolveNumericSubtable(CREW_SUPPRESSION_SCHEMA, crewSuppressionOverrides)
+	if doctrine.CrewSuppression.DurationMinSec > doctrine.CrewSuppression.DurationMaxSec then
+		_logger:error(
+			string.format(
+				"CrewSuppression.DurationMinSec '%s' exceeds DurationMaxSec '%s', using defaults",
+				tostring(doctrine.CrewSuppression.DurationMinSec),
+				tostring(doctrine.CrewSuppression.DurationMaxSec)
+			)
+		)
+		doctrine.CrewSuppression.DurationMinSec = Medusa.Constants.CrewSuppression.DEFAULT_DURATION_MIN_SEC
+		doctrine.CrewSuppression.DurationMaxSec = Medusa.Constants.CrewSuppression.DEFAULT_DURATION_MAX_SEC
+	end
+	local enabled = crewSuppressionOverrides.Enabled
+	if enabled ~= nil and type(enabled) ~= "boolean" then
+		_logger:error(
+			string.format(
+				"invalid CrewSuppression.Enabled value '%s', using '%s'",
+				tostring(enabled),
+				tostring(Medusa.Constants.CrewSuppression.DEFAULT_ENABLED)
+			)
+		)
+		enabled = nil
+	end
+	if enabled == nil then
+		enabled = Medusa.Constants.CrewSuppression.DEFAULT_ENABLED
+	end
+	doctrine.CrewSuppression.Enabled = enabled
+	local defaultCrewSkill = Medusa.Constants.CrewSuppression.DEFAULT_CREW_SKILL
+	local crewSkill = crewSuppressionOverrides.DefaultCrewSkill
+	if crewSkill ~= nil and Medusa.Constants.CrewSkill[crewSkill] ~= crewSkill then
+		_logger:error(
+			string.format(
+				"invalid CrewSuppression.DefaultCrewSkill value '%s', using '%s'",
+				tostring(crewSkill),
+				defaultCrewSkill
+			)
+		)
+		crewSkill = nil
+	end
+	doctrine.CrewSuppression.DefaultCrewSkill = crewSkill or defaultCrewSkill
 
 	return doctrine
 end

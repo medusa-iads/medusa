@@ -25,13 +25,6 @@ local function setupMocks()
 	end
 end
 
-local function clearSprtStates()
-	local ns = Medusa.Services.HarmDetectionService._networkStates
-	for k in pairs(ns) do
-		ns[k] = nil
-	end
-end
-
 local function makeMockGeoGrid(batteryStore)
 	return {
 		queryRadius = function(_, _, _, _)
@@ -176,15 +169,13 @@ TestEvaluateTrack = {}
 
 function TestEvaluateTrack:setUp()
 	setupMocks()
-	clearSprtStates()
-	self.states = {}
 end
 
 function TestEvaluateTrack:test_returns_evaluating_with_one_history_entry()
 	local track = makeTrack({ AssessedAircraftType = "MISSILE" })
 	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = { x = 10000, y = 0, z = 6000 } })
 	local store, grid = makeBatteryStoreAndGrid({ battery })
-	local label, state = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
+	local label, state = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
 	lu.assertEquals(label, "EVALUATING")
 	lu.assertNil(state)
 end
@@ -195,7 +186,7 @@ function TestEvaluateTrack:test_below_speed_gate_returns_cleared()
 	Medusa.Entities.Track.update(track, { x = 120, y = 100, z = 120 }, { x = 10, y = 0, z = 10 }, mockTime + 2)
 	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = { x = 10000, y = 0, z = 6000 } })
 	local store, grid = makeBatteryStoreAndGrid({ battery })
-	local label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
+	local label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
 	lu.assertEquals(label, "CLEARED")
 end
 
@@ -205,7 +196,7 @@ function TestEvaluateTrack:test_no_emitting_battery_returns_evaluating()
 	Medusa.Entities.Track.update(track, { x = 2600, y = 4900, z = 3300 }, { x = 600, y = -100, z = 300 }, mockTime + 2)
 	local battery = makeBattery({ ActivationState = "STATE_COLD", Position = { x = 10000, y = 0, z = 6000 } })
 	local store, grid = makeBatteryStoreAndGrid({ battery })
-	local label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
+	local label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
 	lu.assertEquals(label, "EVALUATING")
 end
 
@@ -227,7 +218,7 @@ function TestEvaluateTrack:test_hot_independent_aaa_is_not_an_emitter()
 	}
 	local store, grid = makeBatteryStoreAndGrid({ battery })
 
-	local label, state = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
+	local label, state = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
 
 	lu.assertEquals(label, "EVALUATING")
 	lu.assertNil(state)
@@ -240,27 +231,64 @@ function TestEvaluateTrack:test_evaluating_during_min_scans()
 	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = emitterPos })
 	local store, grid = makeBatteryStoreAndGrid({ battery })
 
-	local label, state = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
+	local label, state = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
 	lu.assertEquals(label, "EVALUATING")
 	lu.assertNotNil(state)
 	lu.assertEquals(state.scanCount, 1)
+	lu.assertTrue(state.llr > 0)
+end
+
+function TestEvaluateTrack:test_predecision_non_arm_evidence_prevents_single_popup_scan_from_confirming()
+	local track = makeTrack({ AssessedAircraftType = "MISSILE" })
+	local emitterPos = { x = 10000, y = 0, z = 6000 }
+	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = emitterPos })
+	local store, grid = makeBatteryStoreAndGrid({ battery })
+
+	populateNonArmHistory(track, 2, mockTime)
+	local label, state = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, nil, nil, 2)
+	lu.assertEquals(label, "EVALUATING")
+	lu.assertTrue(state.llr < 0)
+
+	populateArmHistory(track, 2, mockTime + 100, emitterPos)
+	label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, nil, nil, 2)
+
+	lu.assertNotEquals(label, "CONFIRMED")
+end
+
+function TestEvaluateTrack:test_observation_contributes_evidence_once()
+	local track = makeTrack({ AssessedAircraftType = "MISSILE" })
+	local emitterPos = { x = 10000, y = 0, z = 6000 }
+	populateNonArmHistory(track, 2, mockTime)
+	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = emitterPos })
+	local store, grid = makeBatteryStoreAndGrid({ battery })
+
+	local _, state = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, nil, nil, 1)
+	local llr = state.llr
+	local scanCount = state.scanCount
+
+	Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, nil, nil, 1)
+
+	lu.assertEquals(state.llr, llr)
+	lu.assertEquals(state.scanCount, scanCount)
 end
 
 function TestEvaluateTrack:test_arm_track_reaches_confirmed()
 	local track = makeTrack({ AssessedAircraftType = "MISSILE" })
 	local emitterPos = { x = 10000, y = 0, z = 6000 }
-	populateArmHistory(track, 15, mockTime, emitterPos)
+	populateArmHistory(track, 2, mockTime, emitterPos)
 	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = emitterPos })
 	local store, grid = makeBatteryStoreAndGrid({ battery })
 
 	local label
-	for j = 1, 15 do
+	for j = 1, 24 do
 		populateArmHistory(track, 2, mockTime + j * 100, emitterPos)
-		label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
-		if label == "CONFIRMED" then
-			break
-		end
+		label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
 	end
+	lu.assertEquals(label, "EVALUATING")
+
+	populateArmHistory(track, 2, mockTime + 2500, emitterPos)
+	label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
+
 	lu.assertEquals(label, "CONFIRMED")
 end
 
@@ -273,50 +301,53 @@ function TestEvaluateTrack:test_non_arm_track_does_not_confirm()
 	local label
 	for j = 1, 15 do
 		populateNonArmHistory(track, 2, mockTime + j * 100)
-		label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
+		label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
 	end
 	lu.assertNotEquals(label, "CONFIRMED")
 end
 
-function TestEvaluateTrack:test_confirmed_is_absorbing()
+function TestEvaluateTrack:test_confirmed_requires_opposing_evidence_to_clear()
 	local track = makeTrack({ AssessedAircraftType = "MISSILE" })
 	local emitterPos = { x = 10000, y = 0, z = 6000 }
 	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = emitterPos })
 	local store, grid = makeBatteryStoreAndGrid({ battery })
 
-	for j = 1, 20 do
-		populateArmHistory(track, 2, mockTime + j * 100, emitterPos)
-		Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
-	end
-	local state = self.states[track.TrackId]
-	if state then
-		state.label = "CONFIRMED"
-		state.llr = 10
+	populateArmHistory(track, 2, mockTime, emitterPos)
+	Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
+	local state = track.HarmAssessment
+	state.label = "CONFIRMED"
+	state.llr = Medusa.Constants.HARM_SPRT_THRESH_CONFIRM
+	state.scanCount = Medusa.Constants.HARM_SPRT_MIN_SCANS
 
-		populateNonArmHistory(track, 2, mockTime + 5000)
-		local label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
-		lu.assertEquals(label, "CONFIRMED")
+	local label
+	for j = 1, 10 do
+		populateNonArmHistory(track, 2, mockTime + j * 100)
+		label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, nil, nil, 1)
 	end
+
+	lu.assertEquals(label, "CLEARED")
+	lu.assertTrue(state.llr <= Medusa.Constants.HARM_SPRT_THRESH_CLEAR)
 end
 
-function TestEvaluateTrack:test_cleared_is_absorbing()
+function TestEvaluateTrack:test_cleared_retains_evidence_during_re_evaluation()
 	local track = makeTrack({ AssessedAircraftType = "MISSILE" })
 	local emitterPos = { x = 10000, y = 0, z = 6000 }
 	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = emitterPos })
 	local store, grid = makeBatteryStoreAndGrid({ battery })
 
 	populateNonArmHistory(track, 2, mockTime)
-	Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
-	local state = self.states[track.TrackId]
-	if state then
-		state.label = "CLEARED"
-		state.llr = -5
+	Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
+	local state = track.HarmAssessment
+	state.label = "CLEARED"
+	state.llr = -24.82
+	state.scanCount = Medusa.Constants.HARM_SPRT_MIN_SCANS
 
-		-- Young CLEARED tracks re-enter evaluation (not terminal)
-		populateArmHistory(track, 2, mockTime + 5000, emitterPos)
-		local label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
-		lu.assertEquals(label, "EVALUATING")
-	end
+	populateArmHistory(track, 2, mockTime + 5000, emitterPos)
+	local label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, nil, nil, 1)
+
+	lu.assertEquals(label, "CLEARED")
+	lu.assertTrue(state.llr > -24.82)
+	lu.assertTrue(state.llr < 0)
 end
 
 function TestEvaluateTrack:test_duplicate_timestamps_returns_current_label()
@@ -327,7 +358,7 @@ function TestEvaluateTrack:test_duplicate_timestamps_returns_current_label()
 
 	Medusa.Entities.Track.update(track, { x = 2000, y = 5000, z = 3000 }, { x = 600, y = -100, z = 300 }, mockTime + 1)
 	Medusa.Entities.Track.update(track, { x = 2600, y = 4900, z = 3300 }, { x = 600, y = -100, z = 300 }, mockTime + 1)
-	local label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store, self.states)
+	local label = Medusa.Services.HarmDetectionService._evaluateTrack(track, grid, store)
 	lu.assertEquals(label, "EVALUATING")
 end
 
@@ -337,7 +368,6 @@ TestAssessHarmThreats = {}
 
 function TestAssessHarmThreats:setUp()
 	setupMocks()
-	clearSprtStates()
 	self.trackStore = Medusa.Services.TrackStore:new()
 	self.batteryStore = Medusa.Services.BatteryStore:new()
 	self.geoGrid = makeMockGeoGrid(self.batteryStore)
@@ -364,6 +394,34 @@ function TestAssessHarmThreats:test_reclassifies_confirmed_arm()
 	lu.assertEquals(track.AssessedAircraftType, "HARM")
 	lu.assertTrue(track.IsSeadThreat)
 	lu.assertTrue(track.HarmLikelihoodScore > 0)
+end
+
+function TestAssessHarmThreats:test_opposing_evidence_clears_harm_classification()
+	local emitterPos = { x = 10000, y = 0, z = 6000 }
+	local track = makeTrack({ AssessedAircraftType = "HARM", FirstDetectionTime = 0 })
+	track.IsSeadThreat = true
+	track.HarmAssessment = {
+		label = "CONFIRMED",
+		llr = Medusa.Constants.HARM_SPRT_THRESH_CONFIRM,
+		scanCount = Medusa.Constants.HARM_SPRT_MIN_SCANS,
+		emitterPosition = emitterPos,
+		previousAircraftType = "FIGHTER",
+		previousIsSeadThreat = false,
+	}
+	local battery = makeBattery({ ActivationState = "STATE_COLD", Position = emitterPos })
+	self.trackStore:add(track)
+	self.batteryStore:add(battery)
+
+	for j = 1, 10 do
+		populateNonArmHistory(track, 2, mockTime + j * 100)
+		Medusa.Services.HarmDetectionService.assessHarmThreats(
+			makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
+		)
+	end
+
+	lu.assertEquals(track.HarmAssessment.label, "CLEARED")
+	lu.assertEquals(track.AssessedAircraftType, "FIGHTER")
+	lu.assertFalse(track.IsSeadThreat)
 end
 
 function TestAssessHarmThreats:test_does_not_reclassify_non_arm()
@@ -421,8 +479,7 @@ function TestAssessHarmThreats:test_skips_young_tracks()
 		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
 	)
 	lu.assertEquals(count, 0)
-	local states = Medusa.Services.HarmDetectionService._networkStates[self.trackStore]
-	lu.assertNil(states and states[track.TrackId])
+	lu.assertNil(track.HarmAssessment)
 end
 
 function TestAssessHarmThreats:test_returns_zero_with_no_tracks()
@@ -433,28 +490,6 @@ function TestAssessHarmThreats:test_returns_zero_with_no_tracks()
 		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
 	)
 	lu.assertEquals(count, 0)
-end
-
-function TestAssessHarmThreats:test_prunes_sprt_state_for_removed_tracks()
-	local track = makeTrack({ AssessedAircraftType = "MISSILE", FirstDetectionTime = 0 })
-	local emitterPos = { x = 10000, y = 0, z = 6000 }
-	local battery = makeBattery({ ActivationState = "STATE_WARM", Position = emitterPos })
-	self.trackStore:add(track)
-	self.batteryStore:add(battery)
-
-	populateArmHistory(track, 3, mockTime, emitterPos)
-	Medusa.Services.HarmDetectionService.assessHarmThreats(
-		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
-	)
-
-	local states = Medusa.Services.HarmDetectionService._networkStates[self.trackStore]
-	lu.assertNotNil(states[track.TrackId])
-
-	self.trackStore:remove(track.TrackId)
-	Medusa.Services.HarmDetectionService.assessHarmThreats(
-		makeCtx({ trackStore = self.trackStore, batteryStore = self.batteryStore, geoGrid = self.geoGrid })
-	)
-	lu.assertNil(states[track.TrackId])
 end
 
 function TestAssessHarmThreats:test_cleared_track_gets_zero_score()
@@ -471,8 +506,7 @@ function TestAssessHarmThreats:test_cleared_track_gets_zero_score()
 		)
 	end
 
-	local states = Medusa.Services.HarmDetectionService._networkStates[self.trackStore]
-	local state = states and states[track.TrackId]
+	local state = track.HarmAssessment
 	if state and state.label == "CLEARED" then
 		lu.assertEquals(track.HarmLikelihoodScore, 0)
 	end
@@ -484,7 +518,6 @@ TestExtractFeatures = {}
 
 function TestExtractFeatures:setUp()
 	setupMocks()
-	clearSprtStates()
 end
 
 function TestExtractFeatures:test_extracts_eight_features()

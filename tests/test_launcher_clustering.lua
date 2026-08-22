@@ -224,6 +224,7 @@ function TestClusterLaunchers:test_two_distant_launchers_creates_two_clusters()
 	lu.assertNotNil(battery)
 	lu.assertNotNil(battery.Clusters)
 	lu.assertEquals(#battery.Clusters, 2)
+	lu.assertNil(battery.PositionAnchorUnitId)
 	-- Centroid should be at midpoint
 	lu.assertAlmostEquals(battery.Position.x, dist / 2, 1)
 	lu.assertAlmostEquals(battery.Position.z, 0, 1)

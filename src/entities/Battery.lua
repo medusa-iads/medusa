@@ -174,6 +174,7 @@ function Medusa.Entities.Battery.new(data)
 		EngagementAltitudeMin = data.EngagementAltitudeMin,
 		TotalAmmoStatus = data.TotalAmmoStatus or 0,
 		Position = data.Position,
+		PositionAnchorUnitId = data.PositionAnchorUnitId,
 		LastStateChangeTime = nil,
 		StateChangeHoldDownSec = data.StateChangeHoldDownSec or 5,
 		RadarDependencyPolicy = data.RadarDependencyPolicy or Medusa.Constants.BatteryRadarDependencyPolicy.REQUIRED,
@@ -189,6 +190,12 @@ function Medusa.Entities.Battery.new(data)
 		HarmDefenseDefenders = 0,
 		HarmDefenseThreats = 0,
 		HarmDefenseRatio = 0,
+		GroupDiameterM = data.GroupDiameterM,
+		CrewSuppressionState = Medusa.Constants.CrewSuppressionState.CLEAR,
+		CrewSuppressionCause = nil,
+		CrewSuppressionUntil = nil,
+		CrewSuppressionTimerId = nil,
+		LastTerminalEventId = data.LastTerminalEventId,
 		IsActingAsEWR = data.IsActingAsEWR or false,
 		PkRangeOptimal = data.PkRangeOptimal,
 		PkRangeSigma = data.PkRangeSigma,
@@ -201,6 +208,28 @@ function Medusa.Entities.Battery.new(data)
 	}
 
 	return o
+end
+
+function Medusa.Entities.Battery.selectPositionAnchor(battery, preferredRole)
+	local units = battery and battery.Units or {}
+	if preferredRole then
+		for i = 1, #units do
+			if units[i].Position and Medusa.Entities.Battery.unitHasRole(units[i], preferredRole) then
+				battery.PositionAnchorUnitId = units[i].UnitId
+				return units[i]
+			end
+		end
+	end
+	for i = 1, #units do
+		if units[i].Position then
+			battery.PositionAnchorUnitId = units[i].UnitId
+			return units[i]
+		end
+	end
+	if battery then
+		battery.PositionAnchorUnitId = nil
+	end
+	return nil
 end
 
 function Medusa.Entities.Battery.newUnit(data)
@@ -221,7 +250,36 @@ function Medusa.Entities.Battery.newUnit(data)
 		AmmoTypes = data.AmmoTypes,
 		OperationalStatus = data.OperationalStatus or Medusa.Constants.UnitOperationalStatus.ACTIVE,
 		RadarStatus = data.RadarStatus or Medusa.Constants.RadarStatus.NA,
+		LastKnownLife = data.LastKnownLife,
+		InitialLife = data.InitialLife,
+		InitialDamagePending = data.InitialDamagePending == true,
+		Position = data.Position,
+		LastPositionRefreshTime = data.LastPositionRefreshTime,
+		HeadingDegrees = data.HeadingDegrees,
+		HeadingIndex = data.HeadingIndex,
+		CrewSkill = data.CrewSkill,
+		LastTerminalEventId = data.LastTerminalEventId,
 	}
+end
+
+function Medusa.Entities.Battery.isCrewSuppressed(battery)
+	return battery and battery.CrewSuppressionState == Medusa.Constants.CrewSuppressionState.SUPPRESSED
+end
+
+function Medusa.Entities.Battery.applyCrewSuppression(battery, cause, deadline)
+	local extendsDeadline = not battery.CrewSuppressionUntil or deadline > battery.CrewSuppressionUntil
+	battery.CrewSuppressionState = Medusa.Constants.CrewSuppressionState.SUPPRESSED
+	if extendsDeadline then
+		battery.CrewSuppressionCause = cause
+		battery.CrewSuppressionUntil = deadline
+	end
+end
+
+function Medusa.Entities.Battery.clearCrewSuppression(battery)
+	battery.CrewSuppressionState = Medusa.Constants.CrewSuppressionState.CLEAR
+	battery.CrewSuppressionCause = nil
+	battery.CrewSuppressionUntil = nil
+	battery.CrewSuppressionTimerId = nil
 end
 
 function Medusa.Entities.Battery.computeEngagementRange(battery)
@@ -596,10 +654,12 @@ function Medusa.Entities.Battery.computeEffectiveRanges(battery)
 	end
 end
 
+function Medusa.Entities.Battery.hasSearchRadar(battery)
+	return (battery.DetectionRangeMax or 0) > 0 and Medusa.Entities.Battery.hasRoleAlive(battery, SEARCH_ROLES)
+end
+
 function Medusa.Entities.Battery.isRadarDirectedAaa(battery)
-	return battery.Role == BR.AAA
-		and (battery.DetectionRangeMax or 0) > 0
-		and Medusa.Entities.Battery.hasRoleAlive(battery, SEARCH_ROLES)
+	return battery.Role == BR.AAA and Medusa.Entities.Battery.hasSearchRadar(battery)
 end
 
 function Medusa.Entities.Battery.isIndependentAaa(battery)
