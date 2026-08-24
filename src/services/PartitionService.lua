@@ -50,9 +50,8 @@ local function join(parent, left, right)
 	end
 end
 
---- Returns whether any mission-selected provider keeps the command-center edge available.
-local function edgeAvailable(edge, nodesByGroupId)
-	local ids = edge.CommandCenterGroupIds or {}
+--- Returns whether any command center in ids has an available mission-selected provider.
+local function anyCommandCenterAvailable(ids, nodesByGroupId)
 	for i = 1, #ids do
 		local node = nodesByGroupId[ids[i]]
 		if node and C2Node.hasAvailableProvider(node) then
@@ -60,6 +59,18 @@ local function edgeAvailable(edge, nodesByGroupId)
 		end
 	end
 	return false
+end
+
+--- Returns whether the virtual or placed root command center permits top-level links.
+local function rootConnectionAvailable(topology, nodesByGroupId)
+	local ids = topology.RootCommandCenterGroupIds or {}
+	return #ids == 0 or anyCommandCenterAvailable(ids, nodesByGroupId)
+end
+
+--- Returns whether the child and, when required, root command centers keep an edge available.
+local function edgeAvailable(edge, nodesByGroupId, rootAvailable)
+	return anyCommandCenterAvailable(edge.CommandCenterGroupIds or {}, nodesByGroupId)
+		and (edge.ParentKey ~= "" or rootAvailable)
 end
 
 --- Returns connected topology components and the component indexed by each cluster.
@@ -73,9 +84,10 @@ local function buildComponents(topology, nodes)
 		local key = topology.ClusterKeys[i]
 		parent[key] = key
 	end
+	local rootAvailable = rootConnectionAvailable(topology, nodesByGroupId)
 	for i = 1, #topology.Edges do
 		local edge = topology.Edges[i]
-		if edgeAvailable(edge, nodesByGroupId) then
+		if edgeAvailable(edge, nodesByGroupId, rootAvailable) then
 			join(parent, edge.ChildKey, edge.ParentKey)
 		end
 	end

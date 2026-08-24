@@ -14,6 +14,7 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Changed
 
 - HQ groups present when Medusa starts now define fixed hierarchy boundaries. Destroying their command providers can split or degrade the network.
+- Root HQ groups now provide the common command link between top-level branches. Losing every root HQ isolates those branches until a selected root HQ unit returns.
 - Batteries without radar coverage operate through their configured autonomous or self-defense doctrine instead of receiving coordinated control.
 - HARM assessment now samples tracks every two seconds, requires at least five observations.
 - HARM defense now considers viable defensive capacity before remaining active and reports committed defense only after defenders are HOT and assigned to an active HARM.

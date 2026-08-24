@@ -126,6 +126,8 @@ function Medusa.Services.HierarchyService:freezeC2Topology()
 		end
 	end
 	table.sort(boundaries)
+	local rootCommandCenterGroupIds = boundaryGroups[""] or {}
+	table.sort(rootCommandCenterGroupIds)
 	local edges = {}
 	for i = 1, #boundaries do
 		local path = boundaries[i]
@@ -141,6 +143,7 @@ function Medusa.Services.HierarchyService:freezeC2Topology()
 	self._c2Topology = {
 		ClusterKeys = boundaries,
 		Edges = edges,
+		RootCommandCenterGroupIds = rootCommandCenterGroupIds,
 	}
 	return self._c2Topology
 end

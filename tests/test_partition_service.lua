@@ -155,6 +155,58 @@ function TestPartitionService:test_no_command_centers_form_one_virtual_root_comp
 	lu.assertEquals(capturedBattery(snapshot, battery).CoordinationState, C.CoordinationState.COORDINATED)
 end
 
+function TestPartitionService:test_root_command_centers_gate_connections_between_sibling_branches()
+	local ctx = makeContext()
+	local batteries = {
+		root = makeBattery("root-sam", 1),
+		east = makeBattery("east-sam", 2),
+		west = makeBattery("west-sam", 3),
+	}
+	addBattery(ctx, batteries.root, {})
+	addBattery(ctx, batteries.east, { "east" })
+	addBattery(ctx, batteries.west, { "west" })
+
+	local commandCenters = {
+		{ GroupId = 10, NodeName = "root-hq-a", Path = {}, UnitId = 100 },
+		{ GroupId = 11, NodeName = "root-hq-b", Path = {}, UnitId = 110 },
+		{ GroupId = 12, NodeName = "east-hq", Path = { "east" }, UnitId = 120 },
+		{ GroupId = 13, NodeName = "west-hq", Path = { "west" }, UnitId = 130 },
+	}
+	local nodes = {}
+	for i = 1, #commandCenters do
+		local command = commandCenters[i]
+		addGroup(ctx.hierarchy, command.GroupId, command.NodeName, command.Path, true)
+		local node = Medusa.Entities.C2Node.new({
+			GroupId = command.GroupId,
+			NodeName = command.NodeName,
+			Providers = { { UnitId = command.UnitId, UnitName = command.NodeName .. "-1", Available = true } },
+		})
+		ctx.c2NodeStore:add(node)
+		nodes[command.NodeName] = node
+	end
+
+	local connected = refresh(ctx)
+	lu.assertEquals(ctx.hierarchy:getC2Topology().RootCommandCenterGroupIds, { 10, 11 })
+	lu.assertIs(partitionForBattery(connected, batteries.root), partitionForBattery(connected, batteries.east))
+	lu.assertIs(partitionForBattery(connected, batteries.root), partitionForBattery(connected, batteries.west))
+
+	nodes["root-hq-a"].Providers[1].Available = false
+	local redundantRoot = refresh(ctx, connected)
+	lu.assertIs(partitionForBattery(redundantRoot, batteries.root), partitionForBattery(redundantRoot, batteries.east))
+	lu.assertIs(partitionForBattery(redundantRoot, batteries.root), partitionForBattery(redundantRoot, batteries.west))
+
+	nodes["root-hq-b"].Providers[1].Available = false
+	local split = refresh(ctx, redundantRoot)
+	lu.assertNotIs(partitionForBattery(split, batteries.root), partitionForBattery(split, batteries.east))
+	lu.assertNotIs(partitionForBattery(split, batteries.root), partitionForBattery(split, batteries.west))
+	lu.assertNotIs(partitionForBattery(split, batteries.east), partitionForBattery(split, batteries.west))
+
+	nodes["root-hq-a"].Providers[1].Available = true
+	local restored = refresh(ctx, split)
+	lu.assertIs(partitionForBattery(restored, batteries.root), partitionForBattery(restored, batteries.east))
+	lu.assertIs(partitionForBattery(restored, batteries.root), partitionForBattery(restored, batteries.west))
+end
+
 function TestPartitionService:test_command_center_loss_splits_components_and_changes_partition_keys()
 	local ctx = makeContext()
 	local sensor = makeSensor("root-ewr", 1)
