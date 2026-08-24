@@ -10,7 +10,7 @@ require("entities.Entities")
              ╚═════╝╚══════╝    ╚═╝  ╚═══╝ ╚═════╝ ╚═════╝ ╚══════╝
 
     What this entity does
-    - Holds data for a command post node: name, echelon, position, and network membership.
+    - Holds command-center identity and the fixed provider set whose availability controls its edge.
 
     How others use it
     - EntityFactory creates C2Node instances from discovered HQ groups.
@@ -19,20 +19,29 @@ require("entities.Entities")
 
 Medusa.Entities.C2Node = {}
 
+--- Creates the command-center node and its mission-selected provider identities from data.
 function Medusa.Entities.C2Node.new(data)
 	if not data then
 		error("data table is required")
 	end
-	if data.NetworkId == nil then
-		error("missing required field: NetworkId")
+	if data.NodeName == nil then
+		error("missing required field: NodeName")
 	end
 
 	return {
-		C2NodeId = data.C2NodeId or NewULID(),
-		NetworkId = data.NetworkId,
 		NodeName = data.NodeName,
-		EchelonName = data.EchelonName,
-		UnitHandleId = data.UnitHandleId,
-		Position = data.Position,
+		GroupId = data.GroupId,
+		Providers = data.Providers or {},
 	}
+end
+
+--- Returns whether node has at least one selected provider that remains available.
+function Medusa.Entities.C2Node.hasAvailableProvider(node)
+	local providers = node and node.Providers or {}
+	for i = 1, #providers do
+		if providers[i].Available == true then
+			return true
+		end
+	end
+	return false
 end

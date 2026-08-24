@@ -5,7 +5,13 @@ require("entities.Battery")
 require("services.stores.UnitGeoGrid")
 
 --[[
-    GEOSPATIAL INDEX SERVICE
+	██████╗ ██╗███████╗
+	██╔════╝ ██║██╔════╝
+	██║  ███╗██║███████╗
+	██║   ██║██║╚════██║
+	╚██████╔╝██║███████║
+╚═════╝ ╚═╝╚══════╝
+
 
     What this service does
     - Owns the NetworkedGeoGrid and LocalGeoGrid for one IADS network.

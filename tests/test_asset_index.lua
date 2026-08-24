@@ -11,6 +11,7 @@ TestAssetIndex = {}
 
 function TestAssetIndex:test_accessors_return_stores()
 	local mockStores = {
+		unitIndex = { name = "unitIndex" },
 		sensors = { name = "sensors" },
 		batteries = { name = "batteries" },
 		c2Nodes = { name = "c2Nodes" },
@@ -25,6 +26,7 @@ function TestAssetIndex:test_accessors_return_stores()
 
 	local index = Medusa.Services.AssetIndex.new(mockStores)
 
+	lu.assertIs(index:unitIndex(), mockStores.unitIndex)
 	lu.assertIs(index:sensors(), mockStores.sensors)
 	lu.assertIs(index:batteries(), mockStores.batteries)
 	lu.assertIs(index:c2Nodes(), mockStores.c2Nodes)

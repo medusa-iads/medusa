@@ -11,7 +11,7 @@ require("services.Services")
 require("services.stores.TrackStore")
 require("services.stores.BatteryStore")
 require("services.SpatialQuery")
-require("services.MetricsService")
+require("observability.MetricsService")
 require("services.TrackClassifier")
 
 -- == Helpers ==

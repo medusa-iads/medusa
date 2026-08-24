@@ -5,10 +5,10 @@ require("_header")
 require("core.Logger")
 require("core.Constants")
 require("services.Services")
-require("services.MetricsService")
+require("observability.MetricsService")
 
 -- Shorthand alias
-local MS = Medusa.Services.MetricsService
+local MS = Medusa.Observability.MetricsService
 
 -- Helper: assert that a string contains a given substring, with a clear message.
 local function assertContains(haystack, needle, msg)

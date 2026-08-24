@@ -1,6 +1,8 @@
 require("_header")
 require("services.Services")
 require("core.Logger")
+require("core.Constants")
+require("services.stores.UnitIndex")
 
 --[[
             ███████╗███████╗███╗   ██╗███████╗ ██████╗ ██████╗     ██╗   ██╗███╗   ██╗██╗████████╗    ███████╗████████╗ ██████╗ ██████╗ ███████╗
@@ -19,32 +21,56 @@ require("core.Logger")
 --]]
 
 Medusa.Services.SensorUnitStore = {}
+local OwnerKind = Medusa.Constants.UnitOwnerKind
 
-function Medusa.Services.SensorUnitStore:new()
+function Medusa.Services.SensorUnitStore:new(unitIndex)
 	local o = {
 		_byId = {},
-		_byUnitId = {},
 		_byType = {},
 		_byGroupName = {},
 		_count = 0,
 		_groupNamesCache = {},
 		_groupNamesDirty = true,
 		_logger = Medusa.Logger:ns("SensorUnitStore"),
+		_unitIndex = unitIndex or Medusa.Services.UnitIndex:new(),
 	}
 	setmetatable(o, { __index = self })
 	return o
 end
 
+--- Publishes one sensor when the bounded sensor capacity and indexes allow it.
 function Medusa.Services.SensorUnitStore:add(sensor)
+	if self._count >= Medusa.Constants.C2.MAX_SENSORS then
+		return false
+	end
 	if self._byId[sensor.SensorUnitId] then
 		error(string.format("duplicate SensorUnitId: %s", sensor.SensorUnitId))
 	end
-	if self._byUnitId[sensor.UnitId] then
+	local currentIdentity = self._unitIndex:resolve(sensor.UnitId)
+	if self._unitIndex:getOwner(currentIdentity, OwnerKind.SENSOR) then
 		error(string.format("duplicate UnitId: %s", tostring(sensor.UnitId)))
+	end
+	local valid, reason = self._unitIndex:validateRegistration({
+		UnitId = sensor.UnitId,
+		UnitName = sensor.UnitName,
+		GroupId = sensor.GroupId,
+		GroupName = sensor.GroupName,
+		OwnerKind = OwnerKind.SENSOR,
+		Owner = sensor,
+	})
+	if not valid then
+		error(string.format("managed sensor identity rejected: %s", reason))
 	end
 
 	self._byId[sensor.SensorUnitId] = sensor
-	self._byUnitId[sensor.UnitId] = sensor.SensorUnitId
+	self._unitIndex:register({
+		UnitId = sensor.UnitId,
+		UnitName = sensor.UnitName,
+		GroupId = sensor.GroupId,
+		GroupName = sensor.GroupName,
+		OwnerKind = OwnerKind.SENSOR,
+		Owner = sensor,
+	})
 	self._count = self._count + 1
 
 	local sensorType = sensor.SensorType
@@ -71,6 +97,7 @@ function Medusa.Services.SensorUnitStore:add(sensor)
 			self._count
 		)
 	)
+	return true
 end
 
 function Medusa.Services.SensorUnitStore:get(sensorUnitId)
@@ -78,28 +105,20 @@ function Medusa.Services.SensorUnitStore:get(sensorUnitId)
 end
 
 function Medusa.Services.SensorUnitStore:getByUnitId(unitId)
-	local sensorUnitId = self._byUnitId[unitId]
-	if not sensorUnitId then
-		return nil
-	end
-	return self._byId[sensorUnitId]
+	local identity = self._unitIndex:resolve(unitId)
+	return self._unitIndex:getOwner(identity, OwnerKind.SENSOR)
 end
 
 function Medusa.Services.SensorUnitStore:getByType(sensorType, outputTable)
-	local typeIndex = self._byType[sensorType]
-	if not typeIndex then
-		if outputTable then
-			for i = #outputTable, 1, -1 do
-				outputTable[i] = nil
-			end
-		end
-		return outputTable or {}
-	end
 	local result = outputTable or {}
 	if outputTable then
 		for i = #outputTable, 1, -1 do
 			outputTable[i] = nil
 		end
+	end
+	local typeIndex = self._byType[sensorType]
+	if not typeIndex then
+		return result
 	end
 	for _, sensor in pairs(typeIndex) do
 		result[#result + 1] = sensor
@@ -114,7 +133,7 @@ function Medusa.Services.SensorUnitStore:remove(sensorUnitId)
 	end
 
 	self._byId[sensorUnitId] = nil
-	self._byUnitId[sensor.UnitId] = nil
+	self._unitIndex:unregister(OwnerKind.SENSOR, sensor)
 	self._count = self._count - 1
 
 	local typeIndex = self._byType[sensor.SensorType]
@@ -154,20 +173,15 @@ function Medusa.Services.SensorUnitStore:removeByGroupName(groupName)
 end
 
 function Medusa.Services.SensorUnitStore:getByGroupName(groupName, outputTable)
-	local groupIndex = self._byGroupName[groupName]
-	if not groupIndex then
-		if outputTable then
-			for i = #outputTable, 1, -1 do
-				outputTable[i] = nil
-			end
-		end
-		return outputTable or {}
-	end
 	local result = outputTable or {}
 	if outputTable then
 		for i = #outputTable, 1, -1 do
 			outputTable[i] = nil
 		end
+	end
+	local groupIndex = self._byGroupName[groupName]
+	if not groupIndex then
+		return result
 	end
 	for _, sensor in pairs(groupIndex) do
 		result[#result + 1] = sensor

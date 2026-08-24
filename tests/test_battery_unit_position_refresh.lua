@@ -14,6 +14,7 @@ TestBatteryUnitPositionRefresh = {}
 function TestBatteryUnitPositionRefresh:setUp()
 	self.originalGetUnitPosition = GetUnitPosition
 	self.originalGetUnitHeading = GetUnitHeading
+	self.originalGetUnitHealth = GetUnitHealth
 	Medusa.Logger._initialized = false
 	Medusa.Logger:initialize()
 	self.repository = Medusa.Services.BatteryStore:new()
@@ -48,11 +49,60 @@ function TestBatteryUnitPositionRefresh:setUp()
 		local id = tonumber(string.match(unitName, "(%d+)$"))
 		return { x = id * 10, y = id, z = id * 20 }
 	end
+	GetUnitHealth = function()
+		return { IsAlive = true }
+	end
 end
 
 function TestBatteryUnitPositionRefresh:tearDown()
 	GetUnitPosition = self.originalGetUnitPosition
 	GetUnitHeading = self.originalGetUnitHeading
+	GetUnitHealth = self.originalGetUnitHealth
+end
+
+function TestBatteryUnitPositionRefresh:test_confirmed_dead_unit_uses_the_exact_lifecycle_callback()
+	local observedBattery
+	local observedUnit
+	GetUnitHealth = function(unitName)
+		return { IsAlive = unitName ~= "sam-1-1" }
+	end
+	local visited, refreshed = Medusa.Services.CrewPerceptionService.refreshUnitPositions({
+		batteryRepository = self.repository,
+		spatialIndex = self.spatialIndex,
+		now = 100,
+		budget = 1,
+		onUnitConfirmedDead = function(battery, unit)
+			observedBattery = battery
+			observedUnit = unit
+		end,
+	})
+
+	lu.assertEquals(visited, 1)
+	lu.assertEquals(refreshed, 0)
+	lu.assertEquals(observedBattery, self.battery)
+	lu.assertEquals(observedUnit, self.battery.Units[1])
+	lu.assertEquals(#self.positionCalls, 0)
+end
+
+function TestBatteryUnitPositionRefresh:test_unknown_health_retains_identity_and_accepts_a_valid_position()
+	GetUnitHealth = function()
+		return nil
+	end
+	local observed = false
+	local visited, refreshed = Medusa.Services.CrewPerceptionService.refreshUnitPositions({
+		batteryRepository = self.repository,
+		spatialIndex = self.spatialIndex,
+		now = 100,
+		budget = 1,
+		onUnitConfirmedDead = function()
+			observed = true
+		end,
+	})
+
+	lu.assertEquals(visited, 1)
+	lu.assertEquals(refreshed, 1)
+	lu.assertFalse(observed)
+	lu.assertEquals(self.battery.Units[1].Position, { x = 10, y = 1, z = 20 })
 end
 
 function TestBatteryUnitPositionRefresh:test_aaa_heading_updates_with_the_same_bounded_unit_refresh()

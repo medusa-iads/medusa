@@ -32,9 +32,18 @@ local function setupMocks()
 	GetControllerDetectedTargets = function(_controller)
 		return {}
 	end
-	SetControllerOnOff = function() end
-	ControllerSetROE = function() end
-	ControllerSetAlarmState = function() end
+	SetControllerOnOff = function()
+		return true
+	end
+	ControllerSetROE = function()
+		return true
+	end
+	ControllerSetAlarmState = function()
+		return true
+	end
+	EnableGroupEmissions = function()
+		return true
+	end
 	Distance2D = function(a, b)
 		local dx = a.x - b.x
 		local dz = a.z - b.z
@@ -217,21 +226,22 @@ function TestSensorGroupEmcon:setUp()
 	self.onOff = nil
 	ControllerSetROE = function(_, value)
 		self.roe = value
+		return true
 	end
 	ControllerSetAlarmState = function(_, value)
 		self.alarm = value
+		return true
 	end
 	SetControllerOnOff = function(_, value)
 		self.onOff = value
+		return true
 	end
-	Medusa.Services.EmconService._sensorGroupState["mixed-ewr"] = nil
 end
 
 function TestSensorGroupEmcon:tearDown()
 	ControllerSetROE = self.originalRoe
 	ControllerSetAlarmState = self.originalAlarm
 	SetControllerOnOff = self.originalOnOff
-	Medusa.Services.EmconService._sensorGroupState["mixed-ewr"] = nil
 end
 
 function TestSensorGroupEmcon:test_active_ground_sensor_group_is_weapons_free_and_red()

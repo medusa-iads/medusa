@@ -8,6 +8,7 @@ require("entities.Entities")
 require("entities.Battery")
 require("services.Services")
 require("services.BatteryActivationService")
+require("services.ApiService")
 require("services.stores.BatteryStore")
 require("services.AaaService")
 
@@ -45,13 +46,13 @@ local function battery(overrides)
 			value[key] = item
 		end
 	end
+	value.Units[1].UnitName = value.GroupName .. "-1"
 	return value
 end
 
 local function firingBattery(overrides)
 	local value = battery(overrides)
 	value.Aaa.ResponseState = C.Aaa.ResponseState.AREA_FIRE
-	value.Aaa.FireTaskActive = true
 	value.Aaa.LastFirePoint = { x = 4000, y = 1000, z = 0 }
 	return value
 end
@@ -139,6 +140,7 @@ function TestAaaService:setUp()
 		"GetGroup",
 		"PushControllerTask",
 		"PopControllerTask",
+		"ResetControllerTask",
 		"GetTerrainHeight",
 		"IsNightTime",
 		"GetUnitPosition",
@@ -149,10 +151,13 @@ function TestAaaService:setUp()
 	}) do
 		original[name] = _G[name]
 	end
-	original.metricsInc = Medusa.Services.MetricsService.inc
+	original.metricsInc = Medusa.Observability.MetricsService.inc
+	original.iadsById = Medusa.Core.IadsById
+	self.originalGoCold = Medusa.Services.BatteryActivationService.goCold
+	self.originalGoCrewSuppressed = Medusa.Services.BatteryActivationService.goCrewSuppressed
 	self.metricCounts = {}
 	self.metricNetworks = {}
-	Medusa.Services.MetricsService.inc = function(name, delta, labels)
+	Medusa.Observability.MetricsService.inc = function(name, delta, labels)
 		self.metricCounts[name] = (self.metricCounts[name] or 0) + (delta or 1)
 		self.metricNetworks[name] = labels and labels.network or nil
 	end
@@ -203,7 +208,10 @@ function TestAaaService:tearDown()
 	for name, value in pairs(original) do
 		_G[name] = value
 	end
-	Medusa.Services.MetricsService.inc = original.metricsInc
+	Medusa.Observability.MetricsService.inc = original.metricsInc
+	Medusa.Core.IadsById = original.iadsById
+	Medusa.Services.BatteryActivationService.goCold = self.originalGoCold
+	Medusa.Services.BatteryActivationService.goCrewSuppressed = self.originalGoCrewSuppressed
 	math.random = self.random
 end
 
@@ -242,6 +250,93 @@ function TestAaaService:test_records_audio_attempts_detection_and_area_fire()
 	lu.assertEquals(self.metricCounts.medusa_aaa_audio_attempts_total, 1)
 	lu.assertEquals(self.metricCounts.medusa_aaa_audio_detections_total, 1)
 	lu.assertEquals(self.metricCounts.medusa_aaa_area_fire_responses_total, 1)
+end
+
+function TestAaaService:test_failed_area_fire_task_uses_local_acquisition_without_fire_claim()
+	math.random = function()
+		return 0
+	end
+	PushControllerTask = function()
+		return nil
+	end
+	local site = battery()
+	local ctx = context(site, { target("aircraft", 3000, 500, 0) })
+	ctx.doctrine.AAA.AreaFireChance = 1
+
+	Medusa.Services.AaaService.evaluate(ctx)
+	ctx.now = 15
+	Medusa.Services.AaaService.evaluate(ctx)
+
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.LOCAL_ACQUISITION)
+	lu.assertIsNil(site.Aaa.LastFirePoint)
+	lu.assertIsNil(self.metricCounts.medusa_aaa_area_fire_responses_total)
+	lu.assertEquals(self.metricCounts.medusa_aaa_local_acquisition_responses_total, 1)
+end
+
+function TestAaaService:test_failed_fire_task_stop_does_not_block_response_completion()
+	PopControllerTask = function()
+		return nil
+	end
+	local site = firingBattery({ ActivationState = C.ActivationState.STATE_HOT })
+	site.Aaa.ResponseUntil = 0
+	local ctx = context(site, {})
+
+	Medusa.Services.AaaService.evaluate(ctx)
+
+	lu.assertIsNil(site.Aaa.LastFirePoint)
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+	lu.assertEquals(site.ActivationState, C.ActivationState.STATE_COLD)
+end
+
+function TestAaaService:test_failed_fire_task_stop_releases_local_response_without_retry()
+	local popCalls = 0
+	local resetCalls = 0
+	PopControllerTask = function()
+		popCalls = popCalls + 1
+		return false
+	end
+	ResetControllerTask = function()
+		resetCalls = resetCalls + 1
+		return false
+	end
+	local site = firingBattery()
+	site.Aaa.ResponseState = C.Aaa.ResponseState.BARRAGE_FIRE
+	site.Aaa.BarrageUntil = 600
+	local ctx = context(site, {})
+	ctx.barrageState.participants[site.BatteryId] = site
+
+	lu.assertTrue(Medusa.Services.AaaService.suppressBattery(ctx, site))
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+	lu.assertIsNil(site.Aaa.LastFirePoint)
+	lu.assertIsNil(ctx.barrageState.participants[site.BatteryId])
+
+	PopControllerTask = function()
+		popCalls = popCalls + 1
+		return true
+	end
+	lu.assertTrue(Medusa.Services.AaaService.suppressBattery(ctx, site))
+	lu.assertEquals(popCalls, 1)
+	lu.assertEquals(resetCalls, 0)
+end
+
+function TestAaaService:test_destroyed_battery_releases_local_response_after_failed_stop_request()
+	local popCalls = 0
+	PopControllerTask = function()
+		popCalls = popCalls + 1
+		return false
+	end
+	local site = firingBattery()
+	site.Aaa.ResponseState = C.Aaa.ResponseState.BARRAGE_FIRE
+	site.Aaa.BarrageUntil = 600
+	site.OperationalStatus = C.BatteryOperationalStatus.DESTROYED
+	local ctx = context(site, {})
+	ctx.barrageState.participants[site.BatteryId] = site
+
+	lu.assertTrue(Medusa.Services.AaaService.cleanupBattery(ctx, site))
+	lu.assertEquals(popCalls, 1)
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+	lu.assertIsNil(site.Aaa.LastFirePoint)
+	lu.assertIsNil(ctx.barrageState.participants[site.BatteryId])
 end
 
 function TestAaaService:test_position_refresh_updates_grid_and_metric()
@@ -399,13 +494,13 @@ function TestAaaService:test_barrage_pause_durations_diverge()
 	first.Aaa.ResponseState = C.Aaa.ResponseState.BARRAGE_FIRE
 	first.Aaa.ResponseUntil = 100
 	first.Aaa.BarrageUntil = 600
-	first.Aaa.FireTaskActive = true
+	first.Aaa.LastFirePoint = { x = 4000, y = 1000, z = 0 }
 	local second = battery({ BatteryId = "second", ActivationState = C.ActivationState.STATE_HOT })
 	second.Aaa.Mode = C.Aaa.Mode.INDEPENDENT
 	second.Aaa.ResponseState = C.Aaa.ResponseState.BARRAGE_FIRE
 	second.Aaa.ResponseUntil = 100
 	second.Aaa.BarrageUntil = 600
-	second.Aaa.FireTaskActive = true
+	second.Aaa.LastFirePoint = { x = 4000, y = 1000, z = 0 }
 	local rolls = { 0.2, 0.8 }
 	math.random = function()
 		return table.remove(rolls, 1)
@@ -453,7 +548,7 @@ function TestAaaService:test_barrage_detection_uses_normal_response_then_resumes
 	site.Aaa.ResponseState = C.Aaa.ResponseState.BARRAGE_FIRE
 	site.Aaa.ResponseUntil = 10
 	site.Aaa.BarrageUntil = 600
-	site.Aaa.FireTaskActive = true
+	site.Aaa.LastFirePoint = { x = 4000, y = 1000, z = 0 }
 	local ctx = context(site, { target("new-contact", 3000, 500, 0) })
 	ctx.now = 1
 
@@ -588,6 +683,95 @@ function TestAaaService:test_aaa_fire_infects_idle_and_alert_neighbors_after_ten
 	lu.assertEquals(#self.scheduledCallbacks, 4)
 end
 
+function TestAaaService:test_expired_barrage_reservation_blocks_new_join_until_owner_evaluates()
+	math.random = function()
+		return 0
+	end
+	local source = firingBattery({
+		BatteryId = "source",
+		NetworkId = "infection-net",
+		GroupId = 1,
+		GroupName = "source",
+		ActivationState = C.ActivationState.STATE_HOT,
+	})
+	local reserved = battery({
+		BatteryId = "reserved",
+		NetworkId = "infection-net",
+		GroupId = 2,
+		GroupName = "reserved",
+	})
+	reserved.Units[1].UnitId = 2
+	reserved.Aaa.Mode = C.Aaa.Mode.INDEPENDENT
+	reserved.Aaa.ResponseState = C.Aaa.ResponseState.BARRAGE_PAUSE
+	reserved.Aaa.BarrageUntil = 100
+	local recipient = battery({
+		BatteryId = "recipient",
+		NetworkId = "infection-net",
+		GroupId = 3,
+		GroupName = "recipient",
+	})
+	recipient.Units[1].UnitId = 3
+	recipient.Aaa.Mode = C.Aaa.Mode.INDEPENDENT
+	local barrageState = Medusa.Services.AaaService.newBarrageState()
+	barrageState.participants[reserved.BatteryId] = reserved
+	local ctx = propagationContext({ source, reserved, recipient }, {
+		networkId = "infection-net",
+		maxBarrageGroups = 1,
+		barrageState = barrageState,
+	})
+
+	Medusa.Services.AaaService.onShot(ctx, source, source.Units[1], 100)
+	self.now = 110
+	for i = 1, #self.scheduledCallbacks do
+		self.scheduledCallbacks[i].callback()
+	end
+
+	lu.assertEquals(recipient.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+	lu.assertIs(barrageState.participants[reserved.BatteryId], reserved)
+	lu.assertNil(barrageState.participants[recipient.BatteryId])
+	lu.assertEquals(reserved.Aaa.ResponseState, C.Aaa.ResponseState.BARRAGE_PAUSE)
+end
+
+function TestAaaService:test_idle_radar_directed_source_shot_can_schedule_barrage_infection()
+	local source = firingBattery({
+		BatteryId = "source",
+		GroupId = 1,
+		GroupName = "source",
+		ActivationState = C.ActivationState.STATE_HOT,
+	})
+	source.Aaa.Mode = C.Aaa.Mode.RADAR_DIRECTED
+	source.Aaa.ResponseState = C.Aaa.ResponseState.IDLE
+	local recipient = battery({ BatteryId = "recipient", GroupId = 2, GroupName = "recipient" })
+	recipient.Units[1].UnitId = 2
+	recipient.Aaa.Mode = C.Aaa.Mode.INDEPENDENT
+	local ctx = propagationContext({ source, recipient }, {
+		networkId = "net",
+		maxBarrageGroups = 1,
+	})
+
+	lu.assertEquals(Medusa.Services.AaaService.onShot(ctx, source, source.Units[1], 100), 1)
+	lu.assertEquals(#self.scheduledCallbacks, 1)
+end
+
+function TestAaaService:test_suppressed_source_cannot_schedule_barrage_infection()
+	local source = firingBattery({
+		BatteryId = "source",
+		GroupId = 1,
+		GroupName = "source",
+		ActivationState = C.ActivationState.STATE_HOT,
+	})
+	Medusa.Entities.Battery.applyCrewSuppression(source, "test", 200)
+	local recipient = battery({ BatteryId = "recipient", GroupId = 2, GroupName = "recipient" })
+	recipient.Units[1].UnitId = 2
+	local ctx = propagationContext({ source, recipient }, {
+		networkId = "net",
+		maxBarrageGroups = 1,
+	})
+
+	lu.assertEquals(Medusa.Services.AaaService.onShot(ctx, source, source.Units[1], 100), 0)
+	lu.assertEquals(#self.scheduledCallbacks, 0)
+end
+
 function TestAaaService:test_barrage_infection_delays_vary_without_dropping_below_ten_seconds()
 	local source = firingBattery({ BatteryId = "source", GroupId = 1, GroupName = "source" })
 	local first = battery({ BatteryId = "first", GroupId = 2, GroupName = "first" })
@@ -702,6 +886,50 @@ function TestAaaService:test_crew_suppression_blocks_local_response()
 	lu.assertEquals(site.ActivationState, C.ActivationState.STATE_COLD)
 end
 
+function TestAaaService:test_initializing_independent_site_retries_cold_before_local_response()
+	local site = battery({ ActivationState = C.ActivationState.INITIALIZING })
+	site.Aaa.Mode = C.Aaa.Mode.INDEPENDENT
+	local ctx = context(site, { target("aircraft", 1000, 100, 0) })
+	local attempts = 0
+	Medusa.Services.BatteryActivationService.goCold = function(value)
+		attempts = attempts + 1
+		if attempts == 1 then
+			return false
+		end
+		value.ActivationState = C.ActivationState.STATE_COLD
+		return true
+	end
+
+	Medusa.Services.AaaService.evaluate(ctx)
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+	lu.assertEquals(site.ActivationState, C.ActivationState.INITIALIZING)
+	Medusa.Services.AaaService.evaluate(ctx)
+
+	lu.assertEquals(attempts, 2)
+	lu.assertEquals(site.ActivationState, C.ActivationState.STATE_COLD)
+end
+
+function TestAaaService:test_initializing_suppressed_site_retries_suppressed_readiness()
+	local site = battery({
+		ActivationState = C.ActivationState.INITIALIZING,
+		CrewSuppressionState = C.CrewSuppressionState.SUPPRESSED,
+		CrewSuppressionUntil = 120,
+	})
+	local ctx = context(site, { target("aircraft", 1000, 100, 0) })
+	local attempts = 0
+	Medusa.Services.BatteryActivationService.goCrewSuppressed = function(value)
+		attempts = attempts + 1
+		value.ActivationState = C.ActivationState.STATE_COLD
+		return true
+	end
+
+	Medusa.Services.AaaService.evaluate(ctx)
+
+	lu.assertEquals(attempts, 1)
+	lu.assertEquals(site.ActivationState, C.ActivationState.STATE_COLD)
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+end
+
 function TestAaaService:test_hold_roe_cancels_pending_response()
 	local site = battery()
 	local ctx = context(site, { target("aircraft", 1000, 100, 0) })
@@ -713,6 +941,25 @@ function TestAaaService:test_hold_roe_cancels_pending_response()
 
 	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
 	lu.assertEquals(site.ActivationState, C.ActivationState.STATE_COLD)
+end
+
+function TestAaaService:test_api_hold_cleans_active_response_at_next_evaluation()
+	local site = firingBattery()
+	local ctx = context(site, {})
+	Medusa.Core.IadsById = {
+		["net"] = {
+			getDoctrine = function()
+				return ctx.doctrine
+			end,
+		},
+	}
+
+	lu.assertTrue(Medusa.Services.ApiService.setROE("net", C.ROEState.HOLD))
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.AREA_FIRE)
+	Medusa.Services.AaaService.evaluate(ctx)
+
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+	lu.assertIsNil(site.Aaa.LastFirePoint)
 end
 
 function TestAaaService:test_local_acquisition_returns_to_cold_after_timeout()

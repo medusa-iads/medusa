@@ -1,6 +1,6 @@
 require("_header")
-require("services.Services")
-require("services.MetricsService")
+require("observability.Observability")
+require("observability.MetricsService")
 require("services.BlackBoxService")
 require("services.HarmDetectionService")
 require("services.ManpadService")
@@ -18,7 +18,7 @@ require("entities.Track")
             ██║ ╚═╝ ██║███████╗   ██║   ██║  ██║██║╚██████╗███████║    ███████║██║ ╚████║██║  ██║██║     ███████║██║  ██║╚██████╔╝   ██║
             ╚═╝     ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝ ╚═════╝╚══════╝    ╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝ ╚═════╝   ╚═╝
 
-    What this service does
+    What this module does
     - Registers all Prometheus metric definitions (gauges, counters, histograms, summaries).
     - Installs a snapshot callback that reads live IADS state and writes gauge values before each serialize.
 
@@ -27,10 +27,10 @@ require("entities.Track")
     - MetricsService triggers the snapshot callback before each serialization cycle.
 --]]
 
-Medusa.Services.MetricsSnapshotService = {}
-Medusa.Services.MetricsSnapshotService._prevSnapshotMemKb = 0
-Medusa.Services.MetricsSnapshotService._manpadStateLabel = { network = nil, state = nil }
-Medusa.Services.MetricsSnapshotService._aaaStateLabel = { network = nil, mode = nil, state = nil }
+Medusa.Observability.MetricsSnapshot = {}
+Medusa.Observability.MetricsSnapshot._prevSnapshotMemKb = 0
+Medusa.Observability.MetricsSnapshot._manpadStateLabel = { network = nil, state = nil }
+Medusa.Observability.MetricsSnapshot._aaaStateLabel = { network = nil, mode = nil, state = nil }
 
 local MANPAD_COUNTERS = {
 	{ "medusa_manpad_activations_total", "MANPAD ALERT to HOT transitions" },
@@ -81,6 +81,106 @@ local AAA_STATES = {
 local _aaaStateCounts = {}
 
 local displayTrackId = Medusa.Entities.Track.displayId
+local snapshotRingBuffers
+
+do
+	local MISSION_NETWORK = "__mission__"
+
+	--- Sets aggregate entry and capacity gauges for one RingBuffer category.
+	local function setRingBufferTotals(ms, network, bufferName, items, capacity)
+		local labels = { network = network, buffer = bufferName }
+		ms.set("medusa_ringbuffer_items", items, labels)
+		ms.set("medusa_ringbuffer_capacity_items", capacity, labels)
+	end
+
+	--- Sets current entry and capacity gauges for bufferName within one network metric scope.
+	local function setRingBuffer(ms, network, bufferName, ring)
+		local items = 0
+		local capacity = 0
+		if ring and type(ring.size) == "function" and type(ring.capacity) == "function" then
+			items = ring:size()
+			capacity = ring:capacity()
+		end
+		setRingBufferTotals(ms, network, bufferName, items, capacity)
+	end
+
+	--- Sets aggregate gauges for all target-cache RingBuffers owned by one localSearch rotation.
+	local function setTargetCacheBuffers(ms, network, bufferName, localSearch)
+		local items = 0
+		local capacity = 0
+		local caches = localSearch and localSearch.cacheByBatteryId or {}
+		for _, cache in pairs(caches) do
+			local targets = cache and cache.Targets
+			if targets and type(targets.size) == "function" and type(targets.capacity) == "function" then
+				items = items + targets:size()
+				capacity = capacity + targets:capacity()
+			end
+		end
+		setRingBufferTotals(ms, network, bufferName, items, capacity)
+	end
+
+	--- Sets aggregate gauges for the position-history RingBuffers owned by tracks in trackStore.
+	local function setTrackHistoryBuffers(ms, network, trackStore)
+		local items = 0
+		local capacity = 0
+		local tracks = trackStore and trackStore.getAll and trackStore:getAll() or {}
+		for i = 1, #tracks do
+			local history = tracks[i].PositionHistory
+			if history and type(history.size) == "function" and type(history.capacity) == "function" then
+				items = items + history:size()
+				capacity = capacity + history:capacity()
+			end
+		end
+		setRingBufferTotals(ms, network, "track_position_history", items, capacity)
+	end
+
+	--- Snapshots every persistent RingBuffer category for configured networks and mission-shared stores.
+	snapshotRingBuffers = function(ms, iadsById)
+		local blackBoxWeaponStore
+		for network, iads in pairs(iadsById) do
+			setRingBuffer(ms, network, "death_primary", iads._deathQueue)
+			setRingBuffer(ms, network, "death_overflow", iads._deathOverflowQueue)
+			setRingBuffer(ms, network, "shot", iads._shotQueue)
+			setRingBuffer(ms, network, "kill", iads._killQueue)
+			setRingBuffer(ms, network, "hit", iads._hitQueue)
+			setRingBuffer(ms, network, "terminal_impact", iads._terminalEventQueue)
+
+			local discovery = iads._discovery
+			setRingBuffer(ms, network, "birth_primary", discovery and discovery._birthQueue)
+			setRingBuffer(ms, network, "birth_overflow", discovery and discovery._birthOverflowQueue)
+
+			local polling = iads._sensorPollingService
+			setRingBuffer(ms, network, "sensor_scan_cache", polling and polling._lastScannedOrder)
+
+			local trackManager = iads.getTrackManager and iads:getTrackManager()
+			setTrackHistoryBuffers(ms, network, trackManager and trackManager:getStore())
+
+			local manpadSearch = iads._manpadCtx and iads._manpadCtx.localSearch
+			setRingBuffer(ms, network, "manpad_scan_rotation", manpadSearch and manpadSearch.queue)
+			setTargetCacheBuffers(ms, network, "manpad_target_cache", manpadSearch)
+
+			local aaaSearch = iads._aaaCtx and iads._aaaCtx.localSearch
+			setRingBuffer(ms, network, "aaa_scan_rotation", aaaSearch and aaaSearch.queue)
+			setTargetCacheBuffers(ms, network, "aaa_target_cache", aaaSearch)
+
+			blackBoxWeaponStore = blackBoxWeaponStore or iads._blackBoxWeaponStore
+		end
+
+		setRingBuffer(ms, MISSION_NETWORK, "blackbox_metadata_cache", Medusa.Services.BlackBoxService._cacheOrder)
+		setRingBuffer(
+			ms,
+			MISSION_NETWORK,
+			"blackbox_weapon_tracks",
+			blackBoxWeaponStore and blackBoxWeaponStore._tracks
+		)
+		setRingBuffer(
+			ms,
+			MISSION_NETWORK,
+			"blackbox_cannon_candidates",
+			blackBoxWeaponStore and blackBoxWeaponStore._cannonCandidates
+		)
+	end
+end
 
 local function getTrack(trackStore, trackId)
 	if not trackStore or not trackStore.get or not trackId or trackId == "" then
@@ -101,8 +201,61 @@ local function escapePrometheusLabel(value)
 	return escaped
 end
 
-function Medusa.Services.MetricsSnapshotService.register(netLabel)
-	local MetricsService = Medusa.Services.MetricsService
+--- Returns the operator-facing control mode derived from battery and doctrine state.
+local function batteryControlMode(battery, doctrine)
+	local C = Medusa.Constants
+	local BCM = C.BatteryControlMode
+	if Medusa.Entities.Battery.isIndependentAaa(battery) then
+		return BCM.INDEPENDENT
+	end
+	if battery.CoordinationState == C.CoordinationState.COORDINATED then
+		return BCM.COORDINATED
+	end
+	local degradedMode = doctrine and doctrine.DegradedMode
+	if degradedMode == C.NetworkDegradationPolicy.REVERT_TO_AUTONOMOUS then
+		return BCM.AUTONOMOUS
+	end
+	if degradedMode == C.NetworkDegradationPolicy.REVERT_TO_SELF_DEFENSE then
+		return BCM.SELF_DEFENSE
+	end
+	if degradedMode == C.NetworkDegradationPolicy.GO_DARK then
+		return BCM.GO_DARK
+	end
+	return BCM.UNKNOWN
+end
+
+--- Maps current partition incarnation keys to bounded snapshot-local display ordinals.
+local function partitionDisplayIds(batteries, manpads)
+	local keys = {}
+	local seen = {}
+	for i = 1, #batteries do
+		local key = batteries[i].PartitionKey
+		if key and not seen[key] then
+			seen[key] = true
+			keys[#keys + 1] = key
+		end
+	end
+	for i = 1, #manpads do
+		local key = manpads[i].PartitionKey
+		if key and not seen[key] then
+			seen[key] = true
+			keys[#keys + 1] = key
+		end
+	end
+	table.sort(keys)
+	local displayIds = {}
+	for i = 1, #keys do
+		displayIds[keys[i]] = i
+	end
+	return displayIds
+end
+
+--- Registers the mission-global Prometheus metric contract without replacing existing network series.
+function Medusa.Observability.MetricsSnapshot.register(netLabel)
+	local MetricsService = Medusa.Observability.MetricsService
+	if MetricsService._registry.medusa_mission_time_seconds then
+		return
+	end
 	local crewCauseLabel = { "network", "cause" }
 
 	MetricsService.gauge("medusa_mission_time_seconds", "Seconds since mission start")
@@ -111,6 +264,26 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.gauge("medusa_sensors_total", "Total sensors in network", netLabel)
 	MetricsService.gauge("medusa_tracks_active", "Active tracks in network", netLabel)
 	MetricsService.counter("medusa_ticks_total", "Total ticks processed", netLabel)
+	MetricsService.counter(
+		"medusa_partition_refresh_attempts_total",
+		"Partition snapshot build attempts, including bootstrap",
+		netLabel
+	)
+	MetricsService.counter(
+		"medusa_partition_refresh_failures_total",
+		"Partition snapshot build failures, including bootstrap",
+		netLabel
+	)
+	MetricsService.counter(
+		"medusa_partition_provider_overflow_total",
+		"Battery coverage evaluations rejected because provider capacity was exceeded",
+		netLabel
+	)
+	MetricsService.counter(
+		"medusa_world_events_dropped_total",
+		"World events dropped by bounded queues",
+		{ "network", "event" }
+	)
 
 	MetricsService.counter("medusa_battery_go_hot_total", "Battery transitions to HOT", netLabel)
 	MetricsService.counter("medusa_battery_go_warm_total", "Battery transitions to WARM", netLabel)
@@ -150,6 +323,26 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.gauge("medusa_batteries_warm", "Batteries in WARM state", netLabel)
 	MetricsService.gauge("medusa_batteries_cold", "Batteries in COLD state", netLabel)
 	MetricsService.gauge("medusa_engagements_active", "Batteries currently engaging targets", netLabel)
+	MetricsService.gauge(
+		"medusa_world_event_queue_depth",
+		"World events awaiting bounded processing",
+		{ "network", "event" }
+	)
+	MetricsService.gauge(
+		"medusa_ringbuffer_items",
+		"Current entries in each persistent RingBuffer category",
+		{ "network", "buffer" }
+	)
+	MetricsService.gauge(
+		"medusa_ringbuffer_capacity_items",
+		"Current capacity of each persistent RingBuffer category",
+		{ "network", "buffer" }
+	)
+	MetricsService.gauge(
+		"medusa_ammo_reconciliation_queue_depth",
+		"Battery-unit ammunition identities awaiting bounded reconciliation",
+		netLabel
+	)
 	MetricsService.gauge("medusa_tracks_hostile", "Tracks identified as HOSTILE", netLabel)
 	MetricsService.gauge("medusa_tracks_harm", "Tracks assessed as HARM", netLabel)
 	MetricsService.gauge("medusa_ammo_remaining", "Total missiles remaining across all batteries", netLabel)
@@ -347,8 +540,9 @@ function Medusa.Services.MetricsSnapshotService.register(netLabel)
 	MetricsService.summary("medusa_serialize_duration_seconds", "Time to serialize all metrics", defaultQuantiles)
 end
 
-function Medusa.Services.MetricsSnapshotService.installSnapshot()
-	local ms = Medusa.Services.MetricsService
+--- Registers the bounded runtime metrics and captures normalized mission metadata.
+function Medusa.Observability.MetricsSnapshot.installSnapshot()
+	local ms = Medusa.Observability.MetricsService
 
 	-- Cache mission metadata at install time (env.mission is accessible now but not during timer callbacks)
 	-- selene: allow(undefined_variable)
@@ -357,11 +551,26 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 	local mStart = "unknown"
 	if env and env.mission then
 		local d = env.mission.date
-		local t = env.mission.start_time or 0
-		if d and d.Year then
+		local t = tonumber(env.mission.start_time) or 0
+		if
+			type(d) == "table"
+			and tonumber(d.Year)
+			and tonumber(d.Month)
+			and tonumber(d.Day)
+			and t == t
+			and t ~= math.huge
+			and t ~= -math.huge
+		then
 			local hours = math.floor(t / 3600)
 			local minutes = math.floor((t % 3600) / 60)
-			mStart = string.format("%04d-%02d-%02d:%02d-%02d", d.Year, d.Month, d.Day, hours, minutes)
+			mStart = string.format(
+				"%04d-%02d-%02d:%02d-%02d",
+				tonumber(d.Year),
+				tonumber(d.Month),
+				tonumber(d.Day),
+				hours,
+				minutes
+			)
 		end
 	end
 	local missionLabels = { mission = mName, theatre = mTheatre, start = mStart }
@@ -375,10 +584,11 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 		ms.set("medusa_mission_info", 1, missionLabels)
 
 		local memNow = collectgarbage("count")
-		local MSS = Medusa.Services.MetricsSnapshotService
+		local MSS = Medusa.Observability.MetricsSnapshot
 		ms.set("medusa_lua_memory_kb", memNow)
 		ms.set("medusa_lua_memory_delta_kb", memNow - MSS._prevSnapshotMemKb)
 		MSS._prevSnapshotMemKb = memNow
+		snapshotRingBuffers(ms, iadsById)
 
 		local AS = Medusa.Constants.ActivationState
 		local BOS = Medusa.Constants.BatteryOperationalStatus
@@ -474,7 +684,7 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 					end
 				end
 				ms.set("medusa_crew_suppressed_batteries", crewSuppressedCount, labels)
-				local labelBuf = Medusa.Services.MetricsSnapshotService._manpadStateLabel
+				local labelBuf = Medusa.Observability.MetricsSnapshot._manpadStateLabel
 				labelBuf.network = id
 				for i = 1, #MANPAD_STATES do
 					local manpadState = MANPAD_STATES[i]
@@ -500,7 +710,7 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 						end
 					end
 				end
-				local aaaLabelBuf = Medusa.Services.MetricsSnapshotService._aaaStateLabel
+				local aaaLabelBuf = Medusa.Observability.MetricsSnapshot._aaaStateLabel
 				aaaLabelBuf.network = id
 				for mi = 1, #AAA_MODES do
 					local mode = AAA_MODES[mi]
@@ -569,6 +779,7 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 		if Medusa.Config:get().PrometheusExtendEnabled then
 			local extLines = {}
 			local en = 0
+			local partitionDisplayByNetwork = {}
 			en = en + 1
 			extLines[en] = "# HELP medusa_track_detail Per-track detailed state"
 			en = en + 1
@@ -737,23 +948,32 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 			end
 
 			en = en + 1
-			extLines[en] = "# HELP medusa_track_sprt_llr SPRT log-likelihood ratio"
+			extLines[en] = "# HELP medusa_track_sprt_llr Bounded accumulated HARM log-likelihood score"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_track_sprt_llr gauge"
 			en = en + 1
-			extLines[en] = "# HELP medusa_track_sprt_scans SPRT scan count"
+			extLines[en] = "# HELP medusa_track_sprt_scans HARM usable-observation count"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_track_sprt_scans gauge"
 			en = en + 1
-			extLines[en] = "# HELP medusa_track_sprt_info SPRT evaluation label"
+			extLines[en] = "# HELP medusa_track_sprt_info HARM assessment label"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_track_sprt_info gauge"
-			local featNames = { "spd", "div", "hdg", "acc", "cpa", "cpr", "rng", "alt" }
+			local featNames = {
+				"spd",
+				"div",
+				"hdg",
+				"acc",
+				"cpa",
+				"cpr",
+				"rng",
+				"alt",
+			}
 			local featHelp = {
-				"Track ground speed in m/s",
+				"Track 3D speed in m/s",
 				"Dive angle toward nearest emitter, positive means descending toward it",
-				"Heading change rate in rad/s, near zero means flying straight",
-				"Acceleration in m/s2, negative means decelerating",
+				"Horizontal heading rate in rad/s, near zero means flying straight",
+				"Three-dimensional speed change in m/s2",
 				"Closest point of approach to nearest emitter in meters",
 				"Rate of change of CPA in m/s, negative means converging on emitter",
 				"Range closure rate toward nearest emitter in m/s, negative means closing",
@@ -852,6 +1072,10 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 			en = en + 1
 			extLines[en] = "# TYPE medusa_battery_info gauge"
 			en = en + 1
+			extLines[en] = "# HELP medusa_battery_partition Current snapshot-local battery partition display ID"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_battery_partition gauge"
+			en = en + 1
 			extLines[en] = "# HELP medusa_battery_weapon_range_m Battery weapon range meters"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_battery_weapon_range_m gauge"
@@ -873,6 +1097,10 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 					local tm = iads:getTrackManager()
 					local trackStore = tm and tm:getStore() or nil
 					local batts = ai:batteries():getAll()
+					local manpads = ai:manpads():getAll()
+					local partitionDisplay = partitionDisplayIds(batts, manpads)
+					partitionDisplayByNetwork[id] = partitionDisplay
+					local doctrine = iads:getDoctrine() or {}
 					for i = 1, #batts do
 						local b = batts[i]
 						local bname = b.GroupName or b.BatteryId
@@ -939,7 +1167,7 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 						local targetTrack = getTrack(trackStore, canonicalTargetId)
 						en = en + 1
 						extLines[en] = string.format(
-							'medusa_battery_info{network="%s",battery="%s",role="%s",status="%s",state="%s",target="%s",target_track="%s",system="%s"} 1',
+							'medusa_battery_info{network="%s",battery="%s",role="%s",status="%s",state="%s",target="%s",target_track="%s",system="%s",control="%s",coordination="%s"} 1',
 							id,
 							bname,
 							b.Role or "",
@@ -947,7 +1175,16 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 							b.ActivationState or "",
 							displayTrackId(targetTrack),
 							canonicalTargetId,
-							b.SystemType or ""
+							b.SystemType or "",
+							batteryControlMode(b, doctrine),
+							b.CoordinationState or Medusa.Constants.CoordinationState.DEGRADED
+						)
+						en = en + 1
+						extLines[en] = string.format(
+							'medusa_battery_partition{network="%s",battery="%s"} %d',
+							escapePrometheusLabel(id),
+							escapePrometheusLabel(bname),
+							partitionDisplay[b.PartitionKey] or 0
 						)
 						local primaryWeapon = ""
 						if b.Units then
@@ -1091,9 +1328,13 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 			extLines[en] = "# TYPE medusa_manpad_longitude_degrees gauge"
 			en = en + 1
 			extLines[en] =
-				"# HELP medusa_manpad_info MANPAD group state, wake reason, detection mode, and fire readiness"
+				"# HELP medusa_manpad_info MANPAD group state, wake reason, detection mode, fire readiness, and control mode"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_manpad_info gauge"
+			en = en + 1
+			extLines[en] = "# HELP medusa_manpad_partition Current snapshot-local MANPAD partition display ID"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_manpad_partition gauge"
 			en = en + 1
 			extLines[en] =
 				"# HELP medusa_manpad_heading_degrees Cached MANPAD unit heading in degrees clockwise from north"
@@ -1141,6 +1382,8 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 					local doctrine = iads:getDoctrine() or {}
 					local posture = doctrine.Posture or Medusa.Constants.Posture.HOT_WAR
 					local manpads = ai:manpads():getAll()
+					local partitionDisplay = partitionDisplayByNetwork[id]
+						or partitionDisplayIds(ai:batteries():getAll(), manpads)
 					for i = 1, #manpads do
 						local manpad = manpads[i]
 						local manpadState = manpad.Manpad
@@ -1165,6 +1408,13 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 							end
 						end
 						if manpadState then
+							en = en + 1
+							extLines[en] = string.format(
+								'medusa_manpad_partition{network="%s",manpad="%s"} %d',
+								networkLabel,
+								manpadLabel,
+								partitionDisplay[manpad.PartitionKey] or 0
+							)
 							local detectionMode = Medusa.Services.ManpadService.detectionMode(
 								manpadState.SleepWakeState,
 								posture,
@@ -1174,13 +1424,14 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 							local canFire = Medusa.Services.ManpadService.canFire(manpad)
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_manpad_info{network="%s",manpad="%s",state="%s",wake_reason="%s",detection_mode="%s",can_fire="%s"} 1',
+								'medusa_manpad_info{network="%s",manpad="%s",state="%s",wake_reason="%s",detection_mode="%s",can_fire="%s",control="%s"} 1',
 								networkLabel,
 								manpadLabel,
 								escapePrometheusLabel(manpadState.SleepWakeState),
 								escapePrometheusLabel(wakeReason),
 								escapePrometheusLabel(detectionMode),
-								canFire and "true" or "false"
+								canFire and "true" or "false",
+								Medusa.Constants.BatteryControlMode.INDEPENDENT
 							)
 							local headings = manpadState.UnitHeadings or {}
 							local headingCount = manpadState.UnitHeadingCount or 0
@@ -1213,13 +1464,21 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 			en = en + 1
 			extLines[en] = "# TYPE medusa_battery_harm_threats gauge"
 			en = en + 1
-			extLines[en] = "# HELP medusa_battery_harm_defenders HARM-capable units defending this battery"
+			extLines[en] = "# HELP medusa_battery_harm_defenders Available HARM-defense capacity for this battery"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_battery_harm_defenders gauge"
 			en = en + 1
-			extLines[en] = "# HELP medusa_battery_harm_ratio Defender to threat ratio"
+			extLines[en] = "# HELP medusa_battery_harm_ratio Available-capacity to threat ratio"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_battery_harm_ratio gauge"
+			en = en + 1
+			extLines[en] = "# HELP medusa_battery_harm_committed_capacity HOT assigned HARM-defense capacity"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_battery_harm_committed_capacity gauge"
+			en = en + 1
+			extLines[en] = "# HELP medusa_battery_harm_committed_ratio Committed-capacity to threat ratio"
+			en = en + 1
+			extLines[en] = "# TYPE medusa_battery_harm_committed_ratio gauge"
 			for id, iads in pairs(iadsById) do
 				local ai = iads:getAssetIndex()
 				if ai then
@@ -1244,17 +1503,31 @@ function Medusa.Services.MetricsSnapshotService.installSnapshot()
 							)
 							en = en + 1
 							extLines[en] = string.format(
-								'medusa_battery_harm_defenders{network="%s",battery="%s"} %d',
+								'medusa_battery_harm_defenders{network="%s",battery="%s"} %.1f',
 								id,
 								bname,
-								b.HarmDefenseDefenders
+								b.HarmDefenseAvailableCapacity
 							)
 							en = en + 1
 							extLines[en] = string.format(
 								'medusa_battery_harm_ratio{network="%s",battery="%s"} %.2f',
 								id,
 								bname,
-								b.HarmDefenseRatio
+								b.HarmDefenseThreats > 0 and b.HarmDefenseAvailableCapacity / b.HarmDefenseThreats or 0
+							)
+							en = en + 1
+							extLines[en] = string.format(
+								'medusa_battery_harm_committed_capacity{network="%s",battery="%s"} %.1f',
+								id,
+								bname,
+								b.HarmDefenseCommittedCapacity
+							)
+							en = en + 1
+							extLines[en] = string.format(
+								'medusa_battery_harm_committed_ratio{network="%s",battery="%s"} %.2f',
+								id,
+								bname,
+								b.HarmDefenseThreats > 0 and b.HarmDefenseCommittedCapacity / b.HarmDefenseThreats or 0
 							)
 						end
 					end

@@ -34,6 +34,7 @@ local CONFIG_SCHEMA = {
 	{ name = "AllowDynamicProbing", type = "boolean", default = false },
 }
 
+--- Converts one untyped override to its bounded schema value or declared default.
 local function validateConfigField(s, raw, logger)
 	if s.type == "enum" then
 		local enumTable = Medusa.Constants[s.enum]
@@ -57,7 +58,10 @@ local function validateConfigField(s, raw, logger)
 		end
 		return raw or s.default
 	elseif s.type == "number" then
-		local v = tonumber(raw) or s.default
+		local v = tonumber(raw)
+		if v == nil or v ~= v or v == math.huge or v == -math.huge then
+			v = s.default
+		end
 		if v and s.min and v < s.min then
 			v = s.min
 		end
@@ -66,8 +70,11 @@ local function validateConfigField(s, raw, logger)
 		end
 		return v
 	elseif s.type == "boolean" then
-		if raw ~= nil then
+		if type(raw) == "boolean" then
 			return raw
+		end
+		if raw ~= nil then
+			logger:error(string.format("invalid config '%s' Boolean value, using default", s.name))
 		end
 		return s.default
 	else
@@ -75,6 +82,7 @@ local function validateConfigField(s, raw, logger)
 	end
 end
 
+--- Validates mission overrides once and publishes the runtime configuration.
 function Medusa.Config:initialize()
 	if self.Current then
 		return self.Current
@@ -94,15 +102,15 @@ function Medusa.Config:initialize()
 		},
 	}
 
+	local roleOverrides = type(overrides.Roles) == "table" and overrides.Roles or {}
 	local runningConfig = {
 		Roles = {
-			HQ = (overrides.Roles and overrides.Roles.HQ) or DEFAULT_ROLES.HQ,
-			GCI = (overrides.Roles and overrides.Roles.GCI) or DEFAULT_ROLES.GCI,
-			EWR = (overrides.Roles and overrides.Roles.EWR) or DEFAULT_ROLES.EWR,
-			AWACS = (overrides.Roles and overrides.Roles.AWACS) or DEFAULT_ROLES.AWACS,
+			HQ = roleOverrides.HQ or DEFAULT_ROLES.HQ,
+			GCI = roleOverrides.GCI or DEFAULT_ROLES.GCI,
+			EWR = roleOverrides.EWR or DEFAULT_ROLES.EWR,
+			AWACS = roleOverrides.AWACS or DEFAULT_ROLES.AWACS,
 		},
-		Networks = (overrides.Networks and type(overrides.Networks) == "table" and overrides.Networks)
-			or DEFAULT_NETWORKS,
+		Networks = overrides.Networks == nil and DEFAULT_NETWORKS or overrides.Networks,
 	}
 
 	for i = 1, #CONFIG_SCHEMA do
@@ -136,9 +144,13 @@ function Medusa.Config:getRoleTokens()
 	}
 end
 
+--- Converts a supported coalition name or identifier to its DCS numeric value.
 function Medusa.Config:_resolveCoalition(value)
 	if type(value) == "number" then
-		return value
+		if value == 0 or value == 1 or value == 2 then
+			return value
+		end
+		return nil
 	end
 	if type(value) == "string" then
 		local lower = string.lower(value)
@@ -153,21 +165,33 @@ function Medusa.Config:_resolveCoalition(value)
 	return nil
 end
 
+--- Returns configured networks whose name, coalition, and managed-group prefix are valid.
 function Medusa.Config:getNetworks()
 	local cfg = self:get()
-	local nets = cfg and cfg.Networks or {}
+	local nets = cfg and cfg.Networks
+	if type(nets) ~= "table" then
+		return {}
+	end
 	local out = {}
+	local seenIds = {}
 	for i = 1, #nets do
 		local n = nets[i]
-		if n and n.name and n.coalition and n.prefix then
+		if type(n) == "table" and type(n.name) == "string" and type(n.prefix) == "string" then
 			local coalitionId = self:_resolveCoalition(n.coalition)
-			out[#out + 1] = {
-				id = tostring(n.name),
-				coalitionId = coalitionId,
-				prefix = tostring(n.prefix),
-				doctrine = n.doctrine,
-				borderZones = n.borderZones,
-			}
+			local id = n.name
+			local prefix = n.prefix
+			if coalitionId ~= nil and #id > 0 and #prefix > 0 and not seenIds[id] then
+				seenIds[id] = true
+				out[#out + 1] = {
+					id = id,
+					coalitionId = coalitionId,
+					prefix = prefix,
+					doctrine = n.doctrine,
+					borderZones = n.borderZones,
+				}
+			elseif seenIds[id] then
+				self._logger:error(string.format("duplicate network id '%s' ignored", id))
+			end
 		end
 	end
 	return out

@@ -27,10 +27,98 @@ TestSensorProbingService = {}
 
 function TestSensorProbingService:setUp()
 	ulidCounter = 0
+	self.originalScheduleOnce = ScheduleOnce
+	self.originalGetGroup = GetGroup
+	self.originalBuildUnitEntry = BuildUnitEntry
+	self.originalBuildGroupData = BuildGroupData
+	self.originalAddCoalitionGroup = AddCoalitionGroup
 	NewULID = function()
 		return nextUlid()
 	end
 	self.service = Medusa.Services.SensorProbingService:new(1)
+end
+
+function TestSensorProbingService:tearDown()
+	ScheduleOnce = self.originalScheduleOnce
+	GetGroup = self.originalGetGroup
+	BuildUnitEntry = self.originalBuildUnitEntry
+	BuildGroupData = self.originalBuildGroupData
+	AddCoalitionGroup = self.originalAddCoalitionGroup
+end
+
+function TestSensorProbingService:test_poll_registration_error_returns_false()
+	ScheduleOnce = function()
+		error("injected timer registration failure")
+	end
+
+	local contained, scheduled = pcall(self.service._schedulePoll, self.service)
+
+	lu.assertTrue(contained)
+	lu.assertFalse(scheduled)
+end
+
+function TestSensorProbingService:test_poll_callback_contains_cleanup_failure_and_completes_the_batch()
+	local completed = 0
+	self.service._pending = { Radar = { groupName = "probe-radar" } }
+	self.service._pendingCount = 1
+	self.service._completionCallbacks = {
+		function()
+			completed = completed + 1
+		end,
+	}
+	self.service._pollPendingProbes = function()
+		error("injected poll failure")
+	end
+	GetGroup = function()
+		error("injected cleanup failure")
+	end
+
+	local contained = pcall(self.service._pollCallback)
+
+	lu.assertTrue(contained)
+	lu.assertEquals(self.service._pendingCount, 0)
+	lu.assertIsNil(next(self.service._pending))
+	lu.assertFalse(self.service._cache.Radar)
+	lu.assertEquals(completed, 1)
+end
+
+function TestSensorProbingService:test_overlapping_probe_batches_coalesce_types_and_completion()
+	BuildUnitEntry = function()
+		return {}
+	end
+	BuildGroupData = function(name)
+		return { name = name }
+	end
+	local spawns = 0
+	AddCoalitionGroup = function()
+		spawns = spawns + 1
+		return {}
+	end
+	local schedules = 0
+	ScheduleOnce = function()
+		schedules = schedules + 1
+		return schedules
+	end
+	local firstComplete = 0
+	local secondComplete = 0
+
+	self.service:probeAll({ RadarA = { x = 0, z = 0 } }, function()
+		firstComplete = firstComplete + 1
+	end)
+	self.service:probeAll({ RadarA = { x = 0, z = 0 }, RadarB = { x = 1, z = 1 } }, function()
+		secondComplete = secondComplete + 1
+	end)
+
+	lu.assertEquals(spawns, 2)
+	lu.assertEquals(schedules, 1)
+	lu.assertEquals(self.service._pendingCount, 2)
+	self.service:_onProbeComplete("RadarA")
+	lu.assertEquals(firstComplete, 0)
+	lu.assertEquals(secondComplete, 0)
+	self.service:_onProbeComplete("RadarB")
+	lu.assertEquals(firstComplete, 1)
+	lu.assertEquals(secondComplete, 1)
+	lu.assertEquals(self.service._pendingCount, 0)
 end
 
 -- _parseSensors tests

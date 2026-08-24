@@ -49,7 +49,6 @@ local DOCTRINE_SCHEMA = {
 	{ name = "GCIPolicy", type = "enum", default = "CLOSEST_AIRBASE", enum = "GciServicePolicy" },
 	-- Clamped numbers
 	{ name = "PkFloor", type = "number", default = 0.25, min = 0, max = 1 },
-	{ name = "DefendPk", type = "number", default = 0.30, min = 0, max = 1 },
 	{ name = "TargetKillRate", type = "number", default = 0.50, min = 0, max = 1 },
 	{ name = "HoldDownSec", type = "number", default = 15, min = 0, max = 300 },
 	{ name = "EngageTimeoutSec", type = "number", default = 45, min = 0, max = 300 },
@@ -57,7 +56,7 @@ local DOCTRINE_SCHEMA = {
 	{ name = "ADIZBufferNm", type = "number", default = 12, min = 0, max = 200 },
 	{ name = "C2DelaySec", type = "number", default = 2, min = 0, max = 60 },
 	{ name = "ThreatSpeedScaling", type = "number", default = 30, min = 0, max = 100 },
-	{ name = "PerTrackScanUpdateRate", type = "number", default = 5, min = 1, max = 60 },
+	{ name = "PerTrackScanUpdateRate", type = "number", default = 2, min = 1, max = 60 },
 	{ name = "SensorCleanupSec", type = "number", default = 30, min = 5, max = 300 },
 	{ name = "BallisticSimStepSec", type = "number", default = 1.0, min = 0.1, max = 5 },
 	{ name = "BallisticSimMaxSec", type = "number", default = 120, min = 10, max = 600 },
@@ -229,6 +228,7 @@ local function resolveNumericSubtable(schema, overrides, legacyOverrides)
 	return resolved
 end
 
+--- Returns one validated doctrine by applying mission overrides to every declared policy default.
 function Medusa.Entities.Doctrine.new(overrides)
 	local d = overrides or {}
 	local doctrine = { DoctrineId = d.DoctrineId or NewULID() }
@@ -284,11 +284,20 @@ function Medusa.Entities.Doctrine.new(overrides)
 				end
 			end
 		elseif s.type == "boolean" then
-			if raw ~= nil then
-				doctrine[s.name] = raw
-			else
-				doctrine[s.name] = s.default
+			if type(raw) ~= "boolean" then
+				if raw ~= nil then
+					_logger:error(
+						string.format(
+							"invalid '%s' Boolean value '%s', using '%s'",
+							s.name,
+							tostring(raw),
+							tostring(s.default)
+						)
+					)
+				end
+				raw = s.default
 			end
+			doctrine[s.name] = raw
 		elseif s.type == "table" then
 			doctrine[s.name] = raw
 		else

@@ -6,12 +6,12 @@ require("core.Constants")
 require("core.Config")
 require("entities.Battery")
 require("services.Services")
-require("services.MetricsService")
-require("services.MetricsSnapshotService")
+require("observability.MetricsService")
+require("observability.MetricsSnapshot")
 
 local C = Medusa.Constants
-local MS = Medusa.Services.MetricsService
-local MSS = Medusa.Services.MetricsSnapshotService
+local MS = Medusa.Observability.MetricsService
+local MSS = Medusa.Observability.MetricsSnapshot
 
 local function contains(text, value)
 	return string.find(text, value, 1, true) ~= nil

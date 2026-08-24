@@ -26,6 +26,10 @@ Medusa.Constants.LogLevel = {
 	TRACE = "TRACE",
 }
 
+Medusa.Constants.Diagnostics = {
+	WORK_SUMMARY_INTERVAL_SEC = 30,
+}
+
 -- ── Network & C2 ──────────────────────────────────────────────────
 
 Medusa.Constants.Role = {
@@ -35,16 +39,69 @@ Medusa.Constants.Role = {
 	HQ = "HQ",
 }
 
-Medusa.Constants.NetworkConnectivity = {
-	CONNECTED = "CONNECTED",
-	DEGRADED = "DEGRADED",
-	DISCONNECTED = "DISCONNECTED",
-}
-
 Medusa.Constants.NetworkDegradationPolicy = {
 	REVERT_TO_AUTONOMOUS = "REVERT_TO_AUTONOMOUS",
 	GO_DARK = "GO_DARK",
 	REVERT_TO_SELF_DEFENSE = "REVERT_TO_SELF_DEFENSE",
+}
+
+Medusa.Constants.CoverageClass = {
+	INSUFFICIENT = "INSUFFICIENT",
+	SUFFICIENT = "SUFFICIENT",
+}
+
+Medusa.Constants.CoordinationState = {
+	COORDINATED = "COORDINATED",
+	DEGRADED = "DEGRADED",
+}
+
+Medusa.Constants.BatteryControlMode = {
+	COORDINATED = "COORDINATED",
+	AUTONOMOUS = "AUTONOMOUS",
+	SELF_DEFENSE = "SELF_DEFENSE",
+	GO_DARK = "GO_DARK",
+	INDEPENDENT = "INDEPENDENT",
+	UNKNOWN = "UNKNOWN",
+}
+
+Medusa.Constants.UnitOwnerKind = {
+	BATTERY_UNIT = "BATTERY_UNIT",
+	SENSOR = "SENSOR",
+	COMMAND_PROVIDER = "COMMAND_PROVIDER",
+}
+
+Medusa.Constants.C2 = {
+	REFRESH_INTERVAL_SEC = 15,
+	BOOTSTRAP_RETRY_SEC = 1,
+	INPUT_PROCESSING_BUDGET = 128,
+	COVERAGE_EVALUATION_BUDGET = 4,
+	DETECTION_PROCESSING_BUDGET = 32,
+	SENSOR_SCAN_CACHE_CAPACITY = 512,
+	PROVIDER_CAPACITY = 128,
+	MAX_SENSORS = 128,
+	MAX_COMMAND_CENTERS = 64,
+	MAX_BATTERIES = 512,
+	MAX_ASSETS = 704,
+}
+
+Medusa.Constants.Scheduler = {
+	MAX_CONSECUTIVE_FAILURES = 1000,
+}
+
+Medusa.Constants.WorldEventQueue = {
+	DEATH_CAPACITY = 256,
+	SHOT_CAPACITY = 256,
+	KILL_CAPACITY = 128,
+	BIRTH_CAPACITY = 128,
+	BIRTH_OVERFLOW_CAPACITY = 128,
+	DEATH_OVERFLOW_CAPACITY = 256,
+	DEATH_PROCESSING_BUDGET = 2,
+	SHOT_PROCESSING_BUDGET = 2,
+	KILL_PROCESSING_BUDGET = 2,
+	BIRTH_PROCESSING_BUDGET = 2,
+	DEATH_OVERFLOW_RECOVERY_BUDGET = 2,
+	AMMO_RECONCILIATION_BUDGET = 2,
+	AMMO_RECONCILIATION_RETRY_SEC = 5,
 }
 
 -- ── Battery & Unit State ──────────────────────────────────────────
@@ -245,6 +302,10 @@ Medusa.Constants.CrewSuppression = {
 	CANNON_TRAJECTORY_SEGMENTS = 4,
 }
 
+Medusa.Constants.BlackBox = {
+	METADATA_CACHE_CAPACITY = 4096,
+}
+
 Medusa.Constants.TacticalState = {
 	IDLE = "IDLE",
 	STANDARD_ENGAGING = "STANDARD_ENGAGING",
@@ -350,6 +411,7 @@ Medusa.Constants.HarmDefenseState = {
 
 Medusa.Constants.TRACK_REASSOC_MAX_DIST_M = 5000
 Medusa.Constants.TRACK_REASSOC_TTL_SEC = 120
+Medusa.Constants.TRACK_CAPACITY = 512
 Medusa.Constants.TRACK_UPDATE_EXPIRY_BUCKETS = { 1, 2, 3, 5, 10, 20, 50 }
 Medusa.Constants.TRACK_TURN_THRESHOLD_RAD = 0.15
 Medusa.Constants.TRACK_ORBIT_THRESHOLD_RAD = 2.5
@@ -473,24 +535,23 @@ Medusa.Constants.HARM_SHUTDOWN_SAFETY_MARGIN_SEC = 20
 Medusa.Constants.HARM_MAX_RANGE_M = 130000
 Medusa.Constants.HARM_DEFAULT_SPEED_MPS = 300
 
-Medusa.Constants.HARM_SPRT_MIN_SCANS = 25
-Medusa.Constants.HARM_SPRT_MIN_TRACK_AGE_SEC = 10
+Medusa.Constants.HARM_SPRT_MIN_SCANS = 5
 Medusa.Constants.HARM_SPRT_MIN_DT_SEC = 0.01
-Medusa.Constants.HARM_SPRT_SPEED_GATE = 50
 Medusa.Constants.HARM_SPRT_MAX_FEAT_LLR = 3
-Medusa.Constants.HARM_SPRT_MAX_SCAN_LLR = 5
+Medusa.Constants.HARM_SPRT_MAX_SCAN_LLR = 4
+Medusa.Constants.HARM_SPRT_ACCUMULATED_LLR_LIMIT = 20
 Medusa.Constants.HARM_SPRT_THRESH_CONFIRM = 4.554
 Medusa.Constants.HARM_SPRT_THRESH_CLEAR = -20
 Medusa.Constants.HARM_SPRT_THRESH_SUSPECT = 1.139
 Medusa.Constants.HARM_SPRT_THRESH_PROBABLE = 2.733
 
 -- Gaussian class-conditional model: {arm_mean, arm_sigma, nonArm_mean, nonArm_sigma}
--- Tuned for post-boost DCS HARM (Mach 1-4, ballistic/terminal after 10s age gate)
+-- Medusa 1.3.0 DCS likelihood model. Numeric calibration remains a live-mission obligation.
 Medusa.Constants.HARM_SPRT_MODEL = {
 	{ 800, 300, 300, 120 }, -- Speed (m/s): ARM Mach 1-4, fighters up to Mach 1.4
 	{ 0.25, 0.35, 0.02, 0.15 }, -- Dive angle (rad): post-apogee, increasingly steep
-	{ 0.008, 0.015, 0.040, 0.050 }, -- Heading rate (rad/s): HARMs fly straight
-	{ 10, 25, 0, 10 }, -- Accel (m/s^2): gravity-driven gain in dive, positive
+	{ 0.008, 0.015, 0.040, 0.050 }, -- Horizontal heading rate (rad/s): HARMs fly straight
+	{ 10, 25, 0, 10 }, -- 3D speed change (m/s^2)
 	{ 500, 1350, 8000, 6000 }, -- CPA distance (m): tightened ARM σ for long-range sensitivity
 	{ -30, 40, -5, 30 }, -- CPA rate (m/s): HARMs converge on emitter
 	{ -600, 300, -50, 200 }, -- Range rate (m/s): Mach 1-4 closure, wide σ

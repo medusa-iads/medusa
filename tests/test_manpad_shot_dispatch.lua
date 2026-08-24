@@ -10,7 +10,7 @@ require("services.Services")
 require("services.stores.BatteryStore")
 require("services.AssetIndex")
 require("services.ManpadService")
-require("services.MetricsService")
+require("observability.MetricsService")
 require("services.BatteryActivationService")
 require("core.IadsNetwork")
 local ManpadTest = require("manpad_test_support")
@@ -135,6 +135,7 @@ local function makeIads()
 		prefix = "iads",
 	})
 	iads:initialize()
+	iads:_subscribeWorldEvents()
 	iads._running = true
 	return iads
 end
@@ -256,23 +257,29 @@ end
 TestIadsNetworkHandleShot = {}
 
 local _origGetUnitDesc
+local _origGetGroupController
+local _origPopControllerTask
 
 function TestIadsNetworkHandleShot:setUp()
 	installMocks()
 	Medusa.Logger._initialized = false
 	Medusa.Logger:initialize()
 	_origGetUnitDesc = GetUnitDesc
+	_origGetGroupController = GetGroupController
+	_origPopControllerTask = PopControllerTask
 	GetUnitDesc = function()
 		return { attributes = { ["SAM LL"] = true } }
 	end
-	if Medusa.Services.MetricsService._registry then
-		Medusa.Services.MetricsService._registry = {}
+	if Medusa.Observability.MetricsService._registry then
+		Medusa.Observability.MetricsService._registry = {}
 	end
 end
 
 function TestIadsNetworkHandleShot:tearDown()
 	restoreMocks()
 	GetUnitDesc = _origGetUnitDesc
+	GetGroupController = _origGetGroupController
+	PopControllerTask = _origPopControllerTask
 end
 
 function TestIadsNetworkHandleShot:test_handleShot_manpad_usesSharedAmmoPathAndPolicyHook()
@@ -294,14 +301,14 @@ function TestIadsNetworkHandleShot:test_handleShot_manpad_usesSharedAmmoPathAndP
 		end
 	end
 
-	local origInc = Medusa.Services.MetricsService.inc
-	Medusa.Services.MetricsService.inc = function() end
+	local origInc = Medusa.Observability.MetricsService.inc
+	Medusa.Observability.MetricsService.inc = function() end
 
 	iads:_handleShot(200, "SA-18 Grouse")
 
 	Medusa.Services.ManpadService.onShot = origOnShot
 	iads._decrementAmmo = origDecrement
-	Medusa.Services.MetricsService.inc = origInc
+	Medusa.Observability.MetricsService.inc = origInc
 
 	lu.assertNotNil(capturedBattery, "ManpadService.onShot must be called for a MANPAD unit")
 	lu.assertIs(capturedBattery, bat, "onShot must receive the MANPAD battery record")
@@ -406,11 +413,11 @@ function TestIadsNetworkHandleShot:test_manpad_winchester_rearms_and_returns_ale
 	unit.AmmoTypes[1].Count = 1
 	Medusa.Entities.Battery.recomputeState(bat)
 
-	local originalInc = Medusa.Services.MetricsService.inc
+	local originalInc = Medusa.Observability.MetricsService.inc
 	local originalGetUnitAmmo = GetUnitAmmo
 	local originalGoCold = Medusa.Services.BatteryActivationService.goCold
 	local winchesterCount = 0
-	Medusa.Services.MetricsService.inc = function(metricName)
+	Medusa.Observability.MetricsService.inc = function(metricName)
 		if metricName == "medusa_manpad_winchester_total" then
 			winchesterCount = winchesterCount + 1
 		end
@@ -447,7 +454,7 @@ function TestIadsNetworkHandleShot:test_manpad_winchester_rearms_and_returns_ale
 		iads:_checkRearming(bat.RearmCheckTime)
 	end)
 
-	Medusa.Services.MetricsService.inc = originalInc
+	Medusa.Observability.MetricsService.inc = originalInc
 	GetUnitAmmo = originalGetUnitAmmo
 	Medusa.Services.BatteryActivationService.goCold = originalGoCold
 
@@ -456,6 +463,32 @@ function TestIadsNetworkHandleShot:test_manpad_winchester_rearms_and_returns_ale
 	lu.assertEquals(bat.TotalAmmoStatus, 2)
 	lu.assertEquals(bat.Manpad.SleepWakeState, Medusa.Constants.Manpad.SleepWakeState.ALERT)
 	lu.assertIsNil(bat.RearmCheckTime)
+end
+
+function TestIadsNetworkHandleShot:test_aaa_lastShot_releasesActiveBarrageImmediately()
+	local C = Medusa.Constants
+	local iads = makeIads()
+	local site = injectIndependentAaa(iads, 303)
+	site.Units[1].AmmoCount = 1
+	site.Units[1].AmmoTypes[1].Count = 1
+	Medusa.Entities.Battery.recomputeState(site)
+	site.ActivationState = C.ActivationState.STATE_COLD
+	site.Aaa.ResponseState = C.Aaa.ResponseState.BARRAGE_FIRE
+	site.Aaa.LastFirePoint = { x = 1000, y = 100, z = 0 }
+	iads._aaaBarrageState.participants[site.BatteryId] = site
+	GetGroupController = function()
+		return {}
+	end
+	PopControllerTask = function()
+		return true
+	end
+
+	iads:_handleShot(303, "ZU-23")
+
+	lu.assertEquals(site.OperationalStatus, C.BatteryOperationalStatus.INOPERATIVE)
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+	lu.assertNil(site.Aaa.LastFirePoint)
+	lu.assertNil(iads._aaaBarrageState.participants[site.BatteryId])
 end
 
 function TestIadsNetworkHandleShot:test_manpad_gunAmmoDoesNotCompleteRearm()
@@ -532,6 +565,8 @@ function TestIadsNetworkHandleUnitDeathManpad:setUp()
 	Medusa.Logger._initialized = false
 	Medusa.Logger:initialize()
 	_origGetUnitDesc = GetUnitDesc
+	_origGetGroupController = GetGroupController
+	_origPopControllerTask = PopControllerTask
 	GetUnitDesc = function()
 		return { attributes = { ["SAM LL"] = true } }
 	end
@@ -540,6 +575,8 @@ end
 function TestIadsNetworkHandleUnitDeathManpad:tearDown()
 	restoreMocks()
 	GetUnitDesc = _origGetUnitDesc
+	GetGroupController = _origGetGroupController
+	PopControllerTask = _origPopControllerTask
 end
 
 -- MANPAD unit dies, team still has remaining soldiers → unit removed from roster, manpad stays
@@ -560,6 +597,24 @@ function TestIadsNetworkHandleUnitDeathManpad:test_death_manpad_oneOfThree_manpa
 
 	lu.assertEquals(#bat.Units, 2, "2 units must remain after 1-of-3 soldier death")
 	lu.assertEquals(manpadStore:count(), 1, "MANPAD must stay in store when soldiers remain")
+end
+
+function TestIadsNetworkHandleUnitDeathManpad:test_death_lastArmedMember_cancelsWakeAndSchedulesRearm()
+	local C = Medusa.Constants
+	local iads = makeIads()
+	local bat = injectManpad(iads, { 213, 214 }, C.Manpad.SleepWakeState.ALERTING)
+	bat.Units[2].AmmoCount = 0
+	bat.Units[2].AmmoTypes[1].Count = 0
+	Medusa.Entities.Battery.recomputeState(bat)
+	bat.Manpad.WakeTimerId = "pending-wake"
+
+	iads:_handleUnitDeath(213)
+
+	lu.assertEquals(bat.OperationalStatus, C.BatteryOperationalStatus.REARMING)
+	lu.assertEquals(bat.TotalAmmoStatus, 0)
+	lu.assertNil(bat.Manpad.WakeTimerId)
+	lu.assertEquals(bat.Manpad.SleepWakeState, C.Manpad.SleepWakeState.ASLEEP)
+	lu.assertEquals(bat.RearmCheckTime, _mockTime + C.REARM_CHECK_INTERVAL_SEC)
 end
 
 -- Full MANPAD team dies → manpad removed from stores.manpads AND from GeoGrid
@@ -614,12 +669,8 @@ function TestIadsNetworkHandleUnitDeathManpad:test_radar_loss_withdraws_aaa_unti
 	iads:getAssetIndex():batteries():add(site)
 	iads._spatialIndex:syncBattery(site)
 
-	local protected = injectBattery(iads, { 232 })
-	Medusa.Services.PointDefenseService.setAssignment(
-		site.BatteryId,
-		protected.BatteryId,
-		iads:getAssetIndex():batteries()
-	)
+	site.PartitionKey = "partition-a"
+	lu.assertTrue(Medusa.Services.PointDefenseService.isProviderViable(site))
 	site.CurrentTargetTrackId = "assigned-track"
 
 	iads:_handleUnitDeath(231)
@@ -630,8 +681,68 @@ function TestIadsNetworkHandleUnitDeathManpad:test_radar_loss_withdraws_aaa_unti
 	lu.assertNil(localResult.AaaIds[site.BatteryId])
 	lu.assertNil(site.CurrentTargetTrackId)
 	lu.assertFalse(site.IsPointDefense)
-	lu.assertNil(protected.PointDefenseProviderId)
-	lu.assertTrue(iads._pdReassignNeeded)
+end
+
+function TestIadsNetworkHandleUnitDeathManpad:test_survivingIneligibleAaa_releasesActiveBarrageImmediately()
+	local C = Medusa.Constants
+	local iads = makeIads()
+	local site = injectIndependentAaa(iads, 240)
+	local reserve = makeUnit(241, C.BatteryUnitRole.AAA, "ZU-23")
+	reserve.AmmoCount = 0
+	reserve.AmmoTypes[1].Count = 0
+	local repository = iads:getAssetIndex():batteryRepository()
+	repository:remove(site.BatteryId)
+	site.Units[#site.Units + 1] = reserve
+	Medusa.Entities.Battery.recomputeState(site)
+	repository:add(site)
+	site.ActivationState = C.ActivationState.STATE_COLD
+	site.Aaa.ResponseState = C.Aaa.ResponseState.BARRAGE_FIRE
+	site.Aaa.LastFirePoint = { x = 1000, y = 100, z = 0 }
+	iads._aaaBarrageState.participants[site.BatteryId] = site
+	GetGroupController = function()
+		return {}
+	end
+	PopControllerTask = function()
+		return true
+	end
+
+	iads:_handleUnitDeath(240)
+
+	lu.assertEquals(site.OperationalStatus, C.BatteryOperationalStatus.INOPERATIVE)
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+	lu.assertNil(site.Aaa.LastFirePoint)
+	lu.assertNil(iads._aaaBarrageState.participants[site.BatteryId])
+end
+
+function TestIadsNetworkHandleUnitDeathManpad:test_survivingIneligibleAaa_releasesLocalWork_afterFailedStop()
+	local C = Medusa.Constants
+	local iads = makeIads()
+	local site = injectIndependentAaa(iads, 242)
+	local reserve = makeUnit(243, C.BatteryUnitRole.AAA, "ZU-23")
+	reserve.AmmoCount = 0
+	reserve.AmmoTypes[1].Count = 0
+	local repository = iads:getAssetIndex():batteryRepository()
+	repository:remove(site.BatteryId)
+	site.Units[#site.Units + 1] = reserve
+	Medusa.Entities.Battery.recomputeState(site)
+	repository:add(site)
+	site.ActivationState = C.ActivationState.STATE_COLD
+	site.Aaa.ResponseState = C.Aaa.ResponseState.BARRAGE_FIRE
+	site.Aaa.LastFirePoint = { x = 1000, y = 100, z = 0 }
+	iads._aaaBarrageState.participants[site.BatteryId] = site
+	GetGroupController = function()
+		return {}
+	end
+	PopControllerTask = function()
+		return false
+	end
+
+	iads:_handleUnitDeath(242)
+
+	lu.assertEquals(site.OperationalStatus, C.BatteryOperationalStatus.INOPERATIVE)
+	lu.assertEquals(site.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
+	lu.assertNil(site.Aaa.LastFirePoint)
+	lu.assertNil(iads._aaaBarrageState.participants[site.BatteryId])
 end
 
 -- ============================================================

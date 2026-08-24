@@ -1,5 +1,5 @@
 require("_header")
-require("services.Services")
+require("observability.Observability")
 
 --[[
             ███╗   ███╗███████╗████████╗██████╗ ██╗ ██████╗███████╗    ███████╗███████╗██████╗ ██╗   ██╗██╗ ██████╗███████╗
@@ -18,20 +18,20 @@ require("services.Services")
     - The Entrypoint calls serialize on a timer to write metrics to disk for Grafana scraping.
 --]]
 
-Medusa.Services.MetricsService = {}
-Medusa.Services.MetricsService._registry = {}
-Medusa.Services.MetricsService._snapshotCallbacks = {}
-Medusa.Services.MetricsService._context = nil
-Medusa.Services.MetricsService._extendedBlock = ""
-Medusa.Services.MetricsService._ctxKeyCache = {}
-Medusa.Services.MetricsService._ctxKeyCacheOwner = nil
+Medusa.Observability.MetricsService = {}
+Medusa.Observability.MetricsService._registry = {}
+Medusa.Observability.MetricsService._snapshotCallbacks = {}
+Medusa.Observability.MetricsService._context = nil
+Medusa.Observability.MetricsService._extendedBlock = ""
+Medusa.Observability.MetricsService._ctxKeyCache = {}
+Medusa.Observability.MetricsService._ctxKeyCacheOwner = nil
 
-function Medusa.Services.MetricsService.setExtended(text)
-	Medusa.Services.MetricsService._extendedBlock = text or ""
+function Medusa.Observability.MetricsService.setExtended(text)
+	Medusa.Observability.MetricsService._extendedBlock = text or ""
 end
 
-function Medusa.Services.MetricsService.setContext(labels)
-	Medusa.Services.MetricsService._context = labels
+function Medusa.Observability.MetricsService.setContext(labels)
+	Medusa.Observability.MetricsService._context = labels
 end
 
 local function buildLabelKey(labelKeys, labels)
@@ -43,8 +43,8 @@ local function buildLabelKey(labelKeys, labels)
 	return table.concat(parts, ",")
 end
 
-local MS = Medusa.Services.MetricsService
-local _ctxKeyCache = Medusa.Services.MetricsService._ctxKeyCache
+local MS = Medusa.Observability.MetricsService
+local _ctxKeyCache = Medusa.Observability.MetricsService._ctxKeyCache
 
 local function makeLabelKey(labelKeys, labels)
 	if labels ~= MS._context then
@@ -64,31 +64,31 @@ local function makeLabelKey(labelKeys, labels)
 	return key
 end
 
-function Medusa.Services.MetricsService.onSnapshot(fn)
-	local cbs = Medusa.Services.MetricsService._snapshotCallbacks
+function Medusa.Observability.MetricsService.onSnapshot(fn)
+	local cbs = Medusa.Observability.MetricsService._snapshotCallbacks
 	cbs[#cbs + 1] = fn
 end
 
-function Medusa.Services.MetricsService.counter(name, help, labelKeys)
+function Medusa.Observability.MetricsService.counter(name, help, labelKeys)
 	if labelKeys then
-		Medusa.Services.MetricsService._registry[name] =
+		Medusa.Observability.MetricsService._registry[name] =
 			{ type = "counter", help = help or "", label_keys = labelKeys, series = {} }
 	else
-		Medusa.Services.MetricsService._registry[name] = { type = "counter", help = help or "", value = 0 }
+		Medusa.Observability.MetricsService._registry[name] = { type = "counter", help = help or "", value = 0 }
 	end
 end
 
-function Medusa.Services.MetricsService.gauge(name, help, labelKeys)
+function Medusa.Observability.MetricsService.gauge(name, help, labelKeys)
 	if labelKeys then
-		Medusa.Services.MetricsService._registry[name] =
+		Medusa.Observability.MetricsService._registry[name] =
 			{ type = "gauge", help = help or "", label_keys = labelKeys, series = {} }
 	else
-		Medusa.Services.MetricsService._registry[name] = { type = "gauge", help = help or "", value = 0 }
+		Medusa.Observability.MetricsService._registry[name] = { type = "gauge", help = help or "", value = 0 }
 	end
 end
 
-function Medusa.Services.MetricsService.info(name, help, labelKey)
-	Medusa.Services.MetricsService._registry[name] = {
+function Medusa.Observability.MetricsService.info(name, help, labelKey)
+	Medusa.Observability.MetricsService._registry[name] = {
 		type = "info",
 		help = help or "",
 		label_key = labelKey,
@@ -96,19 +96,19 @@ function Medusa.Services.MetricsService.info(name, help, labelKey)
 	}
 end
 
-function Medusa.Services.MetricsService.setInfo(name, value)
-	local entry = Medusa.Services.MetricsService._registry[name]
+function Medusa.Observability.MetricsService.setInfo(name, value)
+	local entry = Medusa.Observability.MetricsService._registry[name]
 	if not entry then
 		return
 	end
 	entry.value = value or ""
 end
 
-function Medusa.Services.MetricsService.summary(name, help, quantiles, windowSize, labelKeys)
+function Medusa.Observability.MetricsService.summary(name, help, quantiles, windowSize, labelKeys)
 	local q = quantiles or { 0.5, 0.9, 0.99 }
 	local ws = windowSize or 1000
 	if labelKeys then
-		Medusa.Services.MetricsService._registry[name] = {
+		Medusa.Observability.MetricsService._registry[name] = {
 			type = "summary",
 			help = help or "",
 			quantiles = q,
@@ -117,7 +117,7 @@ function Medusa.Services.MetricsService.summary(name, help, quantiles, windowSiz
 			series = {},
 		}
 	else
-		Medusa.Services.MetricsService._registry[name] = {
+		Medusa.Observability.MetricsService._registry[name] = {
 			type = "summary",
 			help = help or "",
 			quantiles = q,
@@ -130,14 +130,14 @@ function Medusa.Services.MetricsService.summary(name, help, quantiles, windowSiz
 	end
 end
 
-function Medusa.Services.MetricsService.histogram(name, help, buckets, labelKeys)
+function Medusa.Observability.MetricsService.histogram(name, help, buckets, labelKeys)
 	local sorted = {}
 	for i = 1, #buckets do
 		sorted[i] = buckets[i]
 	end
 	table.sort(sorted)
 	if labelKeys then
-		Medusa.Services.MetricsService._registry[name] = {
+		Medusa.Observability.MetricsService._registry[name] = {
 			type = "histogram",
 			help = help or "",
 			label_keys = labelKeys,
@@ -149,7 +149,7 @@ function Medusa.Services.MetricsService.histogram(name, help, buckets, labelKeys
 		for i = 1, #sorted do
 			counts[i] = 0
 		end
-		Medusa.Services.MetricsService._registry[name] = {
+		Medusa.Observability.MetricsService._registry[name] = {
 			type = "histogram",
 			help = help or "",
 			buckets = sorted,
@@ -160,13 +160,13 @@ function Medusa.Services.MetricsService.histogram(name, help, buckets, labelKeys
 	end
 end
 
-function Medusa.Services.MetricsService.inc(name, delta, labels)
-	local entry = Medusa.Services.MetricsService._registry[name]
+function Medusa.Observability.MetricsService.inc(name, delta, labels)
+	local entry = Medusa.Observability.MetricsService._registry[name]
 	if not entry then
 		return
 	end
 	if entry.label_keys then
-		local effectiveLabels = labels or Medusa.Services.MetricsService._context
+		local effectiveLabels = labels or Medusa.Observability.MetricsService._context
 		if not effectiveLabels then
 			return
 		end
@@ -182,13 +182,13 @@ function Medusa.Services.MetricsService.inc(name, delta, labels)
 	end
 end
 
-function Medusa.Services.MetricsService.set(name, value, labels)
-	local entry = Medusa.Services.MetricsService._registry[name]
+function Medusa.Observability.MetricsService.set(name, value, labels)
+	local entry = Medusa.Observability.MetricsService._registry[name]
 	if not entry then
 		return
 	end
 	if entry.label_keys then
-		local effectiveLabels = labels or Medusa.Services.MetricsService._context
+		local effectiveLabels = labels or Medusa.Observability.MetricsService._context
 		if not effectiveLabels then
 			return
 		end
@@ -212,13 +212,13 @@ local function observeSummary(s, value, windowSize)
 	s.count = s.count + 1
 end
 
-function Medusa.Services.MetricsService.observe(name, value, labels)
-	local entry = Medusa.Services.MetricsService._registry[name]
+function Medusa.Observability.MetricsService.observe(name, value, labels)
+	local entry = Medusa.Observability.MetricsService._registry[name]
 	if not entry then
 		return
 	end
 	if entry.label_keys then
-		local effectiveLabels = labels or Medusa.Services.MetricsService._context
+		local effectiveLabels = labels or Medusa.Observability.MetricsService._context
 		if not effectiveLabels then
 			return
 		end
@@ -389,8 +389,8 @@ local function serializeLabeledSummary(name, entry)
 	return table.concat(lines, "\n")
 end
 
-function Medusa.Services.MetricsService.serialize()
-	local cbs = Medusa.Services.MetricsService._snapshotCallbacks
+function Medusa.Observability.MetricsService.serialize()
+	local cbs = Medusa.Observability.MetricsService._snapshotCallbacks
 	for i = 1, #cbs do
 		cbs[i]()
 	end
@@ -399,7 +399,7 @@ function Medusa.Services.MetricsService.serialize()
 	local t0 = hpt()
 	local parts = {}
 	local n = 0
-	for name, entry in pairs(Medusa.Services.MetricsService._registry) do
+	for name, entry in pairs(Medusa.Observability.MetricsService._registry) do
 		n = n + 1
 		if entry.label_keys then
 			if entry.type == "histogram" then
@@ -450,18 +450,18 @@ function Medusa.Services.MetricsService.serialize()
 
 	local result = table.concat(parts, "\n")
 
-	local ext = Medusa.Services.MetricsService._extendedBlock
+	local ext = Medusa.Observability.MetricsService._extendedBlock
 	if ext and #ext > 0 then
 		result = result .. "\n" .. ext
 	end
 
 	-- Self-time: observe duration (appears in next scrape)
-	Medusa.Services.MetricsService.observe("medusa_serialize_duration_seconds", hpt() - t0)
+	Medusa.Observability.MetricsService.observe("medusa_serialize_duration_seconds", hpt() - t0)
 	return result
 end
 
-function Medusa.Services.MetricsService.reset()
-	for _, entry in pairs(Medusa.Services.MetricsService._registry) do
+function Medusa.Observability.MetricsService.reset()
+	for _, entry in pairs(Medusa.Observability.MetricsService._registry) do
 		if entry.label_keys then
 			for _, s in pairs(entry.series) do
 				if entry.type == "histogram" then
@@ -498,10 +498,10 @@ function Medusa.Services.MetricsService.reset()
 			end
 		end
 	end
-	Medusa.Services.MetricsService._snapshotCallbacks = {}
-	Medusa.Services.MetricsService._context = nil
-	Medusa.Services.MetricsService._extendedBlock = ""
-	Medusa.Services.MetricsService._ctxKeyCache = {}
-	Medusa.Services.MetricsService._ctxKeyCacheOwner = nil
-	_ctxKeyCache = Medusa.Services.MetricsService._ctxKeyCache
+	Medusa.Observability.MetricsService._snapshotCallbacks = {}
+	Medusa.Observability.MetricsService._context = nil
+	Medusa.Observability.MetricsService._extendedBlock = ""
+	Medusa.Observability.MetricsService._ctxKeyCache = {}
+	Medusa.Observability.MetricsService._ctxKeyCacheOwner = nil
+	_ctxKeyCache = Medusa.Observability.MetricsService._ctxKeyCache
 end

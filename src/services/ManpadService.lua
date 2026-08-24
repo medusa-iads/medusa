@@ -3,7 +3,7 @@ require("services.Services")
 require("core.Constants")
 require("entities.Battery")
 require("services.BatteryActivationService")
-require("services.MetricsService")
+require("observability.MetricsService")
 require("services.CrewPerceptionService")
 require("services.LocalSearchService")
 require("services.NeighborPropagationService")
@@ -92,13 +92,24 @@ function Medusa.Services.ManpadService.headingBearingDegrees(heading)
 	return CrewPerceptionService.headingBearingDegrees(heading)
 end
 
-local function receiveScheduledWake(battery, wakeReason, now)
+--- Applies a delayed wake only while its captured IADS partition remains current.
+local function receiveScheduledWake(battery, message, now)
+	local wakeReason = message.WakeReason
+	local partitionKey = message.PartitionKey
+	if partitionKey and battery.PartitionKey ~= partitionKey then
+		if battery.Manpad.SleepWakeState == MSWS.ALERTING then
+			battery.Manpad.SleepWakeState = MSWS.ASLEEP
+			battery.Manpad.WakeReason = MWR.NONE
+		end
+		return
+	end
 	if battery.Manpad.SleepWakeState == MSWS.ALERTING then
 		completeThreatWake(battery, wakeReason, now)
 	end
 end
 
-local function scheduleWake(ctx, battery, wakeReason, minSec, maxSec)
+--- Schedules one owned wake and reports whether timer registration returned a handle.
+local function scheduleWake(ctx, battery, wakeReason, minSec, maxSec, partitionKey)
 	if Battery.isCrewSuppressed(battery) or battery.Manpad.WakeTimerId then
 		return false
 	end
@@ -120,7 +131,7 @@ local function scheduleWake(ctx, battery, wakeReason, minSec, maxSec)
 			pendingTimerField = "WakeTimerId",
 			delayMinSec = minSec,
 			delayMaxSec = maxSec,
-			message = wakeReason,
+			message = { WakeReason = wakeReason, PartitionKey = partitionKey },
 			onDelivery = receiveScheduledWake,
 		})
 	then
@@ -162,11 +173,12 @@ function Medusa.Services.ManpadService.canDetectVisually(battery, track, posture
 	return CrewPerceptionService.canSee(battery.Position, track.Position, battery.Manpad, profiles)
 end
 
+--- Reports whether battery may engage track under current posture, range, and visibility policy.
 function Medusa.Services.ManpadService.shouldEngage(battery, track, posture)
 	if battery.Manpad.SleepWakeState ~= MSWS.ALERT then
 		return false
 	end
-	if (battery.TotalAmmoStatus or 0) <= 0 then
+	if not Battery.hasKnownAmmo(battery) then
 		return false
 	end
 
@@ -181,13 +193,14 @@ function Medusa.Services.ManpadService.shouldEngage(battery, track, posture)
 	return Medusa.Services.ManpadService.canDetectVisually(battery, track, posture)
 end
 
+--- Reports whether battery has known ammunition and no active crew suppression.
 function Medusa.Services.ManpadService.canFire(battery)
 	return battery.Manpad ~= nil
 		and not Battery.isCrewSuppressed(battery)
 		and battery.Manpad.SleepWakeState == MSWS.HOT
 		and battery.ActivationState == C.ActivationState.STATE_HOT
 		and battery.OperationalStatus == C.BatteryOperationalStatus.ACTIVE
-		and (battery.TotalAmmoStatus or 0) > 0
+		and Battery.hasKnownAmmo(battery)
 end
 
 local function hearsAudio(ctx, battery, track)
@@ -195,11 +208,12 @@ local function hearsAudio(ctx, battery, track)
 	return CrewPerceptionService.hears(battery.Position, track.Position, audioRangeM)
 end
 
+--- Records one MANPAD missile shot and advances its alert lifetime at now.
 function Medusa.Services.ManpadService.onShot(battery, now)
 	if Battery.isCrewSuppressed(battery) or battery.Manpad.SleepWakeState ~= MSWS.HOT then
 		return
 	end
-	if (battery.TotalAmmoStatus or 0) > 0 then
+	if Battery.hasKnownAmmo(battery) then
 		battery.Manpad.HotUntil = now + randomDelay(C.Manpad.HOT_MIN_SEC, C.Manpad.HOT_MAX_SEC)
 	else
 		battery.Manpad.HotUntil = now
@@ -259,7 +273,8 @@ function Medusa.Services.ManpadService.onRearmed(battery, now)
 	battery.Manpad.CooldownUntil = nil
 end
 
-local function wakeAsleepManpadsInRadius(ctx, centerPos, radius, wakeReason, minSec, maxSec, excludeId)
+--- Schedules bounded nearby sleeping MANPAD wakes and returns the accepted recipient count.
+local function wakeAsleepManpadsInRadius(ctx, centerPos, radius, wakeReason, minSec, maxSec, excludeId, track)
 	local manpads = NeighborPropagationService.findRecipients(
 		ctx.localGeoGrid or ctx.geoGrid,
 		ctx.manpadStore,
@@ -271,7 +286,11 @@ local function wakeAsleepManpadsInRadius(ctx, centerPos, radius, wakeReason, min
 	local scheduledCount = 0
 	for i = 1, #manpads do
 		local battery = manpads[i]
-		if battery.Manpad.SleepWakeState == MSWS.ASLEEP and scheduleWake(ctx, battery, wakeReason, minSec, maxSec) then
+		if
+			battery.Manpad.SleepWakeState == MSWS.ASLEEP
+			and (not track or Battery.canAcceptTrack(battery, track, ctx.doctrine))
+			and scheduleWake(ctx, battery, wakeReason, minSec, maxSec, track and track.PartitionKey or nil)
+		then
 			scheduledCount = scheduledCount + 1
 		end
 	end
@@ -293,21 +312,19 @@ local function onManpadGoHot(ctx, battery)
 		battery.BatteryId
 	)
 	if scheduledCount > 0 then
-		Medusa.Services.MetricsService.inc("medusa_manpad_neighbor_wakes_total", scheduledCount)
+		Medusa.Observability.MetricsService.inc("medusa_manpad_neighbor_wakes_total", scheduledCount)
 	end
 end
 
-function Medusa.Services.ManpadService.cueFromIADS(ctx, trackPosition)
+--- Cues nearby sleeping MANPADs only when their partition may use the IADS track.
+function Medusa.Services.ManpadService.cueFromIADS(ctx, trackPosition, track)
 	if ctx.manpadStore:count() == 0 then
 		return
 	end
-	wakeAsleepManpadsInRadius(ctx, trackPosition, C.Manpad.GEOGRID_QUERY_RADIUS_M, MWR.IADS, nil, nil, nil)
+	wakeAsleepManpadsInRadius(ctx, trackPosition, C.Manpad.GEOGRID_QUERY_RADIUS_M, MWR.IADS, nil, nil, nil, track)
 end
 
---- Transitions a battery to ALERT synchronously, cancelling any pending
---- scheduled wake so WakeTimerId is not left stale (which would block the
---- duplicate-wake guard on the next ASLEEP cycle). Metrics are bumped
---- at the caller so the reason string stays in the call context.
+--- Cancels an owned delayed wake before moving the MANPAD directly to ALERT.
 local function snapToAlert(battery, now, wakeReason)
 	Medusa.Services.ManpadService.cancelPendingWake(battery)
 	completeThreatWake(battery, wakeReason, now)
@@ -322,7 +339,7 @@ local function checkAudioWake(ctx, battery, track, now)
 		return
 	end
 	snapToAlert(battery, now, MWR.AUDIO)
-	Medusa.Services.MetricsService.inc("medusa_manpad_audio_wakes_total")
+	Medusa.Observability.MetricsService.inc("medusa_manpad_audio_wakes_total")
 end
 
 local function checkVisualWake(battery, track, now, posture)
@@ -334,7 +351,7 @@ local function checkVisualWake(battery, track, now, posture)
 		return
 	end
 	snapToAlert(battery, now, MWR.VISUAL)
-	Medusa.Services.MetricsService.inc("medusa_manpad_visual_detections_total")
+	Medusa.Observability.MetricsService.inc("medusa_manpad_visual_detections_total")
 end
 
 local function attemptEngagement(ctx, battery, track, now, posture)
@@ -350,7 +367,7 @@ local function attemptEngagement(ctx, battery, track, now, posture)
 	battery.Manpad.SleepWakeState = MSWS.HOT
 	battery.Manpad.HotUntil = now + randomDelay(C.Manpad.HOT_MIN_SEC, C.Manpad.HOT_MAX_SEC)
 	onManpadGoHot(ctx, battery)
-	Medusa.Services.MetricsService.inc("medusa_manpad_activations_total")
+	Medusa.Observability.MetricsService.inc("medusa_manpad_activations_total")
 	return true
 end
 
@@ -466,7 +483,19 @@ local function returnToSleep(battery, audioRangeM)
 	)
 end
 
+--- Advances one MANPAD through readiness retry, alert, engagement, and cooldown policy.
 local function evaluateSingle(ctx, battery, trackStore, geoGrid, now, posture, manpadDoctrine)
+	if battery.ActivationState == C.ActivationState.INITIALIZING then
+		local ready
+		if Battery.isCrewSuppressed(battery) then
+			ready = Medusa.Services.BatteryActivationService.goCrewSuppressed(battery, now, trackStore)
+		else
+			ready = Medusa.Services.BatteryActivationService.goCold(battery, now, trackStore)
+		end
+		if not ready then
+			return
+		end
+	end
 	if Battery.isCrewSuppressed(battery) then
 		return
 	end
@@ -527,6 +556,7 @@ local function evaluateSingle(ctx, battery, trackStore, geoGrid, now, posture, m
 	end
 end
 
+--- Reconciles MANPAD readiness before advancing each local wake and engagement lifecycle.
 function Medusa.Services.ManpadService.evaluate(ctx)
 	local manpads = ctx.manpadStore:getAll(_batteryBuffer)
 	local trackStore = ctx.trackStore
@@ -553,6 +583,6 @@ function Medusa.Services.ManpadService.refreshOnePosition(ctx)
 		unitRole = C.BatteryUnitRole.MANPAD,
 	})
 	if refreshed then
-		Medusa.Services.MetricsService.inc("medusa_manpad_position_refreshes_total")
+		Medusa.Observability.MetricsService.inc("medusa_manpad_position_refreshes_total")
 	end
 end

@@ -28,6 +28,7 @@ Medusa.Entities.Track._REQUIRED_FIELDS = { "Position", "Velocity", "NetworkId" }
 -- 3 minutes of history at max update rate (1s interval = 180 entries)
 Medusa.Entities.Track.MAX_POSITION_HISTORY = 180
 
+--- Creates a track and its partition-scoped observation, classification, and assignment state from data.
 function Medusa.Entities.Track.new(data)
 	if not data then
 		error("data table is required")
@@ -47,6 +48,7 @@ function Medusa.Entities.Track.new(data)
 		DisplayTrackIdAliases = data.DisplayTrackIdAliases or {},
 		OriginSourceType = data.OriginSourceType,
 		NetworkId = data.NetworkId,
+		PartitionKey = data.PartitionKey,
 		Position = data.Position,
 		Velocity = data.Velocity,
 		TrackIdentification = data.TrackIdentification or "UNKNOWN",
@@ -73,7 +75,7 @@ function Medusa.Entities.Track.new(data)
 		ConfidenceLevel = data.ConfidenceLevel,
 		RaidId = data.RaidId,
 		IsSeadThreat = data.IsSeadThreat,
-		AssignmentTime = data.AssignmentTime,
+		IsHarmLauncher = data.IsHarmLauncher == true,
 
 		-- ROE identification ladder fields
 		InsideBorder = false,

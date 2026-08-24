@@ -53,8 +53,38 @@ function _escapeHtml(value) {
         .replace(/'/g, "&#39;");
 }
 
-MTD.manpadTooltip = function (name, state, wakeReason, canFire, network) {
+/* Returns the snapshot-local operator label for one partition ordinal. */
+MTD.partitionLabel = function (partitionId) {
+    return Number.isInteger(partitionId) && partitionId > 0 ? "P" + partitionId : "UNASSIGNED";
+};
+
+/* Returns the deterministic halo color for one current partition ordinal. */
+MTD.partitionColor = function (partitionId) {
+    var hue = (partitionId * 137 + 25) % 360;
+    return "hsl(" + hue + ", 80%, 65%)";
+};
+
+/* Builds escaped battery control, coordination, and partition tooltip content. */
+MTD.batteryTooltip = function (name, info, partitionId, aaaInfo) {
+    var tooltip = _escapeHtml(name) + "<br>" + _escapeHtml(info.system || "unknown");
+    tooltip += "<br>Control: " + _escapeHtml(info.control || "UNKNOWN");
+    tooltip += "<br>Coordination: " + _escapeHtml(info.coordination || "UNKNOWN");
+    tooltip += "<br>Partition: " + MTD.partitionLabel(partitionId);
+    if (aaaInfo) {
+        tooltip += "<br>AAA Mode: " + _escapeHtml(String(aaaInfo.mode || "UNKNOWN").replace(/_/g, " "));
+        tooltip += "<br>AAA Response: " + _escapeHtml(String(aaaInfo.state || "UNKNOWN").replace(/_/g, " "));
+    }
+    if (info.status && info.status !== "ACTIVE") tooltip += "<br>Status: " + _escapeHtml(info.status);
+    if (info.target && info.target !== "UNSET") tooltip += "<br>Target: " + _escapeHtml(info.target);
+    if (info.network) tooltip += "<br>" + _escapeHtml(info.network);
+    return tooltip;
+};
+
+/* Builds escaped MANPAD lifecycle, control, and partition tooltip content. */
+MTD.manpadTooltip = function (name, state, wakeReason, canFire, network, partitionId, control) {
     var tooltip = _escapeHtml(name) + "<br>" + _escapeHtml(state);
+    tooltip += "<br>Control: " + _escapeHtml(control || "INDEPENDENT");
+    tooltip += "<br>Partition: " + MTD.partitionLabel(partitionId);
     if (wakeReason !== "NONE") tooltip += "<br>Wake: " + _escapeHtml(wakeReason);
     if (state === "HOT") tooltip += "<br>Can fire: " + (canFire ? "YES" : "NO");
     if (network) tooltip += "<br>" + _escapeHtml(network);
@@ -90,6 +120,7 @@ function _manpadIcon(color) {
     });
 }
 
+/* Renders current MANPAD markers, detection lobes, and partition halos. */
 MTD.renderManpads = function (data) {
     MTD.manpadLobeLayer.clearLayers();
     MTD.manpadLayer.clearLayers();
@@ -99,6 +130,7 @@ MTD.renderManpads = function (data) {
     var keys = Object.keys(data.manpadLatMap);
     var geometry = data.manpadGeometry || {};
     var showLobes = MTD.opt("opt-manpad-lobes");
+    var showPartitionHalos = MTD.opt("opt-partition-halos");
 
     for (var i = 0; i < keys.length; i++) {
         var key = keys[i];
@@ -112,6 +144,7 @@ MTD.renderManpads = function (data) {
         var wakeReason = info.wake_reason || "NONE";
         var canFire = info.can_fire === "true";
         var detectionMode = info.detection_mode || "NONE";
+        var partitionId = (data.manpadPartitionMap || {})[key];
         var position = [data.manpadLatMap[key], data.manpadLonMap[key]];
         var color = MTD.manpadMarkerColor(state, wakeReason, canFire);
         var lobes = [];
@@ -152,7 +185,19 @@ MTD.renderManpads = function (data) {
             }
         }
 
-        var tooltip = MTD.manpadTooltip(name, state, wakeReason, canFire, network);
+        var partitionHalo = null;
+        if (showPartitionHalos && partitionId > 0) {
+            partitionHalo = L.circleMarker(position, {
+                radius: 9,
+                color: MTD.partitionColor(partitionId),
+                fill: false,
+                weight: 2,
+                opacity: 0.9,
+                interactive: false
+            }).addTo(MTD.manpadLayer);
+        }
+
+        var tooltip = MTD.manpadTooltip(name, state, wakeReason, canFire, network, partitionId, info.control);
         var marker = L.marker(position, { icon: _manpadIcon(color) })
             .bindTooltip(tooltip)
             .addTo(MTD.manpadLayer);
@@ -161,7 +206,7 @@ MTD.renderManpads = function (data) {
         marker.on("mouseover", _highlightManpadLobes);
         marker.on("mouseout", _restoreManpadLobes);
 
-        MTD.manpadMarkers[key] = { dot: marker, lobes: lobes };
+        MTD.manpadMarkers[key] = { dot: marker, lobes: lobes, partitionHalo: partitionHalo };
     }
 
     return { bounds: bounds };
@@ -264,6 +309,7 @@ MTD.renderAaaDetection = function (data) {
 
 /* ---- Batteries ---- */
 
+/* Renders current battery markers without replacing state colors with partition colors. */
 MTD.renderBatteries = function (data) {
     var batteryLayer  = MTD.batteryLayer;
     var labelLayer    = MTD.labelLayer;
@@ -273,9 +319,11 @@ MTD.renderBatteries = function (data) {
     var batInfoMap    = data.batInfoMap;
     var batRangeMap   = data.batRangeMap;
     var batShotsMap   = data.batShotsMap;
+    var batPartitionMap = data.batPartitionMap || {};
     var aaaInfoMap    = data.aaaInfoMap || {};
     var showThreatRings = MTD.opt("opt-threat-rings");
     var showBatLabels   = MTD.opt("opt-bat-labels");
+    var showPartitionHalos = MTD.opt("opt-partition-halos");
 
     var bounds   = [];
     var hotCount = 0;
@@ -301,6 +349,7 @@ MTD.renderBatteries = function (data) {
         var state  = info.state || "COLD";
         var system = info.system || "unknown";
         var target = info.target || "";
+        var partitionId = batPartitionMap[bName];
         var aaaInfo = aaaInfoMap[MTD.scopedEntityKey(info.network, bName)];
 
         var isHot = state === "STATE_HOT";
@@ -313,16 +362,7 @@ MTD.renderBatteries = function (data) {
             ? MTD.aaaMarkerColor(aaaInfo.mode, aaaInfo.state, state)
             : (isHot ? "#4caf50" : "#4a90d9");
 
-        var tooltip = bName + "\n" + system;
-        if (isInop) {
-            tooltip += "\n" + status;
-        }
-        if (isHot && target) {
-            tooltip += "\nTarget: " + target;
-        }
-        var tooltipHtml = aaaInfo
-            ? MTD.aaaTooltip(bName, aaaInfo.mode, aaaInfo.state, info.network) + "<br>" + _escapeHtml(system)
-            : tooltip.replace(/\n/g, "<br>");
+        var tooltipHtml = MTD.batteryTooltip(bName, info, partitionId, aaaInfo);
 
         var existing = batteryMarkers[bName];
 
@@ -383,6 +423,28 @@ MTD.renderBatteries = function (data) {
 
             existing = { dot: batMarker, ring: null, label: null, isInop: isInop, _lastTooltip: tooltipHtml };
             batteryMarkers[bName] = existing;
+        }
+
+        if (showPartitionHalos && partitionId > 0) {
+            var partitionColor = MTD.partitionColor(partitionId);
+            if (existing.partitionHalo) {
+                existing.partitionHalo.setLatLng(bPos);
+                existing.partitionHalo.setRadius(radius + 5);
+                existing.partitionHalo.setStyle({ color: partitionColor });
+            } else {
+                existing.partitionHalo = L.circleMarker(bPos, {
+                    radius: radius + 5,
+                    color: partitionColor,
+                    fill: false,
+                    weight: 2,
+                    opacity: 0.9,
+                    interactive: false
+                }).addTo(batteryLayer);
+                existing.partitionHalo.bringToBack();
+            }
+        } else if (existing.partitionHalo) {
+            batteryLayer.removeLayer(existing.partitionHalo);
+            existing.partitionHalo = null;
         }
 
         /* Engagement range ring + cluster visuals (created once, updated in place) */
@@ -574,6 +636,7 @@ MTD.renderBatteries = function (data) {
                 }
             }
             if (rmBat.label) labelLayer.removeLayer(rmBat.label);
+            if (rmBat.partitionHalo) batteryLayer.removeLayer(rmBat.partitionHalo);
             delete batteryMarkers[rbName];
         }
     }

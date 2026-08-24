@@ -10,7 +10,11 @@ require("entities.Track")
 require("services.Services")
 require("services.stores.TrackStore")
 require("services.TrackDisplayIdAllocator")
+require("services.SpatialQuery")
+require("services.TargetAssigner")
 require("services.TrackManager")
+require("entities.Battery")
+require("services.stores.BatteryStore")
 
 -- == Helpers ==
 
@@ -114,6 +118,22 @@ function TestTrackManagerProcessReport:test_processReport_returnsTrack()
 	lu.assertEquals(track.DisplayTrackId, "AE0001")
 end
 
+function TestTrackManagerProcessReport:test_capacity_rejection_does_not_publish_track_ownership()
+	local store = self.mgr:getStore()
+	for i = 1, Medusa.Constants.TRACK_CAPACITY do
+		store:add(Medusa.Entities.Track.new({
+			TrackId = "capacity-track-" .. tostring(i),
+			Position = { x = i, y = 0, z = 0 },
+			Velocity = { x = 1, y = 0, z = 0 },
+			NetworkId = "capacity-network",
+		}))
+	end
+
+	lu.assertNil(self.mgr:processReport(makeReport()))
+	lu.assertEquals(store:count(), Medusa.Constants.TRACK_CAPACITY)
+	lu.assertEquals(self.mgr._trackIdBySourceKey, {})
+end
+
 function TestTrackManagerProcessReport:test_processReport_uses_originating_source_prefix()
 	local track = self.mgr:processReport(makeReport({ SourceType = Medusa.Constants.TrackSource.AWACS }))
 
@@ -150,6 +170,29 @@ function TestTrackManagerProcessReport:test_processReport_missingFields()
 	lu.assertNil(self.mgr:processReport({ Velocity = { x = 0, y = 0, z = 0 } }))
 end
 
+function TestTrackManagerProcessReport:test_processReport_rejects_nonfinite_vectors_before_store_admission()
+	lu.assertNil(self.mgr:processReport(makeReport({ Position = { x = 0 / 0, y = 0, z = 0 } })))
+	lu.assertNil(self.mgr:processReport(makeReport({ Velocity = { x = "invalid", y = 0, z = 0 } })))
+	lu.assertEquals(self.mgr:getStore():count(), 0)
+	lu.assertEquals(self.mgr._trackIdBySourceKey, {})
+end
+
+function TestTrackManagerProcessReport:test_spatial_admission_failure_rolls_back_track_store()
+	local store = Medusa.Services.TrackStore:new()
+	local mgr = Medusa.Services.TrackManager:new({
+		store = store,
+		geoGrid = {
+			add = function()
+				return false
+			end,
+		},
+	})
+
+	lu.assertNil(mgr:processReport(makeReport()))
+	lu.assertEquals(store:count(), 0)
+	lu.assertEquals(mgr._trackIdBySourceKey, {})
+end
+
 -- == TestTrackManagerPruneStale ==
 
 TestTrackManagerPruneStale = {}
@@ -181,6 +224,48 @@ function TestTrackManagerPruneStale:test_pruneStale_staleBecomesExpired()
 	self.mgr:pruneStale(pruneTime)
 
 	lu.assertEquals(self.mgr:getStore():count(), 0)
+end
+
+function TestTrackManagerPruneStale:test_expiry_releases_battery_assignment_before_removal()
+	local batteryRepository = Medusa.Services.BatteryStore:new()
+	local site = Medusa.Entities.Battery.new({ NetworkId = "N", GroupId = 71, GroupName = "battery" })
+	batteryRepository:add(site)
+	local mgr = Medusa.Services.TrackManager:new({ batteryRepository = batteryRepository })
+	local assignedTrack = mgr:processReport(makeReport())
+	Medusa.Entities.Battery.assignTrack(site, assignedTrack, mockTime, mgr:getStore())
+
+	local pruneTime = mockTime + 61
+	mgr:pruneStale(pruneTime)
+	mgr:pruneStale(pruneTime)
+
+	lu.assertNil(site.CurrentTargetTrackId)
+	lu.assertTrue(assignedTrack.AssignedBatteryIds:isEmpty())
+end
+
+function TestTrackManagerPruneStale:test_expiry_starts_deactivation_hold_down()
+	local batteryRepository = Medusa.Services.BatteryStore:new()
+	local site = Medusa.Entities.Battery.new({
+		NetworkId = "N",
+		GroupId = 72,
+		GroupName = "battery",
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+		OperationalStatus = Medusa.Constants.BatteryOperationalStatus.ACTIVE,
+	})
+	batteryRepository:add(site)
+	local mgr = Medusa.Services.TrackManager:new({ batteryRepository = batteryRepository })
+	local assignedTrack = mgr:processReport(makeReport())
+	Medusa.Entities.Battery.assignTrack(site, assignedTrack, mockTime, mgr:getStore())
+
+	local releaseTime = mockTime + 61
+	mgr:pruneStale(releaseTime)
+	mgr:pruneStale(releaseTime)
+
+	lu.assertEquals(site.LastAssignmentChangeTime, releaseTime)
+	lu.assertNil(Medusa.Services.TargetAssigner.checkSingleDeactivation(site, {
+		trackStore = mgr:getStore(),
+		doctrine = { HoldDownSec = 5 },
+		now = releaseTime + 4,
+	}))
 end
 
 function TestTrackManagerPruneStale:test_pruneStale_activeStaysActive()
@@ -293,7 +378,7 @@ function TestTrackManagerPruneStale:test_reassociation_preserves_identification_
 	lu.assertEquals(reacquired.LastIdentificationTime, 1000)
 end
 
-function TestTrackManagerPruneStale:test_reassociation_preserves_harm_evidence()
+function TestTrackManagerPruneStale:test_reassociation_starts_with_fresh_harm_evidence()
 	local original = self.mgr:processReport(makeReport())
 	original.HarmAssessment = {
 		label = "CLEARED",
@@ -309,9 +394,9 @@ function TestTrackManagerPruneStale:test_reassociation_preserves_harm_evidence()
 		Position = { x = 1100, y = 500, z = 2100 },
 	}))
 
-	lu.assertEquals(reacquired.HarmAssessment.label, "CLEARED")
-	lu.assertEquals(reacquired.HarmAssessment.llr, -24.82)
-	lu.assertEquals(reacquired.HarmAssessment.scanCount, 21)
+	lu.assertNil(reacquired.HarmAssessment)
+	lu.assertNil(reacquired.HarmLikelihoodScore)
+	lu.assertFalse(reacquired.IsHarmLauncher)
 end
 
 -- == TestTrackManagerMergeSplit ==
@@ -335,6 +420,25 @@ function TestTrackManagerMergeSplit:test_merge_retains_survivor_id_and_absorbed_
 	lu.assertEquals(merged.DisplayTrackId, survivor.DisplayTrackId)
 	lu.assertEquals(merged.DisplayTrackIdAliases, { absorbed.DisplayTrackId })
 	lu.assertNil(self.mgr:getStore():get(absorbed.TrackId))
+end
+
+function TestTrackManagerMergeSplit:test_merge_transfers_assignments_to_survivor()
+	local batteryRepository = Medusa.Services.BatteryStore:new()
+	local site = Medusa.Entities.Battery.new({ NetworkId = "N", GroupId = 72, GroupName = "battery" })
+	batteryRepository:add(site)
+	local mgr = Medusa.Services.TrackManager:new({
+		batteryRepository = batteryRepository,
+		displayIdAllocator = self.allocator,
+	})
+	local survivor = mgr:processReport(makeReport({ NetworkId = "survivor" }))
+	local absorbed = mgr:processReport(makeReport({ NetworkId = "absorbed" }))
+	Medusa.Entities.Battery.assignTrack(site, absorbed, mockTime, mgr:getStore())
+
+	mgr:mergeTracks(survivor.TrackId, absorbed.TrackId, mockTime + 1)
+
+	lu.assertEquals(site.CurrentTargetTrackId, survivor.TrackId)
+	lu.assertTrue(survivor.AssignedBatteryIds:contains(site.BatteryId))
+	lu.assertTrue(absorbed.AssignedBatteryIds:isEmpty())
 end
 
 function TestTrackManagerMergeSplit:test_merge_alias_remains_reserved_until_survivor_is_dropped()
@@ -368,8 +472,8 @@ function TestTrackManagerMergeSplit:test_expiry_removes_all_merged_network_mappi
 	self.mgr:pruneStale(pruneTime)
 	self.mgr:pruneStale(pruneTime)
 
-	lu.assertNil(self.mgr._byNetworkId.survivor)
-	lu.assertNil(self.mgr._byNetworkId.absorbed)
+	lu.assertNil(self.mgr._trackIdBySourceKey.survivor)
+	lu.assertNil(self.mgr._trackIdBySourceKey.absorbed)
 end
 
 function TestTrackManagerMergeSplit:test_merged_alias_survives_dormant_reassociation()

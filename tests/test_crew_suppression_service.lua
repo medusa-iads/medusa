@@ -12,12 +12,13 @@ require("services.stores.UnitGeoGrid")
 require("services.BatteryActivationService")
 require("services.AaaService")
 require("services.ManpadService")
+require("services.PointDefenseService")
 require("services.CrewSuppressionService")
 
 local C = Medusa.Constants
 local Battery = Medusa.Entities.Battery
 local CrewSuppressionService = Medusa.Services.CrewSuppressionService
-local MetricsService = Medusa.Services.MetricsService
+local MetricsService = Medusa.Observability.MetricsService
 
 local original = {}
 
@@ -63,7 +64,7 @@ local function makeBattery(role)
 		battery.Aaa.ResponseAt = 110
 		battery.Aaa.ResponseUntil = 140
 		battery.Aaa.PendingTarget = { UnitName = "target" }
-		battery.Aaa.FireTaskActive = true
+		battery.Aaa.LastFirePoint = { x = 1000, y = 100, z = 0 }
 	end
 	return battery
 end
@@ -114,8 +115,10 @@ function TestCrewSuppressionService:setUp()
 		"ScheduleOnce",
 		"CancelSchedule",
 		"GetGroupController",
+		"SetControllerOnOff",
 		"ControllerSetROE",
 		"ControllerSetAlarmState",
+		"SetControllerOption",
 		"GetGroup",
 		"EnableGroupEmissions",
 		"PopControllerTask",
@@ -168,16 +171,28 @@ function TestCrewSuppressionService:setUp()
 	GetGroupController = function()
 		return {}
 	end
+	SetControllerOnOff = function()
+		return true
+	end
 	ControllerSetROE = function(_, value)
 		self.roe[#self.roe + 1] = value
+		return true
 	end
-	ControllerSetAlarmState = function() end
+	ControllerSetAlarmState = function()
+		return true
+	end
+	SetControllerOption = function()
+		return true
+	end
 	GetGroup = function()
 		return {}
 	end
-	EnableGroupEmissions = function() end
+	EnableGroupEmissions = function()
+		return true
+	end
 	PopControllerTask = function()
 		self.popCount = self.popCount + 1
+		return true
 	end
 end
 
@@ -262,7 +277,7 @@ function TestCrewSuppressionService:test_new_damage_suppresses_complete_aaa_grou
 	lu.assertNil(battery.CurrentTargetTrackId)
 	lu.assertNil(battery.LastChanceTrackId)
 	lu.assertEquals(battery.Aaa.ResponseState, C.Aaa.ResponseState.IDLE)
-	lu.assertFalse(battery.Aaa.FireTaskActive)
+	lu.assertNil(battery.Aaa.LastFirePoint)
 	lu.assertEquals(self.popCount, 1)
 	lu.assertEquals(self.roe[#self.roe], "WEAPON_HOLD")
 	lu.assertEquals(self.scheduled[1].delay, 120)
@@ -464,6 +479,60 @@ function TestCrewSuppressionService:test_manpad_pending_wake_is_cancelled_and_re
 	lu.assertEquals(battery.Manpad.WakeReason, C.Manpad.WakeReason.RECOVERY)
 end
 
+function TestCrewSuppressionService:test_manpad_recoversFromMissingControllerAndReentersHotLifecycle()
+	local battery = makeBattery(C.BatteryRole.MANPAD)
+	battery.Position = { x = 0, y = 0, z = 0 }
+	battery.EngagementRangeMax = 5000
+	battery.Manpad.UnitHeadings = { { hx = 1, hz = 0 } }
+	battery.Manpad.UnitHeadingCount = 1
+	local ctx = makeContext(self, battery)
+	GetGroupController = function()
+		return nil
+	end
+
+	CrewSuppressionService.apply(ctx, battery, C.CrewSuppressionCause.DAMAGE, 120)
+
+	lu.assertEquals(battery.ActivationState, C.ActivationState.INITIALIZING)
+	self.now = 220
+	self.scheduled[1].callback()
+	lu.assertEquals(battery.Manpad.SleepWakeState, C.Manpad.SleepWakeState.ALERT)
+	GetGroupController = function()
+		return {}
+	end
+	local track = {
+		TrackId = "recovery-track",
+		AssessedAircraftType = C.AssessedAircraftType.FIXED_WING,
+		LifecycleState = C.TrackLifecycleState.ACTIVE,
+		Position = { x = 1000, y = 0, z = 0 },
+	}
+
+	Medusa.Services.ManpadService.evaluate({
+		manpadStore = ctx.batteryRepository:manpads(),
+		trackStore = {
+			get = function(_, trackId)
+				return trackId == track.TrackId and track or nil
+			end,
+		},
+		geoGrid = {
+			queryRadius = function()
+				return { TrackIds = { [track.TrackId] = true } }
+			end,
+		},
+		now = self.now,
+		posture = C.Posture.NORMAL,
+		doctrine = {
+			MANPAD = {
+				AlertnessDecaySec = 14400,
+				FieldRadioRangeM = 0,
+				AudioRangeM = C.Manpad.AUDIO_RANGE_MAX_M,
+			},
+		},
+	})
+
+	lu.assertEquals(battery.ActivationState, C.ActivationState.STATE_HOT)
+	lu.assertEquals(battery.Manpad.SleepWakeState, C.Manpad.SleepWakeState.HOT)
+end
+
 function TestCrewSuppressionService:test_stop_cancels_owned_timer_and_resume_replaces_it()
 	local battery = makeBattery(C.BatteryRole.AAA)
 	local ctx = makeContext(self, battery)
@@ -518,6 +587,22 @@ function TestCrewSuppressionService:test_recovery_reschedule_failure_does_not_le
 
 	lu.assertEquals(battery.CrewSuppressionState, C.CrewSuppressionState.CLEAR)
 	lu.assertNil(battery.CrewSuppressionUntil)
+end
+
+function TestCrewSuppressionService:test_recovery_callback_contains_repository_failure_and_clears_suppression()
+	local battery = makeBattery(C.BatteryRole.AAA)
+	local ctx = makeContext(self, battery)
+	CrewSuppressionService.apply(ctx, battery, C.CrewSuppressionCause.DAMAGE, 120)
+	ctx.batteryRepository.get = function()
+		error("repository unavailable")
+	end
+	self.now = 220
+
+	local ok = pcall(self.scheduled[1].callback)
+
+	lu.assertTrue(ok)
+	lu.assertEquals(battery.CrewSuppressionState, C.CrewSuppressionState.CLEAR)
+	lu.assertNil(battery.CrewSuppressionTimerId)
 end
 
 function TestCrewSuppressionService:test_explosive_radius_uses_cube_root_mass_scaling_and_maximum()

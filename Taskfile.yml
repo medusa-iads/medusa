@@ -87,9 +87,6 @@ tasks:
     desc: "Run tests with LuaUnit"
     cmds:
       - "lua {{.TEST_DIR}}/runner.lua {{.CLI_ARGS}}"
-    sources:
-      - "{{.SOURCE_DIR}}/**/*.lua"
-      - "{{.TEST_DIR}}/**/*.lua"
 
   dependencies:update:dcs-harness:
     desc: "Update the vendored dcs-harness release"

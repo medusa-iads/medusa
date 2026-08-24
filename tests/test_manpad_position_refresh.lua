@@ -8,7 +8,7 @@ require("services.Services")
 require("entities.Battery")
 require("services.BatteryActivationService")
 require("services.ManpadService")
-require("services.MetricsService")
+require("observability.MetricsService")
 local ManpadTest = require("manpad_test_support")
 
 -- ============================================================
@@ -110,7 +110,7 @@ function TestManpadPositionRefresh:setUp()
 
 	-- Save originals
 	_origGetUnitPosition = GetUnitPosition
-	_origMetricsInc = Medusa.Services.MetricsService.inc
+	_origMetricsInc = Medusa.Observability.MetricsService.inc
 
 	-- Default stubs (individual tests may override)
 	GetUnitPosition = function(unitName)
@@ -121,7 +121,7 @@ function TestManpadPositionRefresh:setUp()
 	local counts = self._metricCounts
 	-- The contract specifies a dot-call: MetricsService.inc("metric_name")
 	-- so the first positional argument is the metric name string.
-	Medusa.Services.MetricsService.inc = function(metricName, delta)
+	Medusa.Observability.MetricsService.inc = function(metricName, delta)
 		counts[metricName] = (counts[metricName] or 0) + 1
 	end
 
@@ -134,7 +134,7 @@ end
 
 function TestManpadPositionRefresh:tearDown()
 	GetUnitPosition = _origGetUnitPosition
-	Medusa.Services.MetricsService.inc = _origMetricsInc
+	Medusa.Observability.MetricsService.inc = _origMetricsInc
 end
 
 -- ---------------------------------------------------------------

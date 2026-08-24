@@ -2,6 +2,30 @@ require("_header")
 require("services.Services")
 require("core.Constants")
 
+--[[
+███╗   ███╗██╗███████╗███████╗██╗ ██████╗ ███╗   ██╗    ██╗   ██╗███╗   ██╗██╗████████╗
+████╗ ████║██║██╔════╝██╔════╝██║██╔═══██╗████╗  ██║    ██║   ██║████╗  ██║██║╚══██╔══╝
+██╔████╔██║██║███████╗███████╗██║██║   ██║██╔██╗ ██║    ██║   ██║██╔██╗ ██║██║   ██║
+██║╚██╔╝██║██║╚════██║╚════██║██║██║   ██║██║╚██╗██║    ██║   ██║██║╚██╗██║██║   ██║
+██║ ╚═╝ ██║██║███████║███████║██║╚██████╔╝██║ ╚████║    ╚██████╔╝██║ ╚████║██║   ██║
+╚═╝     ╚═╝╚═╝╚══════╝╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝     ╚═════╝ ╚═╝  ╚═══╝╚═╝   ╚═╝
+
+███████╗██╗  ██╗██╗██╗     ██╗         ██╗███╗   ██╗██████╗ ███████╗██╗  ██╗
+██╔════╝██║ ██╔╝██║██║     ██║         ██║████╗  ██║██╔══██╗██╔════╝╚██╗██╔╝
+███████╗█████╔╝ ██║██║     ██║         ██║██╔██╗ ██║██║  ██║█████╗   ╚███╔╝
+╚════██║██╔═██╗ ██║██║     ██║         ██║██║╚██╗██║██║  ██║██╔══╝   ██╔██╗
+███████║██║  ██╗██║███████╗███████╗    ██║██║ ╚████║██████╔╝███████╗██╔╝ ██╗
+╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝    ╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝
+
+    What this store does
+    - Indexes mission-editor skill for named ground units from the static DCS mission table.
+    - Maps Average, Good, High, and Excellent to Medusa crew-skill values.
+
+    How others use it
+    - Entrypoint builds one mission-wide index and shares it with every IADS.
+    - EntityFactory records each unit's skill for crew-suppression duration, with doctrine fallback when no skill is indexed.
+]]
+
 Medusa.Services.MissionUnitSkillIndex = {}
 
 do

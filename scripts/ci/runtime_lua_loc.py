@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 
 
-EXCLUDED_PATHS = {"src/services/MetricsSnapshotService.lua"}
+EXCLUDED_PATHS = {"src/observability/MetricsSnapshot.lua"}
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 LONG_BRACKET_RE = re.compile(r"\[(=*)\[")
 REPORT_MARKER = "<!-- medusa-runtime-lua-loc -->"
@@ -205,7 +205,7 @@ def render_report(counts: LineCounts) -> str:
             f"- {net_marker} Net: **{format_signed(counts.net)}** code lines",
             "",
             "Scope excludes tests, docs, examples, dependencies, tactical display, Prometheus tooling, "
-            "generated files, comments, blank lines, and `MetricsSnapshotService.lua`.",
+            "generated files, comments, blank lines, and `MetricsSnapshot.lua`.",
         ]
     )
 

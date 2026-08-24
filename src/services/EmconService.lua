@@ -4,6 +4,7 @@ require("core.Constants")
 require("core.Logger")
 require("services.BatteryActivationService")
 require("entities.Battery")
+require("entities.SensorUnit")
 
 --[[
             ███████╗███╗   ███╗ ██████╗ ██████╗ ███╗   ██╗    ███████╗███████╗██████╗ ██╗   ██╗██╗ ██████╗███████╗
@@ -29,8 +30,6 @@ Medusa.Services.EmconService._batteryBuffer = {}
 local _batteryBuffer = Medusa.Services.EmconService._batteryBuffer
 Medusa.Services.EmconService._sensorBuffer = {}
 local _sensorBuffer = Medusa.Services.EmconService._sensorBuffer
-Medusa.Services.EmconService._sensorGroupState = {}
-local _sensorGroupState = Medusa.Services.EmconService._sensorGroupState
 local AS = Medusa.Constants.ActivationState
 local BOS = Medusa.Constants.BatteryOperationalStatus
 local ECP = Medusa.Constants.EmissionControlPolicy
@@ -39,6 +38,26 @@ local BatteryActivationService = Medusa.Services.BatteryActivationService
 
 local SENSOR_ROLES = { EWR = true, GCI = true }
 local _minimizeWarned = {}
+
+--- Returns one shared call-backed EMCON state, or INITIALIZING when group members disagree.
+local function sensorGroupState(sensors)
+	local state = sensors[1] and sensors[1].EmconState or AS.INITIALIZING
+	for i = 2, #sensors do
+		if sensors[i].EmconState ~= state then
+			return AS.INITIALIZING
+		end
+	end
+	return state
+end
+
+--- Records one sensor group's Medusa EMCON state and derived radar status on its current members.
+local function recordSensorState(sensors, state)
+	local radarStatus = state == AS.STATE_WARM and C.RadarStatus.ACTIVE or C.RadarStatus.DARK
+	for i = 1, #sensors do
+		sensors[i].EmconState = state
+		sensors[i].RadarStatus = radarStatus
+	end
+end
 
 function Medusa.Services.EmconService.getDesiredState(batteryIndex, _batteryCount, doctrine, now, role)
 	local policy = doctrine.EMCON and doctrine.EMCON[role] or C.EMCON_DEFAULT_POLICY_BY_ROLE[role]
@@ -106,7 +125,22 @@ function Medusa.Services.EmconService.getDesiredState(batteryIndex, _batteryCoun
 	return AS.STATE_WARM
 end
 
-local function _shouldSkip(battery)
+--- Resolves battery readiness from committed coordination state before applying role EMCON policy.
+function Medusa.Services.EmconService.getDesiredBatteryState(battery, batteryIndex, batteryCount, doctrine, now)
+	if battery.CoordinationState == C.CoordinationState.DEGRADED then
+		if doctrine.DegradedMode == C.NetworkDegradationPolicy.GO_DARK then
+			return AS.STATE_COLD
+		end
+		return AS.STATE_WARM
+	end
+	if battery.IsActingAsEWR then
+		return Medusa.Services.EmconService.getDesiredState(batteryIndex, batteryCount, doctrine, now, C.SensorType.EWR)
+	end
+	return Medusa.Services.EmconService.getDesiredState(batteryIndex, batteryCount, doctrine, now, battery.Role)
+end
+
+--- Reports whether assignment, recent activity, suppression, or local ownership excludes EMCON control.
+local function _shouldSkip(battery, doctrine, now)
 	if Medusa.Entities.Battery.isCrewSuppressed(battery) then
 		return true
 	end
@@ -119,7 +153,11 @@ local function _shouldSkip(battery)
 	if battery.LastChanceTrackId then
 		return true
 	end
-	if battery.ActivationState == AS.INITIALIZING then
+	local holdDownSec = doctrine and doctrine.HoldDownSec or 15
+	if
+		battery.ActivationState == AS.STATE_HOT
+		and Medusa.Entities.Battery.isWithinDeactivationHoldDown(battery, now, holdDownSec)
+	then
 		return true
 	end
 	if battery.OperationalStatus == BOS.DESTROYED or battery.OperationalStatus == BOS.INOPERATIVE then
@@ -131,6 +169,7 @@ local function _shouldSkip(battery)
 	return false
 end
 
+--- Reports whether battery can provide SAM-as-EWR coverage from current operational facts.
 local function _isEwrEligible(battery)
 	if not C.SAM_AS_EWR_ELIGIBLE_ROLES[battery.Role] then
 		return false
@@ -142,18 +181,37 @@ local function _isEwrEligible(battery)
 	if battery.CurrentTargetTrackId or battery.HarmShutdownUntil then
 		return false
 	end
-	return battery.Position ~= nil
+	return battery.Position ~= nil and Medusa.Entities.Battery.hasSearchRadar(battery)
 end
 
+--- Reports whether doctrine currently needs a SAM provider because no operational EWR exists.
 local function _isSamAsEwrActive(doctrine, sensorStore)
-	local policy = doctrine.SAMAsEWR or "DISABLED"
-	if policy == "DISABLED" then
+	local policy = doctrine.SAMAsEWR or C.SAMAsEWRPolicy.DISABLED
+	if policy == C.SAMAsEWRPolicy.DISABLED then
 		return false
 	end
-	if policy == "WHEN_NO_EWR" and sensorStore and sensorStore:count() > 0 then
-		return false
+	if policy == C.SAMAsEWRPolicy.WHEN_NO_EWR and sensorStore then
+		local sensors = sensorStore:getAll(_sensorBuffer)
+		for i = 1, #sensors do
+			local sensor = sensors[i]
+			if sensor.SensorType == C.SensorType.EWR and Medusa.Entities.SensorUnit.isAvailable(sensor) then
+				return false
+			end
+		end
 	end
 	return true
+end
+
+--- Applies SAM-as-EWR doctrine from current operational EWR availability.
+function Medusa.Services.EmconService.updateSamAsEwrSelection(ctx)
+	local batteryStore = ctx.batteryStore
+	local batteries = batteryStore:getAll(_batteryBuffer)
+	local active = _isSamAsEwrActive(ctx.doctrine, ctx.sensorStore)
+	for i = 1, #batteries do
+		local battery = batteries[i]
+		local selected = active and _isEwrEligible(battery) or false
+		battery.IsActingAsEWR = selected
+	end
 end
 
 --- Logs the EMCON rotation schedule so operators can verify group assignments.
@@ -220,6 +278,7 @@ function Medusa.Services.EmconService.logSchedule(ctx)
 	)
 end
 
+--- Applies battery and ground-sensor EMCON requests and counts transitions whose wrappers returned true.
 function Medusa.Services.EmconService.applyPolicy(ctx, network)
 	local batteryStore = ctx.batteryStore
 	local sensorStore = ctx.sensorStore
@@ -228,12 +287,12 @@ function Medusa.Services.EmconService.applyPolicy(ctx, network)
 	local batteries = batteryStore:getAll(_batteryBuffer)
 	local count = #batteries
 	local transitions = 0
-	local ewrActive = _isSamAsEwrActive(doctrine, sensorStore)
+	Medusa.Services.EmconService.updateSamAsEwrSelection(ctx)
 
 	local sensorCount = sensorStore and sensorStore:count() or 0
 	local ewrBatteryCount = 0
 	for i = 1, count do
-		if ewrActive and _isEwrEligible(batteries[i]) then
+		if batteries[i].IsActingAsEWR then
 			ewrBatteryCount = ewrBatteryCount + 1
 		end
 	end
@@ -253,20 +312,8 @@ function Medusa.Services.EmconService.applyPolicy(ctx, network)
 	for i = 1, count do
 		local battery = batteries[i]
 
-		-- SAM-as-EWR: set or clear flag based on policy and eligibility (LR_SAM and MR_SAM only)
-		if ewrActive and _isEwrEligible(battery) then
-			battery.IsActingAsEWR = true
-		else
-			battery.IsActingAsEWR = false
-		end
-
-		if not _shouldSkip(battery) then
-			local desired
-			if battery.IsActingAsEWR then
-				desired = Medusa.Services.EmconService.getDesiredState(i, count, doctrine, now, "EWR")
-			else
-				desired = Medusa.Services.EmconService.getDesiredState(i, count, doctrine, now, battery.Role)
-			end
+		if not _shouldSkip(battery, doctrine, now) then
+			local desired = Medusa.Services.EmconService.getDesiredBatteryState(battery, i, count, doctrine, now)
 			local ok = false
 			if desired == AS.STATE_WARM and battery.ActivationState ~= AS.STATE_WARM then
 				ok = BatteryActivationService.goWarm(battery, now)
@@ -287,38 +334,18 @@ function Medusa.Services.EmconService.applyPolicy(ctx, network)
 		local sensors = sensorStore:getByGroupName(groupName, _sensorBuffer)
 		local isAirborne = sensors and sensors[1] and sensors[1].IsAirborne
 		if isAirborne then
-			_sensorGroupState[groupName] = AS.STATE_WARM
-			for si = 1, #sensors do
-				sensors[si].RadarStatus = "ACTIVE"
-			end
+			recordSensorState(sensors, AS.STATE_WARM)
 		else
-			local sensorType = sensors and sensors[1] and sensors[1].SensorType or "EWR"
+			local sensorType = sensors and sensors[1] and sensors[1].SensorType or C.SensorType.EWR
 			local desired = Medusa.Services.EmconService.getDesiredState(i, #sensorGroups, doctrine, now, sensorType)
-			local currentState = _sensorGroupState[groupName]
-			if currentState == nil or desired ~= currentState then
-				local controller = GetGroupController(groupName)
-				if controller then
-					if desired == AS.STATE_WARM then
-						SetControllerOnOff(controller, true)
-						ControllerSetROE(controller, "OPEN_FIRE")
-						ControllerSetAlarmState(controller, "RED")
-					else
-						ControllerSetROE(controller, "WEAPON_HOLD")
-						ControllerSetAlarmState(controller, "GREEN")
-						SetControllerOnOff(controller, false)
-					end
-					local group = GetGroup(groupName)
-					if group then
-						EnableGroupEmissions(group, desired == AS.STATE_WARM)
-					end
-					_sensorGroupState[groupName] = desired
+			local currentState = sensorGroupState(sensors)
+			if desired ~= currentState then
+				if BatteryActivationService.setSensorState(groupName, desired) then
+					recordSensorState(sensors, desired)
 					transitions = transitions + 1
+				else
+					recordSensorState(sensors, AS.INITIALIZING)
 				end
-			end
-			local effectiveState = _sensorGroupState[groupName] or AS.STATE_COLD
-			local radarStatus = (effectiveState == AS.STATE_WARM) and "ACTIVE" or "DARK"
-			for si = 1, #sensors do
-				sensors[si].RadarStatus = radarStatus
 			end
 		end
 	end

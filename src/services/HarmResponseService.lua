@@ -1,5 +1,6 @@
 require("_header")
 require("services.Services")
+require("observability.MetricsService")
 require("services.SpatialQuery")
 require("core.Constants")
 require("core.Logger")
@@ -18,397 +19,332 @@ require("entities.Track")
             ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝    ╚═╝  ╚═╝╚══════╝╚══════╝╚═╝      ╚═════╝ ╚═╝  ╚═══╝╚══════╝╚══════╝
 
     What this service does
-    - Reacts to tracks classified as probable or confirmed HARMs by HarmDetectionService.
-    - Decides per battery whether to shut down, self-defend, or rely on point defense based on doctrine.
-    - Clears HARM defense state when threats expire or are no longer inbound.
-
-    How others use it
-    - IadsNetwork calls executeResponse each tick after HARM detection scoring completes.
-    - PointDefenseService checks HARM defense state to activate nearby SHORAD for protection.
+    - Decides whether threatened batteries have enough viable capacity to attempt HARM defense.
+    - Reports defense only from HOT batteries with an active assignment to a counted HARM.
+    - Shuts a threatened battery down when committed capacity remains insufficient.
 --]]
 
 Medusa.Services.HarmResponseService = {}
 
 local _logger = Medusa.Logger:ns("HarmResponseService")
 local AAT = Medusa.Constants.AssessedAircraftType
-local HDS = Medusa.Constants.HarmDefenseState
---- @type table Reusable buffer for track iteration
-Medusa.Services.HarmResponseService._trackBuffer = {}
-local _trackBuffer = Medusa.Services.HarmResponseService._trackBuffer
---- @type table Reusable buffer for battery iteration in executeResponse clear loop
-Medusa.Services.HarmResponseService._batteryResetBuffer = {}
-local _batteryResetBuffer = Medusa.Services.HarmResponseService._batteryResetBuffer
 local AS = Medusa.Constants.ActivationState
 local BOS = Medusa.Constants.BatteryOperationalStatus
-local BatteryActivationService = Medusa.Services.BatteryActivationService
 local C = Medusa.Constants
+local HDS = Medusa.Constants.HarmDefenseState
 local HRS = Medusa.Constants.HarmResponseStrategy
---- @type fun(px:number,py:number,pz:number,vx:number,vy:number,vz:number,ex:number,ey:number,ez:number):number,number Local alias for CPA computation
-local computeCPA3D = Medusa.Services.HarmDetectionService.computeCPA3D
-
-local function computeTTI(harmTrack, battery)
-	local dist = Distance2D(harmTrack.Position, battery.Position)
-	local vel = harmTrack.SmoothedVelocity or harmTrack.Velocity
-	if not vel then
-		return dist / C.HARM_DEFAULT_SPEED_MPS
-	end
-	local speed = VecLength(vel)
-	if speed < 1.0 then
-		return dist / C.HARM_DEFAULT_SPEED_MPS
-	end
-	return dist / speed
-end
-
---- Is the battery eligible to be evaluated for HARM response?
-local function isEligible(battery)
-	if Medusa.Entities.Battery.isIndependentAaa(battery) then
-		return false
-	end
-	if battery.IsPointDefense then
-		return false
-	end
-	if battery.OperationalStatus == BOS.DESTROYED or battery.OperationalStatus == BOS.INOPERATIVE then
-		return false
-	end
-	if battery.HarmShutdownUntil then
-		return false
-	end
-	if not battery.Position then
-		return false
-	end
-	return true
-end
-
-local function getHeading(harmTrack)
-	local vel = harmTrack.SmoothedVelocity or harmTrack.Velocity
-	if not vel then
-		return nil, nil, nil
-	end
-	local mag = VecLength2D(vel)
-	if mag < 0.1 then
-		return nil, nil, nil
-	end
-	return vel.x / mag, vel.z / mag, vel
-end
-
---- Computes the dot product of a battery's position relative to the harm track's heading.
---- Returns nil if the battery is not eligible for HARM response.
-local function computeBatteryDot(battery, hx, hz, harmPos)
-	if not isEligible(battery) then
-		return nil
-	end
-	local dx = battery.Position.x - harmPos.x
-	local dz = battery.Position.z - harmPos.z
-	local dmag = math.sqrt(dx * dx + dz * dz)
-	if dmag < 0.1 then
-		return nil
-	end
-	return hx * (dx / dmag) + hz * (dz / dmag)
-end
-
+local LS = Medusa.Constants.TrackLifecycleState
+local Battery = Medusa.Entities.Battery
+local BatteryActivationService = Medusa.Services.BatteryActivationService
+local PDS = Medusa.Services.PointDefenseService
 local computeTrackCPA = Medusa.Services.HarmDetectionService.computeTrackCPA
+local _batteryBuffer = {}
+local _trackBuffer = {}
 
+--- Reports exact nonnil partition equality for HARM response sharing.
+local function sharesPartition(left, right)
+	return left.PartitionKey ~= nil and left.PartitionKey == right.PartitionKey
+end
+
+--- Reports whether battery may own a localized HARM response decision.
+local function isEligible(battery)
+	return not Battery.isIndependentAaa(battery)
+		and not battery.IsPointDefense
+		and battery.OperationalStatus ~= BOS.DESTROYED
+		and battery.OperationalStatus ~= BOS.INOPERATIVE
+		and not battery.HarmShutdownUntil
+		and battery.Position ~= nil
+end
+
+--- Returns the closest eligible battery on the HARM path within the threat radius.
 local function findClosestThreatenedBattery(harmTrack, geoGrid, batteryStore, threatRadiusM)
-	local hx, hz = getHeading(harmTrack)
-	if not hx then
+	local velocity = harmTrack.SmoothedVelocity or harmTrack.Velocity
+	local horizontalSpeed = velocity and VecLength2D(velocity) or 0
+	if horizontalSpeed < 0.1 then
 		return nil
 	end
+	local headingX = velocity.x / horizontalSpeed
+	local headingZ = velocity.z / horizontalSpeed
 	local batteries =
 		Medusa.Services.SpatialQuery.batteriesInRadius(geoGrid, batteryStore, harmTrack.Position, C.HARM_MAX_RANGE_M)
-	local best, bestCpa = nil, math.huge
+	local best = nil
+	local bestCpa = math.huge
 	for i = 1, #batteries do
-		local dot = computeBatteryDot(batteries[i], hx, hz, harmTrack.Position)
-		if dot and dot > 0 then
-			local cpaDist = computeTrackCPA(harmTrack, batteries[i].Position)
-			if cpaDist < threatRadiusM and cpaDist < bestCpa then
-				best = batteries[i]
-				bestCpa = cpaDist
+		local candidate = batteries[i]
+		if isEligible(candidate) and sharesPartition(candidate, harmTrack) then
+			local dx = candidate.Position.x - harmTrack.Position.x
+			local dz = candidate.Position.z - harmTrack.Position.z
+			local distance = math.sqrt(dx * dx + dz * dz)
+			local dot = distance > 0.1 and headingX * (dx / distance) + headingZ * (dz / distance) or -1
+			if dot > 0 then
+				local cpa = computeTrackCPA(harmTrack, candidate.Position)
+				if cpa < threatRadiusM and cpa < bestCpa then
+					best = candidate
+					bestCpa = cpa
+				end
 			end
 		end
 	end
 	return best
 end
 
-local function computePdDefenders(battery, batteryStore)
-	local provider = batteryStore:get(battery.PointDefenseProviderId)
-	if not provider or provider.HarmCapableUnitCount == 0 then
-		return 0
-	end
-	return provider.HarmCapableUnitCount
-end
-
---- Returns effective defense points for a battery, accounting for ammo saturation and pooling.
-local function defensePointsForBattery(battery, saturateOnAmmo)
-	local pts = battery.HarmCapableUnitCount
-	if saturateOnAmmo then
-		pts = math.min(pts, battery.TotalAmmoStatus or 0)
-	end
-	return pts
-end
-
---- Computes total defense points: own battery + pooled neighbors (if doctrine enables it).
-local function computeDefensePoints(battery, doctrine, batteryStore, geoGrid)
-	local saturateOnAmmo = doctrine and doctrine.HARMSaturateOnAmmo
-	local defenders = defensePointsForBattery(battery, saturateOnAmmo)
-
-	local poolRadius = doctrine and doctrine.PoolDefensePoints and doctrine.PoolDefensePointsRadius
-	if poolRadius and geoGrid and battery.Position then
-		local nearby =
-			Medusa.Services.SpatialQuery.batteriesInRadius(geoGrid, batteryStore, battery.Position, poolRadius)
-		for i = 1, #nearby do
-			local nb = nearby[i]
-			if nb.BatteryId ~= battery.BatteryId and nb.HarmCapableUnitCount > 0 and not nb.IsPointDefense then
-				defenders = defenders + defensePointsForBattery(nb, saturateOnAmmo)
-			end
-		end
-	end
-
-	return defenders
-end
-
-local function canSelfDefend(battery, tracks, batteryStore, threatRadiusM, includePd, doctrine, geoGrid)
-	if battery.HarmCapableUnitCount == 0 then
+--- Returns whether harmTrack threatens battery inside the configured response radius.
+local function threatensBattery(harmTrack, battery, threatRadiusM)
+	if not sharesPartition(harmTrack, battery) then
 		return false
 	end
+	local velocity = harmTrack.SmoothedVelocity or harmTrack.Velocity
+	if not velocity or not harmTrack.Position then
+		return false
+	end
+	local cpa = computeTrackCPA(harmTrack, battery.Position)
+	return cpa < threatRadiusM
+end
 
-	local harmCount = 0
-	local LS = Medusa.Constants.TrackLifecycleState
-	for i = 1, #tracks do
-		local t = tracks[i]
-		if t.LifecycleState == LS.ACTIVE and t.AssessedAircraftType == AAT.HARM then
-			local vel = t.SmoothedVelocity or t.Velocity
-			if vel then
-				local cpaDist = computeCPA3D(
-					t.Position.x,
-					t.Position.y,
-					t.Position.z,
-					vel.x,
-					vel.y,
-					vel.z,
-					battery.Position.x,
-					battery.Position.y,
-					battery.Position.z
-				)
-				if cpaDist < threatRadiusM then
-					harmCount = harmCount + 1
+--- Returns capacity points after optional ammunition saturation.
+local function capacityFor(battery, doctrine)
+	local capacity = battery.HarmDefenseCapacity or 0
+	if doctrine and doctrine.HARMSaturateOnAmmo then
+		capacity = math.min(capacity, battery.TotalAmmoStatus or 0)
+	end
+	return capacity
+end
+
+--- Adds provider once when it can engage at least one threat in this site context.
+local function addAvailableDefender(site, provider, pointDefense, doctrine)
+	local capacity = capacityFor(provider, doctrine)
+	if site.DefenderIds[provider.BatteryId] or capacity <= 0 then
+		return
+	end
+	if not PDS.canEngageAnyHarm(provider, site.Threats, doctrine) then
+		return
+	end
+	site.DefenderIds[provider.BatteryId] = true
+	site.Defenders[#site.Defenders + 1] = { Battery = provider, PointDefense = pointDefense == true }
+	site.AvailableCapacity = site.AvailableCapacity + capacity
+end
+
+--- Collects unique available own, pooled, and proximity-derived point-defense capacity for one site.
+local function collectAvailableDefenders(site, strategy, doctrine, batteryStore, geoGrid)
+	local battery = site.Battery
+	if strategy == HRS.SELF_DEFEND or strategy == HRS.AUTO_DEFENSE then
+		addAvailableDefender(site, battery, false, doctrine)
+		local poolRadius = doctrine and doctrine.PoolDefensePoints and doctrine.PoolDefensePointsRadius
+		if poolRadius then
+			local nearby =
+				Medusa.Services.SpatialQuery.batteriesInRadius(geoGrid, batteryStore, battery.Position, poolRadius)
+			for i = 1, #nearby do
+				local provider = nearby[i]
+				if
+					provider.BatteryId ~= battery.BatteryId
+					and not provider.IsPointDefense
+					and PDS.isProviderViable(provider)
+					and sharesPartition(provider, battery)
+				then
+					addAvailableDefender(site, provider, false, doctrine)
 				end
 			end
 		end
 	end
-
-	local defenders = computeDefensePoints(battery, doctrine, batteryStore, geoGrid)
-
-	if includePd and battery.PointDefenseProviderId then
-		defenders = defenders + computePdDefenders(battery, batteryStore)
-	end
-
-	local pdProtected = includePd and battery.PointDefenseProviderId ~= nil
-	local ratio = harmCount > 0 and (defenders / harmCount) or 0
-	local result = harmCount == 0 or ratio > 1
-
-	battery.HarmDefenseDefenders = defenders
-	battery.HarmDefenseThreats = harmCount
-	battery.HarmDefenseRatio = ratio
-
-	_logger:debug(
-		string.format(
-			"canSelfDefend %s: own=%d, total=%d, pdIncluded=%s, pdProtected=%s, harmsInRange=%d, ratio=%.1f, result=%s",
-			battery.GroupName or battery.BatteryId,
-			battery.HarmCapableUnitCount,
-			defenders,
-			tostring(includePd),
-			tostring(pdProtected),
-			harmCount,
-			ratio,
-			tostring(result)
-		)
-	)
-
-	return result
-end
-
-local function shutdownBattery(
-	battery,
-	harmTrack,
-	now,
-	batteryStore,
-	trackStore,
-	tracks,
-	threatRadiusM,
-	strategy,
-	doctrine,
-	geoGrid
-)
-	-- Battery activated for HARM intercept this tick: don't shut it down
-	if Medusa.Services.PointDefenseService._harmActivationBuffer[battery.BatteryId] then
-		return false
-	end
-	-- A battery engaging any HARM gets INTERCEPTING state but still checks saturation
-	local engagingHarm = false
-	if battery.CurrentTargetTrackId then
-		local engagedTrack = trackStore:get(battery.CurrentTargetTrackId)
-		engagingHarm = engagedTrack and engagedTrack.AssessedAircraftType == AAT.HARM
-	end
 	if strategy == HRS.SHUTDOWN_UNLESS_PD or strategy == HRS.AUTO_DEFENSE then
-		if battery.PointDefenseProviderId then
-			local provider = batteryStore:get(battery.PointDefenseProviderId)
-			if Medusa.Services.PointDefenseService.isProviderViable(provider) and provider.HarmCapableUnitCount > 0 then
-				battery.HarmDefenseState = HDS.PD_PROTECTED
-				_logger:debug(
-					string.format(
-						"battery %s protected by PD %s, skipping HARM shutdown",
-						battery.BatteryId,
-						provider.BatteryId
-					)
-				)
-				return false
+		local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(
+			geoGrid,
+			batteryStore,
+			battery.Position,
+			C.POINT_DEFENSE_SEARCH_RADIUS_M
+		)
+		for i = 1, #nearby do
+			if PDS.canProtect(nearby[i], battery) then
+				addAvailableDefender(site, nearby[i], true, doctrine)
 			end
 		end
 	end
-	if strategy == HRS.SELF_DEFEND or strategy == HRS.AUTO_DEFENSE then
-		local includePd = (strategy == HRS.AUTO_DEFENSE)
-		if canSelfDefend(battery, tracks, batteryStore, threatRadiusM, includePd, doctrine, geoGrid) then
-			battery.HarmDefenseState = engagingHarm and HDS.INTERCEPTING or HDS.SELF_DEFENDING
-			return false
+	battery.HarmDefenseAvailableCapacity = site.AvailableCapacity
+	battery.HarmDefenseThreats = #site.Threats
+end
+
+--- Adds one site's threats to the defender's global nearest-HARM choice.
+local function addActivationCandidates(site, doctrine, activationById, activationList)
+	if site.AvailableCapacity <= #site.Threats then
+		return
+	end
+	for i = 1, #site.Defenders do
+		local defender = site.Defenders[i].Battery
+		local activation = activationById[defender.BatteryId]
+		if not activation then
+			activation = { Battery = defender, Threats = {}, ThreatIds = {} }
+			activationById[defender.BatteryId] = activation
+			activationList[#activationList + 1] = activation
+		end
+		for j = 1, #site.Threats do
+			local track = site.Threats[j]
+			if not activation.ThreatIds[track.TrackId] and PDS.canEngageHarm(defender, track, doctrine) then
+				activation.ThreatIds[track.TrackId] = true
+				activation.Threats[#activation.Threats + 1] = track
+			end
 		end
 	end
-	-- Engaging a HARM but saturated, still shut down
-	if engagingHarm then
-		_logger:info(
-			string.format(
-				"battery %s engaging HARM but saturated (defenders=%d, threats=%d), shutting down",
-				battery.GroupName or battery.BatteryId,
-				battery.HarmDefenseDefenders,
-				battery.HarmDefenseThreats
-			)
-		)
+end
+
+--- Returns committed capacity and whether own or point-defense capacity is committed.
+local function committedCapacity(site, doctrine)
+	local capacity = 0
+	local ownCommitted = false
+	local pointDefenseCommitted = false
+	for i = 1, #site.Defenders do
+		local defender = site.Defenders[i]
+		local battery = defender.Battery
+		if
+			PDS.isProviderViable(battery)
+			and battery.ActivationState == AS.STATE_HOT
+			and battery.CurrentTargetTrackId ~= nil
+			and site.ThreatIds[battery.CurrentTargetTrackId]
+		then
+			capacity = capacity + capacityFor(battery, doctrine)
+			ownCommitted = ownCommitted or battery == site.Battery
+			pointDefenseCommitted = pointDefenseCommitted or defender.PointDefense
+		end
+	end
+	return capacity, ownCommitted, pointDefenseCommitted
+end
+
+--- Requests conservative shutdown and records success only after a returned wrapper call.
+local function shutdownBattery(site, now, trackStore)
+	local battery = site.Battery
+	local track = site.TriggerTrack
+	local distance = Distance2D(track.Position, battery.Position)
+	local velocity = track.SmoothedVelocity or track.Velocity
+	local speed = velocity and VecLength(velocity) or C.HARM_DEFAULT_SPEED_MPS
+	if speed < 1 then
+		speed = C.HARM_DEFAULT_SPEED_MPS
+	end
+	local shutdownUntil = now + distance / speed + C.HARM_SHUTDOWN_SAFETY_MARGIN_SEC
+	local stopped = battery.ActivationState == AS.STATE_COLD
+		or BatteryActivationService.goHarmShutdown(battery, now, trackStore)
+	if not stopped then
+		return false
 	end
 	battery.HarmDefenseState = HDS.SUPPRESSED
-	local shutdownUntil = now + computeTTI(harmTrack, battery) + C.HARM_SHUTDOWN_SAFETY_MARGIN_SEC
-	if battery.ActivationState == AS.STATE_COLD then
-		battery.HarmShutdownUntil = shutdownUntil
-		Medusa.Services.MetricsService.inc("medusa_harm_shutdowns_total")
-		return true
-	end
-	local ok = BatteryActivationService.goHarmShutdown(battery, now, trackStore)
-	if ok then
-		battery.HarmShutdownUntil = shutdownUntil
-		Medusa.Services.MetricsService.inc("medusa_harm_shutdowns_total")
-	end
-	return ok
-end
-
-local function applyLocalizedShutdown(
-	track,
-	geoGrid,
-	batteryStore,
-	threatRadiusM,
-	now,
-	trackStore,
-	tracks,
-	strategy,
-	doctrine
-)
-	local battery = findClosestThreatenedBattery(track, geoGrid, batteryStore, threatRadiusM)
-	if
-		not battery
-		or not shutdownBattery(
-			battery,
-			track,
-			now,
-			batteryStore,
-			trackStore,
-			tracks,
-			threatRadiusM,
-			strategy,
-			doctrine,
-			geoGrid
-		)
-	then
-		return 0
-	end
+	battery.HarmShutdownUntil = shutdownUntil
+	Medusa.Observability.MetricsService.inc("medusa_harm_shutdowns_total")
 	_logger:info(
 		string.format(
-			"HARM shutdown: battery %s for track %s (strategy=%s)",
-			battery.BatteryId,
-			Medusa.Entities.Track.displayId(track),
-			strategy
+			"HARM shutdown: battery %s (available=%.1f, committed=%.1f, threats=%d)",
+			battery.GroupName or battery.BatteryId,
+			battery.HarmDefenseAvailableCapacity,
+			battery.HarmDefenseCommittedCapacity,
+			battery.HarmDefenseThreats
 		)
 	)
-	return 1
+	return true
 end
 
---- Top-level entry point called by IadsNetwork each tick after HARM detection.
---- For each confirmed HARM track, this function does two things: activates any
---- nearby point defense batteries (via PointDefenseService), then evaluates each
---- battery within the threat radius for shutdown or self-defense (via
---- applyLocalizedShutdown). The doctrine's HARMResponse strategy controls how
---- aggressively batteries protect themselves versus staying on the air.
---- Before processing, resets every battery's HarmDefenseState to nil so stale
---- defense decisions from the previous tick do not carry over.
---- @param ctx table Pipeline context with trackStore, batteryStore, doctrine, now, geoGrid
---- @return number shutdowns Count of batteries shut down this tick
+--- Applies one complete available-attempt-committed response pass for active confirmed HARMs.
 function Medusa.Services.HarmResponseService.executeResponse(ctx)
-	local trackStore = ctx.trackStore
 	local batteryStore = ctx.batteryStore
+	local trackStore = ctx.trackStore
 	local doctrine = ctx.doctrine
-	local now = ctx.now
-	local geoGrid = ctx.geoGrid
 	local strategy = doctrine.HARMResponse or HRS.AUTO_DEFENSE
+	local batteries = batteryStore:getAll(_batteryBuffer)
+	for i = 1, #batteries do
+		local battery = batteries[i]
+		battery.HarmDefenseState = nil
+		battery.HarmDefenseAvailableCapacity = 0
+		battery.HarmDefenseCommittedCapacity = 0
+		battery.HarmDefenseThreats = 0
+	end
 	if strategy == HRS.IGNORE then
 		return 0
 	end
 
-	local tracks = trackStore:getAll(_trackBuffer)
-	local LS = Medusa.Constants.TrackLifecycleState
-	local threatRadiusM = doctrine.HARMShutdownM or C.HARM_DEFAULT_THREAT_RADIUS_M
-	local shutdowns = 0
-
-	-- Check if any active HARMs exist before clearing/processing
-	local hasHarms = false
-	for i = 1, #tracks do
-		if tracks[i].LifecycleState == LS.ACTIVE and tracks[i].AssessedAircraftType == AAT.HARM then
-			hasHarms = true
-			break
+	local allTracks = trackStore:getAll(_trackBuffer)
+	local harms = {}
+	for i = 1, #allTracks do
+		local track = allTracks[i]
+		if track.LifecycleState == LS.ACTIVE and track.AssessedAircraftType == AAT.HARM then
+			harms[#harms + 1] = track
 		end
 	end
-	-- Clear previous cycle's defense state. nil means "not yet evaluated this tick";
-	-- do NOT replace with a default enum. Metrics check for specific states and nil means unevaluated.
-	local allBatts = batteryStore:getAll(_batteryResetBuffer)
-	for i = 1, #allBatts do
-		local b = allBatts[i]
-		b.HarmDefenseState = nil
-		b.HarmDefenseDefenders = 0
-		b.HarmDefenseThreats = 0
-		b.HarmDefenseRatio = 0
-	end
-
-	if not hasHarms then
+	PDS.reconcileProviders(ctx)
+	if #harms == 0 then
 		return 0
 	end
-
-	local PDS = Medusa.Services.PointDefenseService
-	for i = 1, #tracks do
-		local track = tracks[i]
-		if track.LifecycleState == LS.ACTIVE and track.AssessedAircraftType == AAT.HARM then
-			PDS.activateForHarm(track, geoGrid, batteryStore, now, doctrine)
-			shutdowns = shutdowns
-				+ applyLocalizedShutdown(
-					track,
-					geoGrid,
-					batteryStore,
-					threatRadiusM,
-					now,
-					trackStore,
-					tracks,
-					strategy,
-					doctrine
-				)
+	local threatRadiusM = doctrine.HARMShutdownM or C.HARM_DEFAULT_THREAT_RADIUS_M
+	local sites = {}
+	local siteById = {}
+	for i = 1, #harms do
+		local battery = findClosestThreatenedBattery(harms[i], ctx.geoGrid, batteryStore, threatRadiusM)
+		if battery and not siteById[battery.BatteryId] then
+			local site = {
+				Battery = battery,
+				TriggerTrack = harms[i],
+				Threats = {},
+				ThreatIds = {},
+				Defenders = {},
+				DefenderIds = {},
+				AvailableCapacity = 0,
+			}
+			siteById[battery.BatteryId] = site
+			sites[#sites + 1] = site
 		end
 	end
+	for i = 1, #sites do
+		local site = sites[i]
+		local shortestTti = math.huge
+		for j = 1, #harms do
+			local harm = harms[j]
+			if threatensBattery(harm, site.Battery, threatRadiusM) then
+				site.Threats[#site.Threats + 1] = harm
+				site.ThreatIds[harm.TrackId] = true
+				local velocity = harm.SmoothedVelocity or harm.Velocity
+				local speed = velocity and VecLength(velocity) or C.HARM_DEFAULT_SPEED_MPS
+				local tti = Distance2D(harm.Position, site.Battery.Position) / math.max(speed, 1)
+				if tti < shortestTti then
+					shortestTti = tti
+					site.TriggerTrack = harm
+				end
+			end
+		end
+		collectAvailableDefenders(site, strategy, doctrine, batteryStore, ctx.geoGrid)
+	end
 
-	if shutdowns > 0 then
-		_logger:info(string.format("HARM response: %d batteries shut down", shutdowns))
+	local activationById = {}
+	local activationList = {}
+	for i = 1, #sites do
+		addActivationCandidates(sites[i], doctrine, activationById, activationList)
+	end
+	for i = 1, #activationList do
+		local activation = activationList[i]
+		PDS.activateClosestHarm(activation.Battery, activation.Threats, ctx.now, doctrine, trackStore)
+	end
+
+	local shutdowns = 0
+	for i = 1, #sites do
+		local site = sites[i]
+		local committed, ownCommitted, pointDefenseCommitted = committedCapacity(site, doctrine)
+		local battery = site.Battery
+		battery.HarmDefenseCommittedCapacity = committed
+		if committed > #site.Threats then
+			if pointDefenseCommitted then
+				battery.HarmDefenseState = HDS.PD_PROTECTED
+			elseif ownCommitted then
+				battery.HarmDefenseState = HDS.INTERCEPTING
+			else
+				battery.HarmDefenseState = HDS.SELF_DEFENDING
+			end
+		elseif shutdownBattery(site, ctx.now, trackStore) then
+			shutdowns = shutdowns + 1
+		end
+		_logger:debug(
+			string.format(
+				"HARM defense %s: available=%.1f, committed=%.1f, threats=%d, state=%s",
+				battery.GroupName or battery.BatteryId,
+				battery.HarmDefenseAvailableCapacity,
+				battery.HarmDefenseCommittedCapacity,
+				battery.HarmDefenseThreats,
+				tostring(battery.HarmDefenseState)
+			)
+		)
 	end
 	return shutdowns
 end

@@ -6,7 +6,7 @@ require("core.Logger")
 require("core.Constants")
 require("core.Core")
 require("services.Services")
-require("services.MetricsService")
+require("observability.MetricsService")
 require("services.ApiService")
 
 local function makeMockIads(doctrineOverride)

@@ -37,21 +37,31 @@ function detailRow(label, value) {
     return '<div class="detail-row"><span class="detail-label">' + label + '</span><span class="detail-value">' + (value !== undefined && value !== null && value !== "" ? value : "-") + '</span></div>';
 }
 
+/* Builds the operator detail card for one current battery projection. */
 function buildBatteryDetail(bName, data) {
     var batInfoMap  = data.batInfoMap || {};
     var batRangeMap = data.batRangeMap || {};
     var batShotsMap = data.batShotsMap || {};
     var batAmmoMap  = data.batAmmoMap || {};
     var info = batInfoMap[bName] || {};
+    var partitionId = (data.batPartitionMap || {})[bName];
+    var aaaInfo = (data.aaaInfoMap || {})[MTD.scopedEntityKey(info.network, bName)];
     var shortName = MTD.shortName(bName);
     var html = '<h3>' + shortName + '</h3>';
     html += detailRow("Full Name", bName);
     html += detailRow("System", info.system || "-");
     html += detailRow("Role", info.role || "-");
     html += detailRow("State", info.state || "-");
+    html += detailRow("Control", info.control || "-");
+    html += detailRow("Coordination", info.coordination || "-");
+    html += detailRow("Partition", MTD.partitionLabel(partitionId));
+    if (aaaInfo) {
+        html += detailRow("AAA Mode", String(aaaInfo.mode || "-").replace(/_/g, " "));
+        html += detailRow("AAA Response", String(aaaInfo.state || "-").replace(/_/g, " "));
+    }
     html += detailRow("Ammo", batAmmoMap[bName] !== undefined ? batAmmoMap[bName] : "-");
     html += detailRow("Shots Fired", batShotsMap[bName] !== undefined ? batShotsMap[bName] : "-");
-    html += detailRow("Target", info.target || "-");
+    html += detailRow("Target", info.target && info.target !== "UNSET" ? info.target : "-");
     var batWeaponRangeMap = data.batWeaponRangeMap || {};
     html += detailRow("Engagement Range", batRangeMap[bName] ? (batRangeMap[bName] / 1000).toFixed(1) + " km (" + (batRangeMap[bName] / 1852).toFixed(1) + " nm)" : "-");
     html += detailRow("Weapon Range", batWeaponRangeMap[bName] ? (batWeaponRangeMap[bName] / 1000).toFixed(1) + " km (" + (batWeaponRangeMap[bName] / 1852).toFixed(1) + " nm)" : "-");
@@ -174,6 +184,7 @@ MTD.setupKeyboardShortcuts = function (debouncedRefresh) {
         else if (key === "L") { toggle("opt-pk-labels"); toggled = true; }
         else if (key === "T") { toggle("opt-track-labels"); toggled = true; }
         else if (key === "B") { toggle("opt-bat-labels"); toggled = true; }
+        else if (key === "C") { toggle("opt-partition-halos"); toggled = true; }
         else if (key === "Z") { toggle("opt-border-zones"); toggled = true; }
         else if (key === "S") { toggle("opt-sensors"); toggled = true; }
         else if (key === "M") { toggle("opt-manpad-lobes"); toggled = true; }
@@ -212,7 +223,7 @@ MTD.setupSettingsListeners = function (debouncedRefresh) {
         MTD.prevFilter = "__force_zoom__"; /* force zoom on next refresh */
         debouncedRefresh();
     });
-    ["opt-threat-rings", "opt-manpad-lobes", "opt-aaa-detection", "opt-best-pk", "opt-second-pk", "opt-pk-labels", "opt-track-labels", "opt-bat-labels", "opt-border-zones", "opt-sensors"].forEach(function(id) {
+    ["opt-threat-rings", "opt-manpad-lobes", "opt-aaa-detection", "opt-best-pk", "opt-second-pk", "opt-pk-labels", "opt-track-labels", "opt-bat-labels", "opt-partition-halos", "opt-border-zones", "opt-sensors"].forEach(function(id) {
         document.getElementById(id).addEventListener("change", debouncedRefresh);
     });
 };

@@ -12,6 +12,7 @@ require("entities.C2Node")
 require("services.stores.SensorUnitStore")
 require("services.stores.BatteryStore")
 require("services.stores.C2NodeStore")
+require("services.stores.UnitIndex")
 require("services.EntityFactory")
 
 -- == Helpers ==
@@ -19,6 +20,7 @@ require("services.EntityFactory")
 local ulidCounter = 0
 local origGetGroupUnits
 local origGetUnitHealth
+local origGetUnitAmmo
 
 local function makeMockUnit(id, name, desc, position)
 	return {
@@ -46,10 +48,11 @@ local function makeMockUnit(id, name, desc, position)
 end
 
 local function makeStores()
+	local unitIndex = Medusa.Services.UnitIndex:new()
 	return {
-		sensors = Medusa.Services.SensorUnitStore:new(),
-		batteries = Medusa.Services.BatteryStore:new(),
-		c2Nodes = Medusa.Services.C2NodeStore:new(),
+		sensors = Medusa.Services.SensorUnitStore:new(unitIndex),
+		batteries = Medusa.Services.BatteryStore:new(unitIndex),
+		c2Nodes = Medusa.Services.C2NodeStore:new(unitIndex),
 	}
 end
 
@@ -98,6 +101,7 @@ function TestEntityFactory:setUp()
 	end
 	origGetGroupUnits = GetGroupUnits
 	origGetUnitHealth = GetUnitHealth
+	origGetUnitAmmo = GetUnitAmmo
 	-- Default mock: two units with unique IDs; first unit has launcher attributes
 	-- so the battery is not skipped by the hasLauncher guard.
 	GetGroupUnits = function()
@@ -111,6 +115,7 @@ end
 function TestEntityFactory:tearDown()
 	GetGroupUnits = origGetGroupUnits
 	GetUnitHealth = origGetUnitHealth
+	GetUnitAmmo = origGetUnitAmmo
 end
 
 function TestEntityFactory:test_battery_classification()
@@ -134,6 +139,19 @@ function TestEntityFactory:test_battery_has_units()
 	local battery = all[1]
 	lu.assertNotNil(battery.Units)
 	lu.assertTrue(#battery.Units > 0)
+end
+
+function TestEntityFactory:test_battery_ammunition_is_unknown_when_initial_dcs_read_fails()
+	GetUnitAmmo = function()
+		return nil
+	end
+	local stores = makeStores()
+
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net-1")
+
+	local battery = stores.batteries:getAll()[1]
+	lu.assertFalse(battery.AmmoKnown)
+	lu.assertEquals(battery.TotalAmmoStatus, 0)
 end
 
 function TestEntityFactory:test_every_battery_unit_caches_its_discovery_position()
@@ -300,6 +318,24 @@ function TestEntityFactory:test_airborne_sensor_retains_group_category()
 	lu.assertTrue(sensor.IsAirborne)
 end
 
+function TestEntityFactory:test_awacs_descriptor_creates_an_awacs_sensor()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "awacs", { attributes = { AWACS = true } }),
+		}
+	end
+	local stores = makeStores()
+	local dto = makeDTO({
+		category = Group.Category.AIRPLANE,
+		parsed = { roles = { Medusa.Constants.Role.AWACS } },
+	})
+
+	Medusa.Services.EntityFactory.createFromDTO(dto, stores, "net-1")
+
+	local sensor = stores.sensors:getAll()[1]
+	lu.assertEquals(sensor.SensorType, Medusa.Constants.SensorType.AWACS)
+end
+
 function TestEntityFactory:test_sensor_ewr_type()
 	useSearchRadarGroup()
 	local stores = makeStores()
@@ -309,17 +345,6 @@ function TestEntityFactory:test_sensor_ewr_type()
 
 	local all = stores.sensors:getAll()
 	lu.assertEquals(all[1].SensorType, "EWR")
-end
-
-function TestEntityFactory:test_sensor_has_hierarchy_path()
-	useSearchRadarGroup()
-	local stores = makeStores()
-	local dto = makeDTO({ parsed = { roles = { "EWR" }, echelonPath = { "Corps", "Div" } } })
-
-	Medusa.Services.EntityFactory.createFromDTO(dto, stores, "net-1")
-
-	local all = stores.sensors:getAll()
-	lu.assertEquals(all[1].HierarchyPath, "Corps.Div")
 end
 
 function TestEntityFactory:test_hq_classification()
@@ -333,7 +358,7 @@ function TestEntityFactory:test_hq_classification()
 	lu.assertEquals(stores.c2Nodes:count(), 1)
 end
 
-function TestEntityFactory:test_hq_fields()
+function TestEntityFactory:test_hq_identity_and_providers()
 	local stores = makeStores()
 	local dto = makeDTO({
 		groupName = "HQ-Division",
@@ -343,32 +368,61 @@ function TestEntityFactory:test_hq_fields()
 	Medusa.Services.EntityFactory.createFromDTO(dto, stores, "net-1")
 
 	local node = stores.c2Nodes:getAll()[1]
-	lu.assertEquals(node.NetworkId, "net-1")
 	lu.assertEquals(node.NodeName, "HQ-Division")
-	lu.assertEquals(node.EchelonName, "Division")
-	lu.assertNotNil(node.Position)
+	lu.assertEquals(node.GroupId, dto.groupId)
+	lu.assertEquals(#node.Providers, 2)
 end
 
-function TestEntityFactory:test_hq_empty_echelon_path()
+function TestEntityFactory:test_hq_selects_all_semantic_providers_and_never_switches_to_plain_member()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "radar", { attributes = { ["SAM SR"] = true } }),
+			makeMockUnit(102, "command", { attributes = { ["SAM CC"] = true } }),
+			makeMockUnit(103, "plain", { attributes = {} }),
+		}
+	end
 	local stores = makeStores()
-	local dto = makeDTO({ parsed = { isHQ = true, echelonPath = {} } })
-
-	Medusa.Services.EntityFactory.createFromDTO(dto, stores, "net-1")
-
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO({ parsed = { isHQ = true } }), stores, "net-1")
 	local node = stores.c2Nodes:getAll()[1]
-	lu.assertIsNil(node.EchelonName)
+
+	lu.assertEquals(#node.Providers, 2)
+	lu.assertEquals(node.Providers[1].UnitName, "radar")
+	lu.assertEquals(node.Providers[2].UnitName, "command")
+	node.Providers[1].Available = false
+	lu.assertTrue(Medusa.Entities.C2Node.hasAvailableProvider(node))
+	node.Providers[2].Available = false
+	lu.assertFalse(Medusa.Entities.C2Node.hasAvailableProvider(node))
 end
 
-function TestEntityFactory:test_sensor_role_takes_priority_over_hq()
+function TestEntityFactory:test_hq_without_semantic_descriptor_uses_declared_members_as_fixed_fallback()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "plain-1", { attributes = {} }),
+			makeMockUnit(102, "plain-2", nil),
+		}
+	end
+	local stores = makeStores()
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO({ parsed = { isHQ = true } }), stores, "net-1")
+	local providers = stores.c2Nodes:getAll()[1].Providers
+
+	lu.assertEquals(#providers, 2)
+	lu.assertEquals(providers[1].UnitName, "plain-1")
+	lu.assertEquals(providers[2].UnitName, "plain-2")
+	lu.assertTrue(providers[1].Available)
+	lu.assertTrue(providers[2].Available)
+end
+
+function TestEntityFactory:test_hq_sensor_role_creates_command_node_and_sensor()
 	useSearchRadarGroup()
 	local stores = makeStores()
 	local dto = makeDTO({ parsed = { roles = { "EWR" }, isHQ = true } })
 
 	local kind, _ = Medusa.Services.EntityFactory.createFromDTO(dto, stores, "net-1")
 
-	lu.assertEquals(kind, "sensor")
+	lu.assertEquals(kind, "hq")
 	lu.assertEquals(stores.sensors:count() > 0, true)
-	lu.assertEquals(stores.c2Nodes:count(), 0)
+	lu.assertEquals(stores.c2Nodes:count(), 1)
+	lu.assertTrue(Medusa.Entities.C2Node.hasAvailableProvider(stores.c2Nodes:getAll()[1]))
 end
 
 function TestEntityFactory:test_sensor_with_nil_units_returns_zero()
@@ -384,4 +438,73 @@ function TestEntityFactory:test_sensor_with_nil_units_returns_zero()
 	lu.assertEquals(kind, "sensor")
 	lu.assertEquals(count, 0)
 	lu.assertEquals(stores.sensors:count(), 0)
+end
+
+function TestEntityFactory:test_sensor_reconciliation_restores_only_missing_live_units()
+	GetGroupUnits = function()
+		return {
+			makeMockUnit(101, "radar-1", { attributes = { ["SAM SR"] = true } }),
+			makeMockUnit(102, "radar-2", { attributes = { ["SAM SR"] = true } }),
+		}
+	end
+	local stores = makeStores()
+	local dto = makeDTO({ parsed = { roles = { "EWR" } } })
+	Medusa.Services.EntityFactory.createFromDTO(dto, stores, "net-1")
+	stores.sensors:remove(stores.sensors:getByUnitId(101).SensorUnitId)
+
+	local restored = Medusa.Services.EntityFactory.reconcileSensorsFromDTO(dto, stores, "net-1")
+
+	lu.assertEquals(restored, 1)
+	lu.assertEquals(stores.sensors:count(), 2)
+	lu.assertNotNil(stores.sensors:getByUnitId(101))
+	lu.assertNotNil(stores.sensors:getByUnitId(102))
+end
+
+function TestEntityFactory:test_sensor_reconciliation_replaces_stale_members_with_the_live_incarnation()
+	GetGroupUnits = function()
+		return { makeMockUnit(101, "retired-radar", { attributes = { ["SAM SR"] = true } }) }
+	end
+	local stores = makeStores()
+	local dto = makeDTO({ parsed = { roles = { "EWR" } } })
+	Medusa.Services.EntityFactory.createFromDTO(dto, stores, "net-1")
+	GetGroupUnits = function()
+		return { makeMockUnit(201, "replacement-radar", { attributes = { ["SAM SR"] = true } }) }
+	end
+
+	local restored = Medusa.Services.EntityFactory.reconcileSensorsFromDTO(dto, stores, "net-1")
+
+	lu.assertEquals(restored, 1)
+	lu.assertEquals(stores.sensors:count(), 1)
+	lu.assertNil(stores.sensors:getByUnitId(101))
+	lu.assertEquals(stores.sensors:getByUnitId(201).UnitName, "replacement-radar")
+end
+
+function TestEntityFactory:test_auto_discovered_sensor_reconciliation_removes_an_ineligible_replacement()
+	useSearchRadarGroup()
+	local stores = makeStores()
+	local dto = makeDTO()
+	Medusa.Services.EntityFactory.createFromDTO(dto, stores, "net-1")
+	lu.assertEquals(stores.sensors:count(), 1)
+	GetGroupUnits = function()
+		return { makeMockUnit(101, "launcher", { attributes = { ["SAM LL"] = true } }) }
+	end
+
+	Medusa.Services.EntityFactory.reconcileSensorsFromDTO(dto, stores, "net-1")
+
+	lu.assertEquals(stores.sensors:count(), 0)
+end
+
+function TestEntityFactory:test_command_center_sensor_reconciliation_does_not_duplicate_the_node()
+	useSearchRadarGroup()
+	local stores = makeStores()
+	local dto = makeDTO({ parsed = { isHQ = true } })
+	Medusa.Services.EntityFactory.createFromDTO(dto, stores, "net-1")
+	local sensor = stores.sensors:getByUnitId(101)
+	stores.sensors:remove(sensor.SensorUnitId)
+
+	local restored = Medusa.Services.EntityFactory.reconcileSensorsFromDTO(dto, stores, "net-1")
+
+	lu.assertEquals(restored, 1)
+	lu.assertEquals(stores.c2Nodes:count(), 1)
+	lu.assertEquals(stores.sensors:count(), 1)
 end

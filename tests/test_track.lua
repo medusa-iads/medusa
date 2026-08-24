@@ -74,6 +74,18 @@ function TestTrackStore:test_store_add_and_get()
 	lu.assertEquals(got.TrackId, "t1")
 end
 
+function TestTrackStore:test_capacity_rejects_additional_track_without_mutation()
+	local store = Medusa.Services.TrackStore:new()
+	for i = 1, Medusa.Constants.TRACK_CAPACITY do
+		lu.assertTrue(store:add(makeTrack({ TrackId = "track-" .. tostring(i) })))
+	end
+
+	local rejected = makeTrack({ TrackId = "track-overflow" })
+	lu.assertFalse(store:add(rejected))
+	lu.assertEquals(store:count(), Medusa.Constants.TRACK_CAPACITY)
+	lu.assertNil(store:get(rejected.TrackId))
+end
+
 function TestTrackStore:test_store_get_returns_nil_for_unknown()
 	local store = Medusa.Services.TrackStore:new()
 	lu.assertNil(store:get("nonexistent"))

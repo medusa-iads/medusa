@@ -19,7 +19,7 @@ require("core.Logger")
     How others use it
     - IadsNetwork calls discover and computeADIZ at init time.
     - TrackClassifier uses the resulting polygons for zone containment checks.
-    - MetricsSnapshotService reads the pre-converted lat/lon vertices for export.
+    - MetricsSnapshot reads the pre-converted lat/lon vertices for export.
 --]]
 
 Medusa.Services.AirspaceService = {}

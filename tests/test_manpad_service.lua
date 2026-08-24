@@ -145,6 +145,66 @@ function TestManpadFireReadiness:test_requiresHotActivationOperationalStateAndAm
 	lu.assertFalse(Medusa.Services.ManpadService.canFire(bat))
 end
 
+TestManpadReadinessRecovery = {}
+
+function TestManpadReadinessRecovery:setUp()
+	self.originalGoCold = Medusa.Services.BatteryActivationService.goCold
+	self.originalGoCrewSuppressed = Medusa.Services.BatteryActivationService.goCrewSuppressed
+end
+
+function TestManpadReadinessRecovery:tearDown()
+	Medusa.Services.BatteryActivationService.goCold = self.originalGoCold
+	Medusa.Services.BatteryActivationService.goCrewSuppressed = self.originalGoCrewSuppressed
+end
+
+function TestManpadReadinessRecovery:test_initial_cold_failure_is_retried_before_wake_work()
+	local bat = makeManpadBattery({
+		ActivationState = Medusa.Constants.ActivationState.INITIALIZING,
+		OperationalStatus = Medusa.Constants.BatteryOperationalStatus.ACTIVE,
+	})
+	local attempts = 0
+	Medusa.Services.BatteryActivationService.goCold = function(value)
+		attempts = attempts + 1
+		if attempts == 1 then
+			return false
+		end
+		value.ActivationState = Medusa.Constants.ActivationState.STATE_COLD
+		return true
+	end
+
+	evaluateSingle(bat, makeTrackStore(), makeGeoGrid({}), 100, "NORMAL")
+	lu.assertEquals(bat.ActivationState, Medusa.Constants.ActivationState.INITIALIZING)
+	lu.assertEquals(bat.Manpad.SleepWakeState, Medusa.Constants.Manpad.SleepWakeState.ASLEEP)
+	evaluateSingle(bat, makeTrackStore(), makeGeoGrid({}), 101, "NORMAL")
+
+	lu.assertEquals(attempts, 2)
+	lu.assertEquals(bat.ActivationState, Medusa.Constants.ActivationState.STATE_COLD)
+	lu.assertEquals(bat.Manpad.SleepWakeState, Medusa.Constants.Manpad.SleepWakeState.ASLEEP)
+end
+
+function TestManpadReadinessRecovery:test_suppressed_unknown_readiness_retries_without_authorizing_fire()
+	local C = Medusa.Constants
+	local bat = makeManpadBattery({
+		ActivationState = C.ActivationState.INITIALIZING,
+		OperationalStatus = C.BatteryOperationalStatus.ACTIVE,
+		CrewSuppressionState = C.CrewSuppressionState.SUPPRESSED,
+		CrewSuppressionUntil = 200,
+	})
+	local attempts = 0
+	Medusa.Services.BatteryActivationService.goCrewSuppressed = function(value)
+		attempts = attempts + 1
+		value.ActivationState = C.ActivationState.STATE_COLD
+		return true
+	end
+
+	evaluateSingle(bat, makeTrackStore(), makeGeoGrid({}), 100, "NORMAL")
+
+	lu.assertEquals(attempts, 1)
+	lu.assertEquals(bat.ActivationState, C.ActivationState.STATE_COLD)
+	lu.assertEquals(bat.Manpad.SleepWakeState, C.Manpad.SleepWakeState.ASLEEP)
+	lu.assertFalse(Medusa.Services.ManpadService.canFire(bat))
+end
+
 -- ============================================================
 -- 1. HOT → COOLDOWN state transitions
 -- ============================================================
@@ -588,11 +648,27 @@ function TestManpadWakeCallback:tearDown()
 end
 
 -- Schedule a wake via cueFromIADS and capture the resulting ScheduleOnce callback.
-local function captureWakeCallback(network, store, bat)
+local function captureWakeCallback(network, store, bat, track)
 	store:add(bat)
-	Medusa.Services.ManpadService.cueFromIADS(network._ctx, bat.Position)
+	Medusa.Services.ManpadService.cueFromIADS(network._ctx, bat.Position, track)
 	local entry = timerHarness.scheduledCallbacks[#timerHarness.scheduledCallbacks]
 	return entry.fn, entry.args
+end
+
+function TestManpadWakeCallback:test_partition_split_rejects_a_stale_iads_wake()
+	local bat = makeManpadBattery({
+		PartitionKey = "partition-a",
+		CoordinationState = Medusa.Constants.CoordinationState.COORDINATED,
+	})
+	self.network._ctx.doctrine = {}
+	local cb, args = captureWakeCallback(self.network, self.store, bat, { PartitionKey = "partition-a" })
+	bat.PartitionKey = "partition-b"
+
+	cb(args)
+
+	lu.assertEquals(bat.Manpad.SleepWakeState, Medusa.Constants.Manpad.SleepWakeState.ASLEEP)
+	lu.assertEquals(bat.Manpad.WakeReason, Medusa.Constants.Manpad.WakeReason.NONE)
+	lu.assertIsNil(bat.Manpad.WakeTimerId)
 end
 
 -- Callback fires while ALERTING → transitions to ALERT, sets AlertStartTime

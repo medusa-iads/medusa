@@ -6,7 +6,7 @@ require("entities.Battery")
 require("services.AaaService")
 require("services.BatteryActivationService")
 require("services.ManpadService")
-require("services.MetricsService")
+require("observability.MetricsService")
 
 Medusa.Services.CrewSuppressionService = {}
 
@@ -16,7 +16,7 @@ do
 	local AaaService = Medusa.Services.AaaService
 	local BatteryActivationService = Medusa.Services.BatteryActivationService
 	local ManpadService = Medusa.Services.ManpadService
-	local MetricsService = Medusa.Services.MetricsService
+	local MetricsService = Medusa.Observability.MetricsService
 	local logger = Medusa.Logger:ns("CrewSuppressionService")
 	local batteryBuffer = {}
 	local recoverBattery
@@ -99,8 +99,8 @@ do
 			return false
 		end
 		local timerId = battery.CrewSuppressionTimerId
-		CancelSchedule(battery.CrewSuppressionTimerId)
 		battery.CrewSuppressionTimerId = nil
+		pcall(CancelSchedule, timerId)
 		logger:debug(
 			string.format(
 				"battery %s recovery timer cancelled: timerId=%s",
@@ -111,45 +111,81 @@ do
 		return true
 	end
 
+	--- Registers one contained recovery callback and reports whether a timer handle was returned.
 	local function scheduleRecovery(ctx, battery, now)
 		local batteryId = battery.BatteryId
 		local delay = math.max(0, battery.CrewSuppressionUntil - now)
 		local timerId
-		timerId = ScheduleOnce(function()
-			local current = ctx.batteryRepository:get(batteryId)
-			if not current then
-				logger:debug(string.format("battery %s recovery callback ignored: battery unavailable", batteryId))
-				return
-			end
-			if current.CrewSuppressionTimerId ~= timerId then
-				logger:debug(
-					string.format(
-						"battery %s recovery callback ignored: stale timerId=%s",
-						current.GroupName or current.BatteryId,
-						tostring(timerId)
-					)
-				)
-				return
-			end
-			current.CrewSuppressionTimerId = nil
-			local callbackNow = GetTime()
-			if callbackNow < current.CrewSuppressionUntil then
-				logger:debug(
-					string.format(
-						"battery %s recovery callback early: remaining=%.3fs",
-						current.GroupName or current.BatteryId,
-						current.CrewSuppressionUntil - callbackNow
-					)
-				)
-				if scheduleRecovery(ctx, current, callbackNow) then
+		local registered, result = pcall(ScheduleOnce, function()
+			local current
+			local ok, err = pcall(function()
+				current = ctx.batteryRepository:get(batteryId)
+				if not current then
+					logger:debug(string.format("battery %s recovery callback ignored: battery unavailable", batteryId))
 					return
 				end
+				if current.CrewSuppressionTimerId ~= timerId then
+					logger:debug(
+						string.format(
+							"battery %s recovery callback ignored: stale timerId=%s",
+							current.GroupName or current.BatteryId,
+							tostring(timerId)
+						)
+					)
+					return
+				end
+				current.CrewSuppressionTimerId = nil
+				local callbackNow = GetTime()
+				if callbackNow < current.CrewSuppressionUntil then
+					logger:debug(
+						string.format(
+							"battery %s recovery callback early: remaining=%.3fs",
+							current.GroupName or current.BatteryId,
+							current.CrewSuppressionUntil - callbackNow
+						)
+					)
+					if scheduleRecovery(ctx, current, callbackNow) then
+						return
+					end
+				end
+				recoverBattery(ctx, current, callbackNow)
+			end)
+			if not ok then
+				current = current or battery
+				if current.CrewSuppressionTimerId == timerId then
+					current.CrewSuppressionTimerId = nil
+				end
+				pcall(recordDrop, ctx, C.CrewSuppressionDropReason.RECOVERY_TIMER)
+				logger:error(
+					string.format(
+						"battery %s recovery callback failed: %s",
+						current.GroupName or current.BatteryId,
+						tostring(err)
+					)
+				)
+				if Battery.isCrewSuppressed(current) and current.CrewSuppressionTimerId == nil then
+					local recoveryNow = now + delay
+					local timeOk, observedNow = pcall(GetTime)
+					if timeOk then
+						recoveryNow = observedNow
+					end
+					local recovered = pcall(recoverBattery, ctx, current, recoveryNow)
+					if not recovered then
+						Battery.clearCrewSuppression(current)
+					end
+				end
 			end
-			recoverBattery(ctx, current, callbackNow)
 		end, nil, delay)
+		timerId = registered and result or nil
 		if not timerId then
 			recordDrop(ctx, C.CrewSuppressionDropReason.RECOVERY_TIMER)
-			logger:debug(string.format("battery %s recovery scheduling failed", battery.GroupName or battery.BatteryId))
+			logger:debug(
+				string.format(
+					"battery %s recovery scheduling failed: %s",
+					battery.GroupName or battery.BatteryId,
+					tostring(result)
+				)
+			)
 			return false
 		end
 		battery.CrewSuppressionTimerId = timerId
@@ -164,6 +200,7 @@ do
 		return true
 	end
 
+	--- Clears Medusa response work before requesting suppressed readiness.
 	local function stopBatteryResponse(ctx, battery, now)
 		logger:debug(
 			string.format("battery %s stopping response for crew suppression", battery.GroupName or battery.BatteryId)

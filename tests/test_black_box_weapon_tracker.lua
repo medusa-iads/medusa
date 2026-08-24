@@ -5,7 +5,7 @@ require("_header")
 require("core.Logger")
 require("core.Constants")
 require("services.Services")
-require("services.MetricsService")
+require("observability.MetricsService")
 require("services.stores.BlackBoxWeaponStore")
 require("services.BlackBoxService")
 
@@ -48,11 +48,12 @@ function TestBlackBoxWeaponTracker:setUp()
 		self.logMessages[#self.logMessages + 1] = message
 	end
 	Medusa.Logger:setLevel(Medusa.Constants.LogLevel.DEBUG)
-	Medusa.Services.MetricsService._registry = {}
-	Medusa.Services.MetricsService.gauge("medusa_crew_suppression_weapons_tracked", "")
-	Medusa.Services.MetricsService.counter("medusa_crew_suppression_weapon_outcomes_total", "", { "outcome" })
-	Medusa.Services.MetricsService.gauge("medusa_crew_suppression_cannon_queue_depth", "")
-	Medusa.Services.MetricsService.counter("medusa_crew_suppression_cannon_outcomes_total", "", { "outcome" })
+	Medusa.Observability.MetricsService._registry = {}
+	Medusa.Observability.MetricsService.gauge("medusa_crew_suppression_weapons_tracked", "")
+	Medusa.Observability.MetricsService.counter("medusa_crew_suppression_weapon_outcomes_total", "", { "outcome" })
+	Medusa.Observability.MetricsService.gauge("medusa_crew_suppression_cannon_queue_depth", "")
+	Medusa.Observability.MetricsService.counter("medusa_crew_suppression_cannon_outcomes_total", "", { "outcome" })
+	Medusa.Services.BlackBoxService.clear()
 	self.store = Medusa.Services.BlackBoxWeaponStore:new(128)
 	self.impacts = {}
 	GetTime = function()
@@ -101,11 +102,59 @@ local function position3(point, forward)
 end
 
 function TestBlackBoxWeaponTracker:tearDown()
+	Medusa.Services.BlackBoxService.clear()
 	env.info = self.originalEnvInfo
 	Medusa.Logger:setLevel(self.originalLogLevel)
 	for name, value in pairs(self.originals) do
 		_G[name] = value
 	end
+end
+
+function TestBlackBoxWeaponTracker:test_metadata_cache_replaces_reused_identifiers()
+	local function object(typeName, unitName, coalitionId)
+		return {
+			getTypeName = function()
+				return typeName
+			end,
+			getName = function()
+				return unitName
+			end,
+			getCoalition = function()
+				return coalitionId
+			end,
+		}
+	end
+
+	Medusa.Services.BlackBoxService.cacheFromObject(7, object("old-type", "old-unit", 1))
+	Medusa.Services.BlackBoxService.cacheFromObject(7, object("new-type", "new-unit", 2))
+
+	lu.assertEquals(Medusa.Services.BlackBoxService.get(7), {
+		TypeName = "new-type",
+		UnitName = "new-unit",
+		CoalitionId = 2,
+	})
+end
+
+function TestBlackBoxWeaponTracker:test_metadata_cache_evicts_oldest_distinct_identifier_at_capacity()
+	local capacity = Medusa.Constants.BlackBox.METADATA_CACHE_CAPACITY
+	local object = {
+		getTypeName = function()
+			return "type"
+		end,
+		getName = function()
+			return "unit"
+		end,
+		getCoalition = function()
+			return 1
+		end,
+	}
+	for id = 1, capacity + 1 do
+		Medusa.Services.BlackBoxService.cacheFromObject(id, object)
+	end
+
+	lu.assertNil(Medusa.Services.BlackBoxService.get(1))
+	lu.assertNotNil(Medusa.Services.BlackBoxService.get(2))
+	lu.assertNotNil(Medusa.Services.BlackBoxService.get(capacity + 1))
 end
 
 function TestBlackBoxWeaponTracker:update(now, budget)
@@ -118,6 +167,35 @@ function TestBlackBoxWeaponTracker:updateCannons(now, budget)
 	return Medusa.Services.BlackBoxService.updateCannons(self.store, now, function(terminalEvent)
 		self.impacts[#self.impacts + 1] = terminalEvent
 	end, budget)
+end
+
+function TestBlackBoxWeaponTracker:test_update_details_require_trace_and_debug_reports_thirty_second_summary()
+	local tracked = weapon("tracked")
+	lu.assertTrue(Medusa.Services.BlackBoxService.onShot(self.store, { weapon = tracked }, 1))
+
+	Medusa.Logger:setLevel(Medusa.Constants.LogLevel.DEBUG)
+	lu.assertEquals(Medusa.Services.BlackBoxService.updateDue(self.store, 2, function() end), 1)
+	lu.assertEquals(Medusa.Services.BlackBoxService.updateDue(self.store, 32, function() end), 1)
+	local summaryMessage = nil
+	for i = 1, #self.logMessages do
+		lu.assertNil(string.find(self.logMessages[i], "weapon tracker update", 1, true))
+		if string.find(self.logMessages[i], "shared recurring work (30s)", 1, true) then
+			summaryMessage = self.logMessages[i]
+		end
+	end
+	lu.assertNotNil(summaryMessage)
+	lu.assertNotNil(string.match(summaryMessage, "weapon_tracker%s+2%s+1%s+1"))
+	lu.assertNotNil(string.match(summaryMessage, "cannon_estimator%s+0%s+0%s+0"))
+
+	Medusa.Logger:setLevel(Medusa.Constants.LogLevel.TRACE)
+	lu.assertEquals(self:update(33, 1), 1)
+	local foundDetail = false
+	for i = 1, #self.logMessages do
+		if string.find(self.logMessages[i], "weapon tracker update: sampled=1 tracked=1", 1, true) then
+			foundDetail = true
+		end
+	end
+	lu.assertTrue(foundDetail)
 end
 
 function TestBlackBoxWeaponTracker:test_rejects_newest_weapon_when_tracker_is_full()
@@ -298,6 +376,21 @@ function TestBlackBoxWeaponTracker:test_unavailable_boundary_data_produces_no_in
 	lu.assertEquals(#self.impacts, 0)
 end
 
+function TestBlackBoxWeaponTracker:test_sample_failure_discards_the_indexed_record_and_allows_readmission()
+	local tracked = weapon("throwing-sample")
+	Medusa.Services.BlackBoxService.onShot(self.store, { weapon = tracked }, 1)
+	IsWeaponExist = function()
+		error("injected weapon boundary failure")
+	end
+
+	lu.assertEquals(self:update(2, 1), 1)
+
+	lu.assertEquals(self.store:size(), 0)
+	lu.assertIsNil(self.store:get(tracked))
+	lu.assertTrue(self.store:admit(tracked, 3))
+	lu.assertEquals(self.store:size(), 1)
+end
+
 function TestBlackBoxWeaponTracker:test_start_stop_and_restart_own_exactly_one_subscription_pair()
 	local bus = { subscriptions = {}, removed = {} }
 	function bus:sub(eventId, sink)
@@ -326,6 +419,35 @@ function TestBlackBoxWeaponTracker:test_start_stop_and_restart_own_exactly_one_s
 	lu.assertEquals(#bus.subscriptions, 6)
 	lu.assertTrue(Medusa.Services.BlackBoxService.stop(self.store))
 	lu.assertEquals(bus.removed, { 1, 2, 3, 4, 5, 6 })
+end
+
+function TestBlackBoxWeaponTracker:test_start_contains_and_rolls_back_each_partial_subscription_failure()
+	for failAt = 1, 3 do
+		local store = Medusa.Services.BlackBoxWeaponStore:new(8)
+		local bus = { _nextSubId = 1, active = {}, removed = {} }
+		function bus:sub()
+			local id = self._nextSubId
+			self._nextSubId = id + 1
+			self.active[id] = true
+			if id == failAt then
+				error("injected subscription failure")
+			end
+			return id
+		end
+		function bus:unsub(id)
+			self.active[id] = nil
+			self.removed[#self.removed + 1] = id
+			return true
+		end
+
+		local contained, started = pcall(Medusa.Services.BlackBoxService.start, store, bus)
+
+		lu.assertTrue(contained)
+		lu.assertFalse(started)
+		lu.assertFalse(store:isStarted())
+		lu.assertIsNil(next(bus.active))
+		lu.assertEquals(#bus.removed, failAt)
+	end
 end
 
 function TestBlackBoxWeaponTracker:test_cannon_ballistic_arc_uses_forward_aircraft_velocity_and_gravity()

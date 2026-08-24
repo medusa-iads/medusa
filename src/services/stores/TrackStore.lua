@@ -1,6 +1,7 @@
 require("_header")
 require("services.Services")
 require("core.Logger")
+require("core.Constants")
 require("entities.Track")
 
 --[[
@@ -33,9 +34,13 @@ function Medusa.Services.TrackStore:new()
 	return o
 end
 
+--- Publishes one track when the fixed store capacity and indexes allow it.
 function Medusa.Services.TrackStore:add(track)
 	if self._byId[track.TrackId] then
 		error(string.format("duplicate track: %s", Medusa.Entities.Track.displayId(track)))
+	end
+	if self._count >= Medusa.Constants.TRACK_CAPACITY then
+		return false
 	end
 
 	self._byId[track.TrackId] = track
@@ -55,6 +60,7 @@ function Medusa.Services.TrackStore:add(track)
 			self._count
 		)
 	)
+	return true
 end
 
 function Medusa.Services.TrackStore:get(trackId)

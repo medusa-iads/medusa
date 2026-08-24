@@ -1,5 +1,6 @@
 require("_header")
 require("services.Services")
+require("observability.MetricsService")
 require("services.SpatialQuery")
 require("entities.Track")
 require("core.Constants")
@@ -198,7 +199,7 @@ local function checkHostileAction(track, trackStore, posture, now)
 	end
 	local prev = track.TrackIdentification
 	trackStore:updateIdentification(track.TrackId, TI.HOSTILE)
-	Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
+	Medusa.Observability.MetricsService.inc("medusa_track_promotions_total")
 	track.LastIdentificationTime = now
 	_logger:info(
 		string.format(
@@ -227,7 +228,7 @@ local function evaluateUnknown(track, trackStore, posture, hasBorders, now)
 
 	if forceByADIZ or now >= track.IffConfirmTime then
 		trackStore:updateIdentification(track.TrackId, TI.BOGEY)
-		Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
+		Medusa.Observability.MetricsService.inc("medusa_track_promotions_total")
 		track.LastIdentificationTime = now
 		if forceByADIZ then
 			_logger:info(
@@ -288,7 +289,7 @@ local function evaluateBogey(track, trackStore, posture, hasBorders, now)
 
 	if criteria >= 2 then
 		trackStore:updateIdentification(track.TrackId, TI.BANDIT)
-		Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
+		Medusa.Observability.MetricsService.inc("medusa_track_promotions_total")
 		track.LastIdentificationTime = now
 		_logger:info(
 			string.format(
@@ -312,7 +313,7 @@ local function evaluateBandit(track, trackStore, posture, hasBorders, now, geoGr
 		local dwell = now - (track.LastIdentificationTime or now)
 		if dwell >= C.BANDIT_DWELL_SEC then
 			trackStore:updateIdentification(track.TrackId, TI.HOSTILE)
-			Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
+			Medusa.Observability.MetricsService.inc("medusa_track_promotions_total")
 			track.LastIdentificationTime = now
 			_logger:info(
 				string.format(
@@ -332,7 +333,7 @@ local function evaluateBandit(track, trackStore, posture, hasBorders, now, geoGr
 		end
 		if track.BorderCrossingTime and (now - track.BorderCrossingTime) >= track.BorderHostileDwellSec then
 			trackStore:updateIdentification(track.TrackId, TI.HOSTILE)
-			Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
+			Medusa.Observability.MetricsService.inc("medusa_track_promotions_total")
 			track.LastIdentificationTime = now
 			_logger:info(
 				string.format(
@@ -351,7 +352,7 @@ local function evaluateBandit(track, trackStore, posture, hasBorders, now, geoGr
 		local dwell = now - (track.LastIdentificationTime or now)
 		if dwell >= C.BANDIT_DWELL_SEC then
 			trackStore:updateIdentification(track.TrackId, TI.HOSTILE)
-			Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
+			Medusa.Observability.MetricsService.inc("medusa_track_promotions_total")
 			track.LastIdentificationTime = now
 			_logger:info(
 				string.format(
@@ -379,7 +380,7 @@ local function evaluateBandit(track, trackStore, posture, hasBorders, now, geoGr
 		)
 	then
 		trackStore:updateIdentification(track.TrackId, TI.HOSTILE)
-		Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
+		Medusa.Observability.MetricsService.inc("medusa_track_promotions_total")
 		track.LastIdentificationTime = now
 		_logger:info(
 			string.format(
@@ -445,7 +446,7 @@ local function applyGuiltByAssociation(tracks, trackStore, now)
 				then
 					if isGuiltAligned(promoted.track, pSpeed, pHdg, candidate) then
 						trackStore:updateIdentification(candidate.TrackId, promoted.newId)
-						Medusa.Services.MetricsService.inc("medusa_track_promotions_total")
+						Medusa.Observability.MetricsService.inc("medusa_track_promotions_total")
 						candidate.LastIdentificationTime = now
 						_logger:info(
 							string.format(

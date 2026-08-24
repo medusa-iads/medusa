@@ -20,6 +20,7 @@ require("core.Constants")
 
 Medusa.Entities.SensorUnit = {}
 
+--- Creates the sensor identity, capability, position, and operational state supplied by data.
 function Medusa.Entities.SensorUnit.new(data)
 	if not data then
 		error("data table is required")
@@ -50,22 +51,30 @@ function Medusa.Entities.SensorUnit.new(data)
 		GroupName = data.GroupName,
 		GroupCategory = data.GroupCategory,
 		UnitTypeName = data.UnitTypeName,
-		HierarchyPath = data.HierarchyPath,
 		SensorType = data.SensorType or Medusa.Constants.SensorType.EWR,
 		Position = data.Position,
 		DetectionRangeMax = data.DetectionRangeMax,
 		DetectionAltitudeMax = data.DetectionAltitudeMax,
 		DetectionAltitudeMin = data.DetectionAltitudeMin,
 		OperationalStatus = data.OperationalStatus or Medusa.Constants.UnitOperationalStatus.ACTIVE,
+		ControllerAvailable = data.ControllerAvailable ~= false,
+		PositionAvailable = data.Position ~= nil and data.PositionAvailable ~= false,
 		IsAirborne = data.IsAirborne or false,
-		RadarStatus = data.RadarStatus or "DARK",
-		Connectivity = data.Connectivity or "CONNECTED",
+		RadarStatus = data.RadarStatus or Medusa.Constants.RadarStatus.DARK,
+		EmconState = data.EmconState or Medusa.Constants.ActivationState.INITIALIZING,
 		HarmDetectionChance = data.HarmDetectionChance,
 		ServiceRangeKm = data.ServiceRangeKm,
 		LastScanTime = data.LastScanTime,
-		PowerNodeId = data.PowerNodeId,
-		ConnectionNodeId = data.ConnectionNodeId,
 		DetectableTargetTypes = data.DetectableTargetTypes,
 		GciServicedAirbaseIds = data.GciServicedAirbaseIds,
+		PartitionKey = data.PartitionKey,
 	}
+end
+
+--- Reports whether the current sensor identity has usable controller and position observations.
+function Medusa.Entities.SensorUnit.isAvailable(sensor)
+	return sensor ~= nil
+		and sensor.OperationalStatus ~= Medusa.Constants.UnitOperationalStatus.DESTROYED
+		and sensor.ControllerAvailable ~= false
+		and sensor.PositionAvailable ~= false
 end
