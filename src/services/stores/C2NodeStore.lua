@@ -26,7 +26,10 @@ local OwnerKind = Medusa.Constants.UnitOwnerKind
 function Medusa.Services.C2NodeStore:new(unitIndex)
 	local o = {
 		_byNodeName = {},
+		_nodes = {},
 		_count = 0,
+		_healthNodeCursor = 1,
+		_healthProviderCursor = 1,
 		_logger = Medusa.Logger:ns("C2NodeStore"),
 		_unitIndex = unitIndex or Medusa.Services.UnitIndex:new(),
 	}
@@ -82,6 +85,7 @@ function Medusa.Services.C2NodeStore:add(c2node)
 	end
 
 	self._byNodeName[c2node.NodeName] = c2node
+	self._nodes[#self._nodes + 1] = c2node
 	for i = 1, #providers do
 		local provider = providers[i]
 		if provider.UnitId or provider.UnitName then
@@ -98,6 +102,32 @@ function Medusa.Services.C2NodeStore:add(c2node)
 	self._count = self._count + 1
 
 	self._logger:debug(string.format("added command center %s (count=%d)", c2node.NodeName, self._count))
+end
+
+--- Returns the next selected provider through the store's fair command-node cursor.
+function Medusa.Services.C2NodeStore:nextProviderForHealthRefresh()
+	local nodeCount = #self._nodes
+	if nodeCount == 0 then
+		return nil
+	end
+	local visitedNodes = 0
+	while visitedNodes < nodeCount do
+		local node = self._nodes[self._healthNodeCursor]
+		local providers = node.Providers or {}
+		local provider = providers[self._healthProviderCursor]
+		if provider then
+			self._healthProviderCursor = self._healthProviderCursor + 1
+			if self._healthProviderCursor > #providers then
+				self._healthProviderCursor = 1
+				self._healthNodeCursor = (self._healthNodeCursor % nodeCount) + 1
+			end
+			return provider
+		end
+		self._healthProviderCursor = 1
+		self._healthNodeCursor = (self._healthNodeCursor % nodeCount) + 1
+		visitedNodes = visitedNodes + 1
+	end
+	return nil
 end
 
 function Medusa.Services.C2NodeStore:getByNodeName(nodeName)
@@ -118,13 +148,22 @@ function Medusa.Services.C2NodeStore:getAll(outputTable)
 	return result
 end
 
---- Marks one already-resolved command provider unavailable.
+--- Marks one command provider unavailable and releases its DCS unit identifier.
 function Medusa.Services.C2NodeStore:setProviderUnavailable(provider)
-	if not provider or not provider.Available then
+	if not provider then
 		return nil
 	end
+	local previousUnitId = provider.UnitId
+	if previousUnitId then
+		local released = self._unitIndex:replaceUnitId(OwnerKind.COMMAND_PROVIDER, provider, nil)
+		if not released then
+			return nil
+		end
+	end
+	local changed = provider.Available or previousUnitId ~= nil
 	provider.Available = false
-	return provider
+	provider.UnitId = nil
+	return changed and provider or nil
 end
 
 --- Restores one mission-selected provider and moves its unit-identifier index to unitId.
@@ -149,6 +188,7 @@ function Medusa.Services.C2NodeStore:markProviderAvailable(provider, unitId)
 	end
 	if previousOwner and previousOwner ~= provider then
 		previousOwner.Available = false
+		previousOwner.UnitId = nil
 	end
 	provider.UnitId = unitId
 	provider.Available = true

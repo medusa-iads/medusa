@@ -175,9 +175,167 @@ function TestIadsNetwork:test_unit_lost_event_uses_the_death_pipeline()
 
 	HarnessWorldEventBus:publish({ id = world.event.S_EVENT_UNIT_LOST, time = 42, initiator = initiator })
 
-	lu.assertEquals(iads._deathQueue:size(), 1)
+	lu.assertEquals(iads._deathQueue:size(), 0)
+	lu.assertEquals(iads._infrastructureDeathQueue:size(), 1)
 	lu.assertEquals(iads:_processDeathEvents(1), 1)
 	lu.assertFalse(provider.Available)
+end
+
+function TestIadsNetwork:test_unmanaged_death_event_is_filtered_before_queue_admission()
+	local iads = makeIads()
+	iads:initialize()
+	lu.assertTrue(iads:_subscribeWorldEvents())
+	local initiator = {
+		getCoalition = function()
+			return COAL_RED
+		end,
+		getID = function()
+			return 8999
+		end,
+		getName = function()
+			return "unmanaged-unit"
+		end,
+	}
+
+	HarnessWorldEventBus:publish({ id = world.event.S_EVENT_DEAD, initiator = initiator })
+
+	lu.assertEquals(iads._deathQueue:size(), 0)
+	lu.assertEquals(iads._infrastructureDeathQueue:size(), 0)
+end
+
+function TestIadsNetwork:test_infrastructure_death_uses_reserved_queue_and_processing_priority()
+	local iads = makeIads()
+	iads:initialize()
+	lu.assertTrue(iads:_subscribeWorldEvents())
+	local provider = { UnitId = 8201, UnitName = "iads.alpha.hq-provider", Available = true }
+	iads:getAssetIndex():c2Nodes():add(Medusa.Entities.C2Node.new({
+		NodeName = "iads.alpha.hq",
+		GroupId = 820,
+		Providers = { provider },
+	}))
+	for unitId = 1, Medusa.Constants.WorldEventQueue.DEATH_CAPACITY do
+		lu.assertTrue(iads._deathQueue:enqueue({ _unitId = unitId }))
+	end
+	local initiator = {
+		getCoalition = function()
+			return COAL_RED
+		end,
+		getID = function()
+			return provider.UnitId
+		end,
+		getName = function()
+			return provider.UnitName
+		end,
+	}
+
+	HarnessWorldEventBus:publish({ id = world.event.S_EVENT_DEAD, initiator = initiator })
+
+	lu.assertEquals(iads._deathQueue:size(), Medusa.Constants.WorldEventQueue.DEATH_CAPACITY)
+	lu.assertEquals(iads._infrastructureDeathQueue:size(), 1)
+	lu.assertEquals(iads:_processDeathEvents(1), 1)
+	lu.assertFalse(provider.Available)
+	lu.assertEquals(iads._deathQueue:size(), Medusa.Constants.WorldEventQueue.DEATH_CAPACITY)
+end
+
+function TestIadsNetwork:test_provider_health_reconciliation_recovers_a_terminally_dropped_death()
+	local iads = makeIads()
+	iads:initialize()
+	lu.assertTrue(iads:_subscribeWorldEvents())
+	local provider = { UnitId = 8301, UnitName = "iads.alpha.hq-provider", Available = true }
+	iads:getAssetIndex():c2Nodes():add(Medusa.Entities.C2Node.new({
+		NodeName = "iads.alpha.hq",
+		GroupId = 830,
+		Providers = { provider },
+	}))
+	for index = 1, Medusa.Constants.WorldEventQueue.INFRASTRUCTURE_DEATH_CAPACITY do
+		iads._infrastructureDeathQueue:push({ UnitId = 90000 + index })
+	end
+	for index = 1, Medusa.Constants.WorldEventQueue.DEATH_OVERFLOW_CAPACITY do
+		lu.assertTrue(iads:_queueDeathOverflow(91000 + index))
+	end
+	local initiator = {
+		getCoalition = function()
+			return COAL_RED
+		end,
+		getID = function()
+			return provider.UnitId
+		end,
+		getName = function()
+			return provider.UnitName
+		end,
+	}
+	GetUnitHealth = function(unitName)
+		if unitName == provider.UnitName then
+			return { IsAlive = false }
+		end
+	end
+
+	HarnessWorldEventBus:publish({ id = world.event.S_EVENT_DEAD, initiator = initiator })
+	lu.assertTrue(provider.Available)
+
+	lu.assertEquals(iads:_reconcileCommandProviders(1), 1)
+	lu.assertFalse(provider.Available)
+	lu.assertIsNil(provider.UnitId)
+end
+
+function TestIadsNetwork:test_provider_health_reconciliation_restores_selected_provider_without_rediscovery()
+	local iads = makeIads()
+	iads:initialize()
+	local provider = { UnitId = 8401, UnitName = "iads.alpha.hq-provider", Available = true }
+	local store = iads:getAssetIndex():c2Nodes()
+	store:add(Medusa.Entities.C2Node.new({
+		NodeName = "iads.alpha.hq",
+		GroupId = 840,
+		Providers = { provider },
+	}))
+	store:setProviderUnavailable(provider)
+	GetUnitHealth = function(unitName)
+		if unitName == provider.UnitName then
+			return { IsAlive = true }
+		end
+	end
+	GetUnitID = function(unitName)
+		if unitName == provider.UnitName then
+			return 8402
+		end
+	end
+
+	lu.assertEquals(iads:_reconcileCommandProviders(1), 1)
+	lu.assertTrue(provider.Available)
+	lu.assertEquals(provider.UnitId, 8402)
+end
+
+function TestIadsNetwork:test_provider_health_requires_two_consecutive_failed_reads()
+	local iads = makeIads()
+	iads:initialize()
+	local provider = { UnitId = 8451, UnitName = "iads.alpha.hq-provider", Available = true }
+	iads:getAssetIndex():c2Nodes():add(Medusa.Entities.C2Node.new({
+		NodeName = "iads.alpha.hq",
+		GroupId = 845,
+		Providers = { provider },
+	}))
+	local observations = { nil, { IsAlive = true }, nil, nil }
+	local observationIndex = 0
+	GetUnitHealth = function()
+		observationIndex = observationIndex + 1
+		return observations[observationIndex]
+	end
+	GetUnitID = function()
+		return 8451
+	end
+
+	lu.assertEquals(iads:_reconcileCommandProviders(1), 1)
+	lu.assertTrue(provider.Available)
+	lu.assertEquals(provider.HealthMissCount, 1)
+	lu.assertEquals(iads:_reconcileCommandProviders(1), 1)
+	lu.assertTrue(provider.Available)
+	lu.assertEquals(provider.HealthMissCount, 0)
+	lu.assertEquals(iads:_reconcileCommandProviders(1), 1)
+	lu.assertTrue(provider.Available)
+	lu.assertEquals(provider.HealthMissCount, 1)
+	lu.assertEquals(iads:_reconcileCommandProviders(1), 1)
+	lu.assertFalse(provider.Available)
+	lu.assertNil(provider.UnitId)
 end
 
 function TestIadsNetwork:test_unit_lost_with_empty_name_uses_the_captured_unit_id()
@@ -230,7 +388,8 @@ function TestIadsNetwork:test_unit_lost_with_empty_name_uses_the_captured_unit_i
 		initiator = initiator(8112, "  "),
 	})
 
-	lu.assertEquals(iads._deathQueue:size(), 2)
+	lu.assertEquals(iads._deathQueue:size(), 0)
+	lu.assertEquals(iads._infrastructureDeathQueue:size(), 2)
 	lu.assertEquals(iads:_processDeathEvents(2), 2)
 	lu.assertFalse(provider.Available)
 	lu.assertNil(sensorStore:getByUnitId(8112))
@@ -296,7 +455,8 @@ function TestIadsNetwork:test_unit_lost_resolves_sensor_and_provider_event_ids_t
 		initiator = initiator(39, sensor.UnitName),
 	})
 
-	lu.assertEquals(iads._deathQueue:size(), 2)
+	lu.assertEquals(iads._deathQueue:size(), 0)
+	lu.assertEquals(iads._infrastructureDeathQueue:size(), 2)
 	lu.assertEquals(iads:_processDeathEvents(2), 2)
 	lu.assertFalse(provider.Available)
 	lu.assertNil(sensorStore:get(sensor.SensorUnitId))
@@ -1242,6 +1402,56 @@ function TestIadsNetwork:test_partition_commit_retains_allowed_self_defense_assi
 	lu.assertTrue(track.AssignedBatteryIds:contains(battery.BatteryId))
 end
 
+function TestIadsNetwork:test_partition_split_and_rejoin_retire_obsolete_large_track_populations()
+	local iads = makeIads()
+	iads:initialize()
+	iads._trackManager._displayIdAllocator = Medusa.Services.TrackDisplayIdAllocator:new()
+	local trackManager = iads._trackManager
+	local store = trackManager:getStore()
+	local source = Medusa.Constants.TrackSource.EARLY_WARNING_RADAR
+	local function report(contact, partitionKey)
+		return {
+			NetworkId = "contact-" .. tostring(contact),
+			PartitionKey = partitionKey,
+			SourceType = source,
+			Position = { x = contact * 100, y = 1000, z = contact * 50 },
+			Velocity = { x = 200, y = 0, z = 0 },
+		}
+	end
+	local function commit(partitions)
+		local byCluster = {}
+		for clusterKey, partitionKey in pairs(partitions) do
+			byCluster[clusterKey] = { Key = partitionKey }
+		end
+		iads:_commitPartitionRefresh({
+			PartitionByCluster = byCluster,
+			Sensors = {},
+			Batteries = {},
+			ProviderOverflowCount = 0,
+		})
+	end
+
+	for contact = 1, 171 do
+		lu.assertNotNil(trackManager:processReport(report(contact, "joined-1"), contact))
+	end
+	lu.assertEquals(store:count(), 171)
+
+	commit({ east = "split-east", west = "split-west" })
+	lu.assertEquals(store:count(), 0)
+	for contact = 1, 171 do
+		lu.assertNotNil(trackManager:processReport(report(contact, "split-east"), 200 + contact))
+		lu.assertNotNil(trackManager:processReport(report(contact, "split-west"), 400 + contact))
+	end
+	lu.assertEquals(store:count(), 342)
+
+	commit({ [""] = "joined-2" })
+	lu.assertEquals(store:count(), 0)
+	for contact = 1, 171 do
+		lu.assertNotNil(trackManager:processReport(report(contact, "joined-2"), 600 + contact))
+	end
+	lu.assertEquals(store:count(), 171)
+end
+
 function TestIadsNetwork:test_bootstrap_partition_keeps_local_polling_after_first_refresh_failure()
 	local iads = makeIads()
 	iads:initialize()
@@ -1341,6 +1551,7 @@ function TestIadsNetwork:test_partition_commit_rolls_back_partial_asset_and_assi
 			GroupName = "rollback-" .. i,
 			PartitionKey = "old-partition",
 			CoordinationState = Medusa.Constants.CoordinationState.COORDINATED,
+			IsActingAsEWR = i == 1,
 		})
 		local track = {
 			TrackId = "rollback-track-" .. i,
@@ -1372,11 +1583,13 @@ function TestIadsNetwork:test_partition_commit_rolls_back_partial_asset_and_assi
 					BatteryId = batteries[1].BatteryId,
 					PartitionKey = "new-partition",
 					CoordinationState = Medusa.Constants.CoordinationState.DEGRADED,
+					IsActingAsEWR = false,
 				},
 				{
 					BatteryId = batteries[2].BatteryId,
 					PartitionKey = "new-partition",
 					CoordinationState = Medusa.Constants.CoordinationState.DEGRADED,
+					IsActingAsEWR = true,
 				},
 			},
 			PartitionByCluster = { changed = true },
@@ -1391,9 +1604,54 @@ function TestIadsNetwork:test_partition_commit_rolls_back_partial_asset_and_assi
 	for i = 1, 2 do
 		lu.assertEquals(batteries[i].PartitionKey, "old-partition")
 		lu.assertEquals(batteries[i].CoordinationState, Medusa.Constants.CoordinationState.COORDINATED)
+		lu.assertEquals(batteries[i].IsActingAsEWR, i == 1)
 		lu.assertEquals(batteries[i].CurrentTargetTrackId, tracks[i].TrackId)
 		lu.assertTrue(tracks[i].AssignedBatteryIds:contains(batteries[i].BatteryId))
 	end
+end
+
+function TestIadsNetwork:test_partition_commit_rolls_back_when_track_retirement_fails()
+	local iads = makeIads()
+	iads:initialize()
+	local battery = Medusa.Entities.Battery.new({
+		BatteryId = "retirement-rollback-battery",
+		NetworkId = "T",
+		GroupId = 429,
+		GroupName = "retirement-rollback-battery",
+		PartitionKey = "old-partition",
+		CoordinationState = Medusa.Constants.CoordinationState.COORDINATED,
+		IsActingAsEWR = true,
+	})
+	iads:getAssetIndex():batteries():add(battery)
+	local previousSnapshot = iads._partitionSnapshot
+	local originalRetire = iads._trackManager.retirePartitionIncarnations
+	iads._trackManager.retirePartitionIncarnations = function()
+		error("injected retirement failure")
+	end
+
+	local committed, failure = pcall(function()
+		iads:_commitPartitionRefresh({
+			Sensors = {},
+			Batteries = {
+				{
+					BatteryId = battery.BatteryId,
+					PartitionKey = "new-partition",
+					CoordinationState = Medusa.Constants.CoordinationState.DEGRADED,
+					IsActingAsEWR = false,
+				},
+			},
+			PartitionByCluster = {},
+			ProviderOverflowCount = 0,
+		})
+	end)
+	iads._trackManager.retirePartitionIncarnations = originalRetire
+
+	lu.assertFalse(committed)
+	lu.assertStrContains(tostring(failure), "injected retirement failure")
+	lu.assertEquals(iads._partitionSnapshot, previousSnapshot)
+	lu.assertEquals(battery.PartitionKey, "old-partition")
+	lu.assertEquals(battery.CoordinationState, Medusa.Constants.CoordinationState.COORDINATED)
+	lu.assertTrue(battery.IsActingAsEWR)
 end
 
 function TestIadsNetwork:test_poll_list_classifies_track_origin_sources()
@@ -3473,12 +3731,17 @@ function TestIadsNetwork:test_command_provider_loss_recomputes_partition_coverag
 
 	local logOutput = table.concat(messages, "\n")
 	lu.assertStrContains(logOutput, "command provider unavailable: east-hq (unitId=10020)")
-	lu.assertStrContains(logOutput, "components=2, sustained=1, coordinated=0, degraded=1")
-	lu.assertStrContains(logOutput, "topology=[<root>:sustained | east:unsustained]")
+	lu.assertStrContains(logOutput, "components=2, sustained=2, coordinated=1, degraded=0")
+	lu.assertStrContains(logOutput, "topology=[<root>:sustained | east:sustained]")
 	lu.assertFalse(command.Providers[1].Available)
+	lu.assertIsNil(command.Providers[1].UnitId)
+	lu.assertNil(
+		iads:getAssetIndex():unitIndex():getRegisteredOwner(10020, Medusa.Constants.UnitOwnerKind.COMMAND_PROVIDER)
+	)
 	lu.assertNotNil(battery.PartitionKey)
 	lu.assertNotEquals(battery.PartitionKey, connectedKey)
-	lu.assertEquals(battery.CoordinationState, Medusa.Constants.CoordinationState.DEGRADED)
+	lu.assertTrue(battery.IsActingAsEWR)
+	lu.assertEquals(battery.CoordinationState, Medusa.Constants.CoordinationState.COORDINATED)
 	GetGroupController = function()
 		return {}
 	end
@@ -3514,6 +3777,7 @@ function TestIadsNetwork:test_command_provider_loss_recomputes_partition_coverag
 	for _ = 1, 5 do
 		iads:_runPartitionStep(30)
 	end
+	lu.assertFalse(battery.IsActingAsEWR)
 	lu.assertEquals(battery.CoordinationState, Medusa.Constants.CoordinationState.COORDINATED)
 	lu.assertNotEquals(battery.PartitionKey, connectedKey)
 	lu.assertNotEquals(battery.PartitionKey, disconnectedKey)

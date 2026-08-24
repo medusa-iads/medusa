@@ -311,12 +311,15 @@ function Medusa.Core.IadsNetwork:new(opts)
 		_tickIntervalSec = (opts and opts.tick) or 0.1,
 		_probingService = nil,
 		_deathQueue = nil,
+		_infrastructureDeathQueue = RingBuffer(Medusa.Constants.WorldEventQueue.INFRASTRUCTURE_DEATH_CAPACITY, false),
+		_infrastructureDeathSet = {},
 		_shotQueue = nil,
 		_killQueue = nil,
 		_worldEventBus = nil,
 		_worldSubscriptionIds = {},
 		_deathOverflowQueue = RingBuffer(Medusa.Constants.WorldEventQueue.DEATH_OVERFLOW_CAPACITY, false),
 		_deathOverflowSet = {},
+		_nextProviderHealthAt = 0,
 		_ammoReconcileIds = {},
 		_ammoReconcileSet = {},
 		_ammoReconcileCursor = 1,
@@ -1110,6 +1113,21 @@ function Medusa.Core.IadsNetwork:_retainShotFlight(unitId, unitName, weaponTypeN
 	return true
 end
 
+--- Returns the coalescing key for one captured death-event owner identity.
+--- @param unitId number|string DCS unit identifier
+--- @param unitName string|nil Exact DCS unit name
+--- @param identity table|nil Captured Medusa owner tokens
+--- @return string key Stable pending-death key
+local function deathIdentityKey(unitId, unitName, identity)
+	return table.concat({
+		tostring(unitId),
+		tostring(unitName or ""),
+		tostring(identity and identity.BatteryId or ""),
+		tostring(identity and identity.SensorUnitId or ""),
+		tostring(identity and identity.ProviderUnitName or ""),
+	}, "\31")
+end
+
 --- Creates bounded loss, shot, and kill consumers and subscribes them to the world-event buses.
 --- @return boolean subscribed True when every required subscription is active
 function Medusa.Core.IadsNetwork:_subscribeWorldEvents()
@@ -1191,6 +1209,9 @@ function Medusa.Core.IadsNetwork:_subscribeWorldEvents()
 	local function deathPredicate(event)
 		local accepted = validateEventInitiator(event, coalitionId)
 		if accepted then
+			accepted = event._batteryId ~= nil or event._sensorUnitId ~= nil or event._providerUnitName ~= nil
+		end
+		if accepted then
 			self._logger:debug(
 				string.format(
 					"death event accepted: unitId=%s unitName=%s identitySource=%s batteryId=%s sensorUnitId=%s providerName=%s",
@@ -1203,7 +1224,7 @@ function Medusa.Core.IadsNetwork:_subscribeWorldEvents()
 				)
 			)
 		else
-			self._logger:debug("death event rejected: invalid initiator or coalition mismatch")
+			self._logger:debug("death event rejected: unmanaged initiator, invalid initiator, or coalition mismatch")
 		end
 		return accepted
 	end
@@ -1228,17 +1249,29 @@ function Medusa.Core.IadsNetwork:_subscribeWorldEvents()
 	--- @return boolean queued True when the primary queue accepted the record
 	function self._deathQueue:enqueue(event)
 		local identity = eventIdentity(event)
+		local infrastructure = identity.SensorUnitId ~= nil or identity.ProviderUnitName ~= nil
+		local targetQueue = infrastructure and network._infrastructureDeathQueue or self
+		local identityKey = infrastructure
+				and deathIdentityKey(event and event._unitId, event and event._unitName, identity)
+			or nil
+		if identityKey and network._infrastructureDeathSet[identityKey] then
+			return true
+		end
 		local accepted = event
 				and event._unitId
-				and self:push({
+				and targetQueue:push({
 					UnitId = event._unitId,
 					UnitName = event._unitName,
+					IdentityKey = identityKey,
 					IdentityCaptured = true,
 					BatteryId = identity.BatteryId,
 					SensorUnitId = identity.SensorUnitId,
 					ProviderUnitName = identity.ProviderUnitName,
 				})
 			or false
+		if accepted and identityKey then
+			network._infrastructureDeathSet[identityKey] = true
+		end
 		if
 			not accepted
 			and not network:_queueDeathOverflow(event and event._unitId, event and event._unitName, identity)
@@ -1378,6 +1411,8 @@ function Medusa.Core.IadsNetwork:_unsubscribeWorldEvents()
 	if self._deathQueue then
 		self._deathQueue:clear()
 	end
+	self._infrastructureDeathQueue:clear()
+	self._infrastructureDeathSet = {}
 	if self._shotQueue then
 		self._shotQueue:clear()
 	end
@@ -1739,10 +1774,18 @@ end
 --- @param limit number Maximum records processed
 --- @return number processed Records consumed
 function Medusa.Core.IadsNetwork:_processDeathEvents(limit)
-	if not self._deathQueue or self._deathQueue:isEmpty() then
+	if not self._deathQueue or (self._deathQueue:isEmpty() and self._infrastructureDeathQueue:isEmpty()) then
 		return 0
 	end
 	local processed = 0
+	while processed < limit and not self._infrastructureDeathQueue:isEmpty() do
+		local event = self._infrastructureDeathQueue:pop()
+		if event.IdentityKey then
+			self._infrastructureDeathSet[event.IdentityKey] = nil
+		end
+		self:_handleUnitDeath(event.UnitId, event.UnitName, event)
+		processed = processed + 1
+	end
 	while processed < limit and not self._deathQueue:isEmpty() do
 		local event = self._deathQueue:pop()
 		if event and event.UnitId then
@@ -1754,21 +1797,6 @@ function Medusa.Core.IadsNetwork:_processDeathEvents(limit)
 		processed = processed + 1
 	end
 	return processed
-end
-
---- Returns the coalescing key for one captured death-event owner identity.
---- @param unitId number|string DCS unit identifier
---- @param unitName string|nil Exact DCS unit name
---- @param identity table|nil Captured Medusa owner tokens
---- @return string key Stable pending-death key
-local function deathIdentityKey(unitId, unitName, identity)
-	return table.concat({
-		tostring(unitId),
-		tostring(unitName or ""),
-		tostring(identity and identity.BatteryId or ""),
-		tostring(identity and identity.SensorUnitId or ""),
-		tostring(identity and identity.ProviderUnitName or ""),
-	}, "\31")
 end
 
 --- Retains or coalesces one death identity and reports whether terminal overflow was avoided.
@@ -1814,6 +1842,60 @@ function Medusa.Core.IadsNetwork:_processDeathOverflow(limit)
 		processed = processed + 1
 	end
 	return processed
+end
+
+--- Reconciles a bounded fair slice of selected command-provider health.
+--- @param limit number Maximum selected providers inspected
+--- @return number visited Selected providers inspected
+function Medusa.Core.IadsNetwork:_reconcileCommandProviders(limit)
+	local store = self._assetIndex:c2Nodes()
+	local visited = 0
+	while visited < limit do
+		local provider = store:nextProviderForHealthRefresh()
+		if not provider then
+			break
+		end
+		visited = visited + 1
+		local health = provider.UnitName and GetUnitHealth(provider.UnitName) or nil
+		if health and type(health.IsAlive) == "boolean" then
+			provider.HealthMissCount = 0
+			if health.IsAlive then
+				local unitId = GetUnitID(provider.UnitName)
+				if unitId and (not provider.Available or provider.UnitId ~= unitId) then
+					if store:markProviderAvailable(provider, unitId) then
+						self._logger:info(
+							string.format(
+								"command provider available: %s (unitId=%s)",
+								provider.UnitName,
+								tostring(unitId)
+							)
+						)
+					end
+				end
+			elseif store:setProviderUnavailable(provider) then
+				self._logger:info(string.format("command provider unavailable: %s", provider.UnitName))
+			end
+		else
+			provider.HealthMissCount = math.min(
+				(provider.HealthMissCount or 0) + 1,
+				Medusa.Constants.WorldEventQueue.PROVIDER_HEALTH_MISS_LIMIT
+			)
+			if
+				provider.Available
+				and provider.HealthMissCount >= Medusa.Constants.WorldEventQueue.PROVIDER_HEALTH_MISS_LIMIT
+				and store:setProviderUnavailable(provider)
+			then
+				self._logger:info(
+					string.format(
+						"command provider unavailable after %d failed health observations: %s",
+						provider.HealthMissCount,
+						provider.UnitName
+					)
+				)
+			end
+		end
+	end
+	return visited
 end
 
 --- Marks the battery that owns unitId as ammunition-unknown and schedules bounded reconciliation.
@@ -2976,13 +3058,16 @@ function Medusa.Core.IadsNetwork:_commitPartitionRefresh(pending)
 	--- @param battery table Battery entity
 	--- @param partitionKey string Committed partition key
 	--- @param coordinationState string Committed coordination state
-	local function stageBattery(battery, partitionKey, coordinationState)
+	--- @param isActingAsEwr boolean True when partition-local doctrine selects this SAM as a radar provider
+	local function stageBattery(battery, partitionKey, coordinationState, isActingAsEwr)
 		batteryChanges[#batteryChanges + 1] = {
 			Battery = battery,
 			PreviousPartitionKey = battery.PartitionKey,
 			PreviousCoordinationState = battery.CoordinationState,
+			PreviousIsActingAsEWR = battery.IsActingAsEWR,
 			PartitionKey = partitionKey,
 			CoordinationState = coordinationState,
+			IsActingAsEWR = isActingAsEwr == true,
 		}
 		local track = battery.CurrentTargetTrackId and trackStore:get(battery.CurrentTargetTrackId) or nil
 		local candidate = setmetatable({
@@ -3002,7 +3087,7 @@ function Medusa.Core.IadsNetwork:_commitPartitionRefresh(pending)
 		local battery = batteryRepository:get(captured.BatteryId)
 		if battery then
 			stagedBatteries[battery.BatteryId] = true
-			stageBattery(battery, captured.PartitionKey, captured.CoordinationState)
+			stageBattery(battery, captured.PartitionKey, captured.CoordinationState, captured.IsActingAsEWR)
 		end
 	end
 	local currentBatteries = batteryRepository:getAll({})
@@ -3016,7 +3101,7 @@ function Medusa.Core.IadsNetwork:_commitPartitionRefresh(pending)
 			if not partition then
 				error(string.format("no committed partition for dynamic battery cluster '%s'", tostring(clusterKey)))
 			end
-			stageBattery(battery, partition.Key, Medusa.Constants.CoordinationState.DEGRADED)
+			stageBattery(battery, partition.Key, Medusa.Constants.CoordinationState.DEGRADED, false)
 		end
 	end
 	if pending.ProviderOverflowCount > 0 then
@@ -3026,6 +3111,18 @@ function Medusa.Core.IadsNetwork:_commitPartitionRefresh(pending)
 		)
 	end
 	local previousSnapshot = self._partitionSnapshot
+	local currentPartitionKeys = {}
+	for _, partition in pairs(pending.PartitionByCluster) do
+		if type(partition) == "table" and partition.Key then
+			currentPartitionKeys[partition.Key] = true
+		end
+	end
+	for i = 1, #sensorChanges do
+		currentPartitionKeys[sensorChanges[i].PartitionKey] = true
+	end
+	for i = 1, #batteryChanges do
+		currentPartitionKeys[batteryChanges[i].PartitionKey] = true
+	end
 	local committed, failure = pcall(function()
 		for i = 1, #sensorChanges do
 			local change = sensorChanges[i]
@@ -3035,11 +3132,13 @@ function Medusa.Core.IadsNetwork:_commitPartitionRefresh(pending)
 			local change = batteryChanges[i]
 			change.Battery.PartitionKey = change.PartitionKey
 			change.Battery.CoordinationState = change.CoordinationState
+			change.Battery.IsActingAsEWR = change.IsActingAsEWR
 		end
 		for i = 1, #assignmentReleases do
 			Medusa.Entities.Battery.releaseTrack(assignmentReleases[i].Battery, trackStore)
 		end
 		self._partitionSnapshot = { PartitionByCluster = pending.PartitionByCluster }
+		self._trackManager:retirePartitionIncarnations(currentPartitionKeys, GetTime())
 	end)
 	if committed then
 		local partitionState = describePartitionState(pending.PartitionByCluster, currentBatteries)
@@ -3056,6 +3155,7 @@ function Medusa.Core.IadsNetwork:_commitPartitionRefresh(pending)
 		local change = batteryChanges[i]
 		change.Battery.PartitionKey = change.PreviousPartitionKey
 		change.Battery.CoordinationState = change.PreviousCoordinationState
+		change.Battery.IsActingAsEWR = change.PreviousIsActingAsEWR
 	end
 	for i = 1, #assignmentReleases do
 		local release = assignmentReleases[i]
@@ -3766,7 +3866,6 @@ function Medusa.Core.IadsNetwork:_completeErectInitialization()
 			doctrine = self._doctrine,
 			now = GetTime(),
 		}
-		Medusa.Services.EmconService.updateSamAsEwrSelection(initCtx)
 		Medusa.Services.PointDefenseService.reconcileProviders(initCtx)
 	end)
 	if not ok then
@@ -3855,7 +3954,7 @@ end
 function Medusa.Core.IadsNetwork:_publishQueueDepthMetrics(metricsService)
 	metricsService.set(
 		"medusa_world_event_queue_depth",
-		self._deathQueue:size() + self._deathOverflowQueue:size(),
+		self._deathQueue:size() + self._infrastructureDeathQueue:size() + self._deathOverflowQueue:size(),
 		self._deathEventMetricLabels
 	)
 	metricsService.set("medusa_world_event_queue_depth", self._shotQueue:size(), self._shotEventMetricLabels)
@@ -3875,6 +3974,10 @@ function Medusa.Core.IadsNetwork:_processDeferredWork(now, metricsService)
 	self._discovery:processDynamicAdds(Medusa.Constants.WorldEventQueue.BIRTH_PROCESSING_BUDGET)
 	self:_processDeathEvents(Medusa.Constants.WorldEventQueue.DEATH_PROCESSING_BUDGET)
 	self:_processDeathOverflow(Medusa.Constants.WorldEventQueue.DEATH_OVERFLOW_RECOVERY_BUDGET)
+	if now >= self._nextProviderHealthAt then
+		self._nextProviderHealthAt = now + Medusa.Constants.WorldEventQueue.PROVIDER_HEALTH_REFRESH_INTERVAL_SEC
+		self:_reconcileCommandProviders(Medusa.Constants.WorldEventQueue.PROVIDER_HEALTH_REFRESH_BUDGET)
+	end
 	self:_processHitEvents(Medusa.Constants.CrewSuppression.HIT_EVENT_PROCESSING_BUDGET)
 	self:_processTerminalEvents(
 		Medusa.Constants.CrewSuppression.IMPACT_PROCESSING_BUDGET,

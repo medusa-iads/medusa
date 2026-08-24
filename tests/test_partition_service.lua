@@ -441,8 +441,8 @@ function TestPartitionService:test_awacs_and_selected_sam_as_ewr_sustain_partiti
 	lu.assertTrue(partitionForBattery(awacsSnapshot, awacsBattery).Sustained)
 
 	local samCtx = makeContext()
+	samCtx.doctrine.SAMAsEWR = C.SAMAsEWRPolicy.ALWAYS
 	local provider = makeBattery("provider", 3)
-	provider.IsActingAsEWR = true
 	local member = makeBattery("member", 4)
 	addBattery(samCtx, provider, {})
 	addBattery(samCtx, member, {})
@@ -450,15 +450,48 @@ function TestPartitionService:test_awacs_and_selected_sam_as_ewr_sustain_partiti
 	lu.assertTrue(partitionForBattery(samSnapshot, member).Sustained)
 end
 
+function TestPartitionService:test_when_no_ewr_selects_sam_fallback_only_in_component_without_ewr()
+	local ctx = makeContext()
+	ctx.doctrine.SAMAsEWR = C.SAMAsEWRPolicy.WHEN_NO_EWR
+	local rootEwr = makeSensor("root-ewr", 1)
+	local fallback = makeBattery("child-sam", 3)
+	addSensor(ctx, rootEwr, {})
+	addGroup(ctx.hierarchy, 2, "child-hq", { "child" }, true)
+	addBattery(ctx, fallback, { "child" })
+	local provider = { UnitId = 20, UnitName = "child-hq-1", Available = true }
+	ctx.c2NodeStore:add(Medusa.Entities.C2Node.new({
+		GroupId = 2,
+		NodeName = "child-hq",
+		Providers = { provider },
+	}))
+
+	local connected = refresh(ctx)
+	lu.assertIs(partitionForBattery(connected, fallback), connected.PartitionByCluster[""])
+	lu.assertFalse(capturedBattery(connected, fallback).IsActingAsEWR)
+
+	provider.Available = false
+	local split = refresh(ctx, connected)
+	lu.assertNotIs(partitionForBattery(split, fallback), split.PartitionByCluster[""])
+	lu.assertTrue(capturedBattery(split, fallback).IsActingAsEWR)
+	lu.assertTrue(partitionForBattery(split, fallback).Sustained)
+
+	provider.Available = true
+	local rejoined = refresh(ctx, split)
+	lu.assertIs(partitionForBattery(rejoined, fallback), rejoined.PartitionByCluster[""])
+	lu.assertFalse(capturedBattery(rejoined, fallback).IsActingAsEWR)
+end
+
 function TestPartitionService:test_provider_overflow_degrades_only_the_affected_battery()
 	local ctx = makeContext()
+	ctx.doctrine.SAMAsEWR = C.SAMAsEWRPolicy.ALWAYS
 	for i = 1, C.C2.PROVIDER_CAPACITY do
 		addSensor(ctx, makeSensor("ewr-" .. i, i), {})
 	end
 	local samProvider = makeBattery("sam-provider", 1001)
-	samProvider.IsActingAsEWR = true
 	local covered = makeBattery("covered", 1002)
 	local isolated = makeBattery("isolated", 1003, 10000)
+	covered.Role = C.BatteryRole.SR_SAM
+	isolated.Role = C.BatteryRole.SR_SAM
 	addBattery(ctx, samProvider, {})
 	addBattery(ctx, covered, {})
 	addBattery(ctx, isolated, {})

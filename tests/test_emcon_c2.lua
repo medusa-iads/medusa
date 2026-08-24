@@ -98,22 +98,6 @@ local function context(sensor)
 	}
 end
 
-function TestEmconC2:test_no_operational_ewr_selects_an_eligible_sam()
-	local fixture = context(nil)
-
-	Medusa.Services.EmconService.updateSamAsEwrSelection(fixture.ctx)
-
-	lu.assertTrue(fixture.battery.IsActingAsEWR)
-end
-
-function TestEmconC2:test_operational_ewr_radar_blocks_when_no_ewr_sam_selection()
-	local fixture = context(ewrSensor())
-
-	Medusa.Services.EmconService.updateSamAsEwrSelection(fixture.ctx)
-
-	lu.assertFalse(fixture.battery.IsActingAsEWR)
-end
-
 function TestEmconC2:test_coordinated_battery_accepts_only_same_partition_tracks()
 	local fixture = context(nil)
 	fixture.battery.PartitionKey = "partition-a"

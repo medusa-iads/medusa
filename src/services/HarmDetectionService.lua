@@ -180,6 +180,11 @@ local function isCurrentRadarTarget(battery)
 	return battery and battery.Position ~= nil and Medusa.Entities.Battery.hasSearchRadar(battery)
 end
 
+--- Reports exact nonnil partition equality for HARM inference.
+local function sharesPartition(left, right)
+	return left.PartitionKey ~= nil and left.PartitionKey == right.PartitionKey
+end
+
 --- Returns projected horizontal closest approach to one stationary battery.
 local function horizontalCpa(track, batteryPosition)
 	local velocity = track.SmoothedVelocity or track.Velocity
@@ -214,7 +219,7 @@ local function findCandidateBattery(track, geoGrid, batteryStore, threatRadiusM)
 	local best, bestDist = nil, math.huge
 	for i = 1, #batteries do
 		local b = batteries[i]
-		if isCurrentRadarTarget(b) then
+		if isCurrentRadarTarget(b) and sharesPartition(track, b) then
 			local dist = horizontalCpa(track, b.Position)
 			if dist < threatRadiusM and dist < bestDist then
 				best = b
@@ -636,6 +641,7 @@ function Medusa.Services.HarmDetectionService._backtrackLauncher(harmTrack, allT
 			candidate.TrackId ~= harmTrack.TrackId
 			and candidate.AssessedAircraftType ~= AAT.HARM
 			and candidate.PositionHistory
+			and sharesPartition(harmTrack, candidate)
 		then
 			local cHistory = candidate.PositionHistory:toArray()
 			for ci = 1, #cHistory do

@@ -133,6 +133,21 @@ local function batteryIsProvider(battery)
 		and battery.HasSearchRadar
 end
 
+--- Returns whether battery can provide SAM-as-EWR coverage from captured operational facts.
+local function samAsEwrEligible(battery)
+	if not C.SAM_AS_EWR_ELIGIBLE_ROLES[battery.Role] then
+		return false
+	end
+	local status = battery.OperationalStatus
+	if status ~= C.BatteryOperationalStatus.ACTIVE and status ~= C.BatteryOperationalStatus.SEARCH_ONLY then
+		return false
+	end
+	if battery.CurrentTargetTrackId or battery.HarmShutdownUntil then
+		return false
+	end
+	return battery.Position ~= nil and Battery.hasSearchRadar(battery)
+end
+
 --- Copies position so later live-asset movement cannot change the captured refresh input.
 local function copyPosition(position)
 	if not position then
@@ -169,7 +184,8 @@ local function snapshotBatteries(batteryRepository, hierarchy, doctrine)
 			BatteryId = battery.BatteryId,
 			ClusterKey = hierarchy:clusterKeyForGroup(battery.GroupId),
 			OperationalStatus = battery.OperationalStatus,
-			IsActingAsEWR = battery.IsActingAsEWR,
+			IsActingAsEWR = false,
+			SamAsEwrEligible = samAsEwrEligible(battery),
 			Position = copyPosition(battery.Position),
 			DetectionRangeMax = battery.DetectionRangeMax,
 			EngagementRangeMax = battery.EngagementRangeMax,
@@ -179,6 +195,21 @@ local function snapshotBatteries(batteryRepository, hierarchy, doctrine)
 		}
 	end
 	return snapshot
+end
+
+--- Returns whether doctrine selects the captured SAM in its connected component.
+local function selectSamAsEwr(pending, battery)
+	if not battery.SamAsEwrEligible then
+		return false
+	end
+	if pending.SamAsEwrPolicy == C.SAMAsEWRPolicy.ALWAYS then
+		return true
+	end
+	if pending.SamAsEwrPolicy ~= C.SAMAsEWRPolicy.WHEN_NO_EWR then
+		return false
+	end
+	local component = pending.ComponentByCluster[battery.ClusterKey]
+	return component ~= nil and component.HasEwr ~= true
 end
 
 --- Adds one valid provider identity, cluster, position, and radius to pending refresh inputs.
@@ -255,12 +286,19 @@ local function processInput(pending, budget)
 		if sensorIsProvider(sensor) then
 			markSustained(pending, sensor.ClusterKey)
 			addProvider(pending, sensor.ClusterKey, sensor.Position, sensor.DetectionRangeMax)
+			if sensor.SensorType == C.SensorType.EWR then
+				local component = pending.ComponentByCluster[sensor.ClusterKey]
+				if component then
+					component.HasEwr = true
+				end
+			end
 		end
 		pending.InputCursor = pending.InputCursor + 1
 		processed = processed + 1
 	end
 	while processed < budget and pending.BatteryInputCursor <= #pending.Batteries do
 		local battery = pending.Batteries[pending.BatteryInputCursor]
+		battery.IsActingAsEWR = selectSamAsEwr(pending, battery)
 		if batteryIsProvider(battery) then
 			markSustained(pending, battery.ClusterKey)
 			addProvider(pending, battery.ClusterKey, battery.Position, battery.DetectionRangeMax)
@@ -406,6 +444,7 @@ function Medusa.Services.PartitionService.begin(ctx, previous)
 		Providers = {},
 		PartitionByCluster = {},
 		ProviderOverflowCount = 0,
+		SamAsEwrPolicy = ctx.doctrine.SAMAsEWR or C.SAMAsEWRPolicy.DISABLED,
 	}
 end
 

@@ -85,6 +85,7 @@ function Medusa.Services.TrackManager:new(opts)
 		_dormant = {},
 		_logger = Medusa.Logger:ns("TrackManager"),
 		_pruneBuffer = {},
+		_partitionRetirementBuffer = {},
 		_staleBuffer = {},
 		_expiredBuffer = {},
 		_displayIdAllocator = (opts and opts.displayIdAllocator) or Medusa.Services.TrackDisplayIdAllocator:new(),
@@ -278,6 +279,43 @@ function Medusa.Services.TrackManager:_updateExistingTrack(trackId, report, now)
 	return track
 end
 
+--- Removes one active track from the store, spatial index, source index, and event stream.
+function Medusa.Services.TrackManager:_removeStoredTrack(track, now)
+	if not track then
+		return false
+	end
+	local removed = self._store:remove(track.TrackId)
+	if not removed then
+		return false
+	end
+	if self._geoGrid then
+		self._geoGrid:remove(track.TrackId)
+	end
+	self:_remapSourceKeyMappings(track.TrackId, nil)
+	self._eventBus:publish({ id = "TrackRemoved", TrackId = track.TrackId, timestamp = now })
+	return true
+end
+
+--- Retires tracks owned by partition incarnations absent from the committed snapshot.
+--- @param currentPartitionKeys table<string, boolean> Current partition-key membership set
+--- @param now number Current mission time in seconds
+--- @return number retiredCount Number of obsolete tracks removed
+function Medusa.Services.TrackManager:retirePartitionIncarnations(currentPartitionKeys, now)
+	local tracks = self._store:getAll(self._partitionRetirementBuffer)
+	local retiredCount = 0
+	for i = 1, #tracks do
+		local track = tracks[i]
+		if track.PartitionKey ~= nil and not currentPartitionKeys[track.PartitionKey] then
+			releaseAssignedBatteries(track, self._batteryRepository, now)
+			if self:_removeStoredTrack(track, now) then
+				self:_releaseDisplayIds(track)
+				retiredCount = retiredCount + 1
+			end
+		end
+	end
+	return retiredCount
+end
+
 --- Repoints every source key from one track ID to its survivor or nil.
 function Medusa.Services.TrackManager:_remapSourceKeyMappings(fromTrackId, toTrackId)
 	for sourceKey, mappedTrackId in pairs(self._trackIdBySourceKey) do
@@ -349,14 +387,7 @@ function Medusa.Services.TrackManager:pruneStale(now)
 				self:_releaseDisplayIds(track)
 			end
 		end
-		local removed = self._store:remove(expiredIds[i])
-		if removed then
-			if self._geoGrid then
-				self._geoGrid:remove(expiredIds[i])
-			end
-			self:_remapSourceKeyMappings(removed.TrackId, nil)
-			self._eventBus:publish({ id = "TrackRemoved", TrackId = expiredIds[i], timestamp = now })
-		end
+		self:_removeStoredTrack(track, now)
 	end
 
 	-- Evict stale dormant entries

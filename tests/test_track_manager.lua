@@ -399,6 +399,33 @@ function TestTrackManagerPruneStale:test_reassociation_starts_with_fresh_harm_ev
 	lu.assertFalse(reacquired.IsHarmLauncher)
 end
 
+function TestTrackManagerPruneStale:test_partition_retirement_removes_tracks_without_dormant_reassociation()
+	local retired = self.mgr:processReport(makeReport({
+		NetworkId = "retired-contact",
+		PartitionKey = "partition-old",
+	}))
+	local retained = self.mgr:processReport(makeReport({
+		NetworkId = "retained-contact",
+		PartitionKey = "partition-current",
+	}))
+
+	local retiredCount = self.mgr:retirePartitionIncarnations({ ["partition-current"] = true }, mockTime)
+
+	lu.assertEquals(retiredCount, 1)
+	lu.assertNil(self.mgr:getStore():get(retired.TrackId))
+	lu.assertEquals(self.mgr:getStore():get(retained.TrackId), retained)
+	lu.assertNil(self.mgr._trackIdBySourceKey["retired-contact\001partition-old"])
+	lu.assertNil(self.mgr._dormant["retired-contact\001partition-old"])
+
+	local reacquired = self.mgr:processReport(makeReport({
+		NetworkId = "retired-contact",
+		PartitionKey = "partition-current",
+	}))
+	lu.assertNotNil(reacquired)
+	lu.assertNotEquals(reacquired.TrackId, retired.TrackId)
+	lu.assertNotEquals(reacquired.DisplayTrackId, retired.DisplayTrackId)
+end
+
 -- == TestTrackManagerMergeSplit ==
 
 TestTrackManagerMergeSplit = {}

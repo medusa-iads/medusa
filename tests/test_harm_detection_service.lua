@@ -42,6 +42,7 @@ local function makeTrack(overrides)
 	local base = {
 		Position = { x = 1000, y = 5000, z = 2000 },
 		Velocity = { x = 300, y = -30, z = 150 },
+		PartitionKey = "partition-a",
 		NetworkId = overrides and overrides.NetworkId or string.format("net-%d", math.random(1, 999999)),
 	}
 	if overrides then
@@ -59,6 +60,7 @@ local function makeBattery(overrides)
 		GroupName = overrides and overrides.GroupName or string.format("SAM-%d", math.random(1, 999999)),
 		OperationalStatus = "ACTIVE",
 		ActivationState = "STATE_WARM",
+		PartitionKey = "partition-a",
 		Position = { x = 5000, y = 0, z = 5000 },
 		DetectionRangeMax = 50000,
 		EngagementRangeMax = 50000,
@@ -226,6 +228,23 @@ function TestEvaluateTrack:test_track_that_misses_radar_battery_skips_assessment
 
 	lu.assertEquals(label, "EVALUATING")
 	lu.assertNil(state)
+end
+
+function TestEvaluateTrack:test_candidate_battery_requires_exact_nonnull_partition()
+	local emitterPos = { x = 10000, y = 0, z = 6000 }
+	local crossTrack = makeTrack({ AssessedAircraftType = "MISSILE" })
+	local missingTrack = makeTrack({ AssessedAircraftType = "MISSILE" })
+	missingTrack.PartitionKey = nil
+	populateArmHistory(crossTrack, 2, mockTime, emitterPos)
+	populateArmHistory(missingTrack, 2, mockTime, emitterPos)
+	local battery = makeBattery({ PartitionKey = "partition-b", Position = emitterPos })
+	local store, grid = makeBatteryStoreAndGrid({ battery })
+
+	local _, crossState = Medusa.Services.HarmDetectionService._evaluateTrack(crossTrack, grid, store)
+	local _, missingState = Medusa.Services.HarmDetectionService._evaluateTrack(missingTrack, grid, store)
+
+	lu.assertNil(crossState)
+	lu.assertNil(missingState)
 end
 
 function TestEvaluateTrack:test_hot_independent_aaa_is_not_a_radar_target()
@@ -539,6 +558,29 @@ function TestAssessHarmThreats:test_inferred_launcher_cannot_also_become_a_confi
 		)
 	)
 	lu.assertNotEquals(launcher.AssessedAircraftType, "HARM")
+end
+
+function TestAssessHarmThreats:test_launcher_backtracking_requires_exact_nonnull_partition()
+	local harm = makeTrack({ TrackId = "harm" })
+	local same = makeTrack({ TrackId = "same", AssessedAircraftType = "FIGHTER" })
+	local cross = makeTrack({
+		TrackId = "cross",
+		PartitionKey = "partition-b",
+		AssessedAircraftType = "FIGHTER",
+	})
+	local missing = makeTrack({ TrackId = "missing", AssessedAircraftType = "FIGHTER" })
+	missing.PartitionKey = nil
+	Medusa.Entities.Track.update(harm, { x = 0, y = 1000, z = 0 }, { x = 500, y = 0, z = 0 }, 1000)
+	Medusa.Entities.Track.update(harm, { x = 5000, y = 1000, z = 0 }, { x = 500, y = 0, z = 0 }, 1010)
+	Medusa.Entities.Track.update(same, { x = 100, y = 1000, z = 0 }, { x = 200, y = 0, z = 0 }, 1000)
+	Medusa.Entities.Track.update(cross, { x = 10, y = 1000, z = 0 }, { x = 200, y = 0, z = 0 }, 1000)
+	Medusa.Entities.Track.update(missing, { x = 1, y = 1000, z = 0 }, { x = 200, y = 0, z = 0 }, 1000)
+
+	Medusa.Services.HarmDetectionService._backtrackLauncher(harm, { harm, same, cross, missing })
+
+	lu.assertTrue(same.IsHarmLauncher)
+	lu.assertFalse(cross.IsHarmLauncher)
+	lu.assertFalse(missing.IsHarmLauncher)
 end
 
 function TestAssessHarmThreats:test_does_not_reclassify_non_arm()

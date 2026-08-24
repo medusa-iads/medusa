@@ -5,6 +5,8 @@ require("_header")
 require("core.Logger")
 require("services.Services")
 require("services.stores.C2NodeStore")
+require("services.stores.SensorUnitStore")
+require("entities.SensorUnit")
 
 -- == Helpers ==
 
@@ -127,11 +129,36 @@ function TestC2NodeStore:test_restores_the_selected_provider_with_a_new_unit_id(
 		Providers = { provider },
 	}))
 	self.store:setProviderUnavailable(provider)
+	lu.assertIsNil(provider.UnitId)
+	lu.assertNil(self.unitIndex:getRegisteredOwner(41, Medusa.Constants.UnitOwnerKind.COMMAND_PROVIDER))
 	self.store:markProviderAvailable(provider, 51)
 
 	lu.assertTrue(provider.Available)
 	lu.assertNil(self.unitIndex:getRegisteredOwner(41, Medusa.Constants.UnitOwnerKind.COMMAND_PROVIDER))
 	lu.assertIs(self.unitIndex:getRegisteredOwner(51, Medusa.Constants.UnitOwnerKind.COMMAND_PROVIDER), provider)
+end
+
+function TestC2NodeStore:test_provider_loss_releases_reused_unit_id_for_a_new_sensor()
+	local provider = { UnitId = 41, UnitName = "HQ-provider", Available = true }
+	self.store:add(makeC2Node({
+		GroupId = 10,
+		NodeName = "HQ-Alpha",
+		Providers = { provider },
+	}))
+
+	self.store:setProviderUnavailable(provider)
+	local sensorStore = Medusa.Services.SensorUnitStore:new(self.unitIndex)
+	local sensor = Medusa.Entities.SensorUnit.new({
+		NetworkId = "T",
+		UnitId = 41,
+		UnitName = "new-ewr",
+		GroupId = 20,
+		GroupName = "new-ewr-group",
+	})
+
+	lu.assertTrue(sensorStore:add(sensor))
+	lu.assertEquals(sensorStore:get(sensor.SensorUnitId), sensor)
+	lu.assertIs(self.unitIndex:getRegisteredOwner(41, Medusa.Constants.UnitOwnerKind.SENSOR), sensor)
 end
 
 function TestC2NodeStore:test_reused_unit_id_retires_the_previous_provider_owner()
@@ -143,7 +170,21 @@ function TestC2NodeStore:test_reused_unit_id_retires_the_previous_provider_owner
 	self.store:markProviderAvailable(second, 41)
 
 	lu.assertFalse(first.Available)
+	lu.assertNil(first.UnitId)
 	lu.assertTrue(second.Available)
 	lu.assertEquals(second.UnitId, 41)
 	lu.assertIs(self.unitIndex:getRegisteredOwner(41, Medusa.Constants.UnitOwnerKind.COMMAND_PROVIDER), second)
+end
+
+function TestC2NodeStore:test_provider_health_cursor_visits_each_selected_provider()
+	local first = { UnitId = 41, UnitName = "HQ-alpha-primary", Available = true }
+	local second = { UnitId = 42, UnitName = "HQ-alpha-secondary", Available = true }
+	local third = { UnitId = 43, UnitName = "HQ-bravo-primary", Available = true }
+	self.store:add(makeC2Node({ NodeName = "HQ-Alpha", Providers = { first, second } }))
+	self.store:add(makeC2Node({ NodeName = "HQ-Bravo", Providers = { third } }))
+
+	lu.assertIs(self.store:nextProviderForHealthRefresh(), first)
+	lu.assertIs(self.store:nextProviderForHealthRefresh(), second)
+	lu.assertIs(self.store:nextProviderForHealthRefresh(), third)
+	lu.assertIs(self.store:nextProviderForHealthRefresh(), first)
 end

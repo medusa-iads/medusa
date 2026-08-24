@@ -98,6 +98,11 @@ local function isRWRIlluminated(track)
 	return track.DetectingSensorIds and not track.DetectingSensorIds:isEmpty()
 end
 
+--- Reports exact nonnil partition equality for classification inference.
+local function sharesPartition(left, right)
+	return left.PartitionKey ~= nil and left.PartitionKey == right.PartitionKey
+end
+
 local function checkHostileIntent(track, geoGrid, batteryStore, now, sustainedSec, bearingDeg, minSpeedMps, maxRange)
 	local vel = track.SmoothedVelocity or track.Velocity
 	if not vel or not track.Position then
@@ -121,7 +126,7 @@ local function checkHostileIntent(track, geoGrid, batteryStore, now, sustainedSe
 
 	for bi = 1, #batteries do
 		local b = batteries[bi]
-		if b.Position then
+		if b.Position and sharesPartition(track, b) then
 			local dx = b.Position.x - track.Position.x
 			local dz = b.Position.z - track.Position.z
 			local bearingToAsset = math.atan2(dz, dx)
@@ -443,6 +448,7 @@ local function applyGuiltByAssociation(tracks, trackStore, now)
 					and cId ~= promoted.newId
 					and candidate.Position
 					and candidate.LifecycleState == LS.ACTIVE
+					and sharesPartition(promoted.track, candidate)
 				then
 					if isGuiltAligned(promoted.track, pSpeed, pHdg, candidate) then
 						trackStore:updateIdentification(candidate.TrackId, promoted.newId)

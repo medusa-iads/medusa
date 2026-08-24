@@ -4,7 +4,6 @@ require("core.Constants")
 require("core.Logger")
 require("services.BatteryActivationService")
 require("entities.Battery")
-require("entities.SensorUnit")
 
 --[[
             ███████╗███╗   ███╗ ██████╗ ██████╗ ███╗   ██╗    ███████╗███████╗██████╗ ██╗   ██╗██╗ ██████╗███████╗
@@ -17,7 +16,7 @@ require("entities.SensorUnit")
     What this service does
     - Decides which batteries and sensors should have radars on based on doctrine EMCON policy.
     - Supports MINIMIZE, ALWAYS_ON, PERIODIC_SCAN, and COORDINATED_ROTATION schedules.
-    - Manages SAM-as-EWR promotion when no dedicated EWR sensors are available.
+    - Applies the SAM-as-EWR selection published by the current partition snapshot.
 
     How others use it
     - IadsNetwork calls applyPolicy each tick to enforce EMCON across all batteries and sensor groups.
@@ -169,51 +168,6 @@ local function _shouldSkip(battery, doctrine, now)
 	return false
 end
 
---- Reports whether battery can provide SAM-as-EWR coverage from current operational facts.
-local function _isEwrEligible(battery)
-	if not C.SAM_AS_EWR_ELIGIBLE_ROLES[battery.Role] then
-		return false
-	end
-	local s = battery.OperationalStatus
-	if s ~= BOS.ACTIVE and s ~= BOS.SEARCH_ONLY then
-		return false
-	end
-	if battery.CurrentTargetTrackId or battery.HarmShutdownUntil then
-		return false
-	end
-	return battery.Position ~= nil and Medusa.Entities.Battery.hasSearchRadar(battery)
-end
-
---- Reports whether doctrine currently needs a SAM provider because no operational EWR exists.
-local function _isSamAsEwrActive(doctrine, sensorStore)
-	local policy = doctrine.SAMAsEWR or C.SAMAsEWRPolicy.DISABLED
-	if policy == C.SAMAsEWRPolicy.DISABLED then
-		return false
-	end
-	if policy == C.SAMAsEWRPolicy.WHEN_NO_EWR and sensorStore then
-		local sensors = sensorStore:getAll(_sensorBuffer)
-		for i = 1, #sensors do
-			local sensor = sensors[i]
-			if sensor.SensorType == C.SensorType.EWR and Medusa.Entities.SensorUnit.isAvailable(sensor) then
-				return false
-			end
-		end
-	end
-	return true
-end
-
---- Applies SAM-as-EWR doctrine from current operational EWR availability.
-function Medusa.Services.EmconService.updateSamAsEwrSelection(ctx)
-	local batteryStore = ctx.batteryStore
-	local batteries = batteryStore:getAll(_batteryBuffer)
-	local active = _isSamAsEwrActive(ctx.doctrine, ctx.sensorStore)
-	for i = 1, #batteries do
-		local battery = batteries[i]
-		local selected = active and _isEwrEligible(battery) or false
-		battery.IsActingAsEWR = selected
-	end
-end
-
 --- Logs the EMCON rotation schedule so operators can verify group assignments.
 function Medusa.Services.EmconService.logSchedule(ctx)
 	local batteryStore = ctx.batteryStore
@@ -287,7 +241,6 @@ function Medusa.Services.EmconService.applyPolicy(ctx, network)
 	local batteries = batteryStore:getAll(_batteryBuffer)
 	local count = #batteries
 	local transitions = 0
-	Medusa.Services.EmconService.updateSamAsEwrSelection(ctx)
 
 	local sensorCount = sensorStore and sensorStore:count() or 0
 	local ewrBatteryCount = 0

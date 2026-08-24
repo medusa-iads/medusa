@@ -19,6 +19,7 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 - HARM assessment now samples tracks every two seconds, requires at least five observations.
 - HARM defense now considers viable defensive capacity before remaining active and reports committed defense only after defenders are HOT and assigned to an active HARM.
 - Point defenders now select protected sites and HARM targets by role, readiness, partition, and distance. One defender may protect more than one nearby site.
+- `SAMAsEWR = "WHEN_NO_EWR"` now selects eligible SAM radar providers separately inside each disconnected command partition.
 
 ### Fixed
 
@@ -44,6 +45,10 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 - SHOT events with missing weapon details still update activity and shot counters, without decrementing ammunition.
 - `S_EVENT_UNIT_LOST`, `DEAD`, and `CRASH` now use the same unit-removal behavior.
 - Leading or trailing spaces in configured group names no longer prevent discovery.
+- Partition splits and rejoins no longer leave obsolete tracks consuming capacity or affecting the new partition.
+- Guilt-by-association, hostile-intent, and HARM-launcher inference no longer cross disconnected command partitions.
+- HQ loss and restoration remain recoverable when unrelated DCS death events arrive in a large burst.
+- A destroyed HQ provider no longer blocks a later managed unit that reuses its DCS unit identifier.
 
 ### Removed
 
