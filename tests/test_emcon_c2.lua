@@ -3,6 +3,7 @@ local lu = require("luaunit")
 require("mocks.mock_dcs")
 require("_header")
 require("core.Constants")
+require("core.Logger")
 require("entities.Battery")
 require("entities.SensorUnit")
 require("services.EmconService")
@@ -21,6 +22,13 @@ local READINESS_GLOBALS = {
 }
 
 function TestEmconC2:setUp()
+	self.originalInfo = env.info
+	self.originalLogLevel = Medusa.Logger:getLevel()
+	self.infoMessages = {}
+	env.info = function(message)
+		self.infoMessages[#self.infoMessages + 1] = message
+	end
+	Medusa.Logger:setLevel(Medusa.Constants.LogLevel.INFO)
 	self.originalGlobals = {}
 	for i = 1, #READINESS_GLOBALS do
 		local name = READINESS_GLOBALS[i]
@@ -40,6 +48,8 @@ function TestEmconC2:setUp()
 end
 
 function TestEmconC2:tearDown()
+	env.info = self.originalInfo
+	Medusa.Logger:setLevel(self.originalLogLevel)
 	Medusa.Services.BatteryActivationService.goWarm = self.originalGoWarm
 	Medusa.Services.BatteryActivationService.goCold = self.originalGoCold
 	Medusa.Services.BatteryActivationService.setSensorState = self.originalSetSensorState
@@ -98,6 +108,31 @@ local function context(sensor)
 	}
 end
 
+function TestEmconC2:test_sensor_group_emcon_transition_logs_once_at_info()
+	local sensor = ewrSensor()
+	local fixture = context(sensor)
+	fixture.ctx.doctrine = {
+		EMCON = { EWR = Medusa.Constants.EmissionControlPolicy.ALWAYS_ON },
+		SAMAsEWR = Medusa.Constants.SAMAsEWRPolicy.DISABLED,
+	}
+	fixture.ctx.now = 10
+	Medusa.Services.BatteryActivationService.setSensorState = function()
+		return true
+	end
+
+	Medusa.Services.EmconService.applyPolicy(fixture.ctx)
+	Medusa.Services.EmconService.applyPolicy(fixture.ctx)
+
+	local transitions = {}
+	for i = 1, #self.infoMessages do
+		if string.find(self.infoMessages[i], "sensor group ewr EMCON", 1, true) then
+			transitions[#transitions + 1] = self.infoMessages[i]
+		end
+	end
+	lu.assertEquals(#transitions, 1)
+	lu.assertStrContains(transitions[1], "[ Medusa | INFO | EmconService ] sensor group ewr EMCON INITIALIZING -> STATE_WARM reason=policy")
+end
+
 function TestEmconC2:test_coordinated_battery_accepts_only_same_partition_tracks()
 	local fixture = context(nil)
 	fixture.battery.PartitionKey = "partition-a"
@@ -154,30 +189,21 @@ end
 
 function TestEmconC2:test_autonomous_degraded_battery_stays_warm_under_minimize()
 	lu.assertEquals(
-		applyDegradedPolicy(
-			Medusa.Constants.NetworkDegradationPolicy.REVERT_TO_AUTONOMOUS,
-			Medusa.Constants.ActivationState.STATE_COLD
-		),
+		applyDegradedPolicy(Medusa.Constants.NetworkDegradationPolicy.REVERT_TO_AUTONOMOUS, Medusa.Constants.ActivationState.STATE_COLD),
 		Medusa.Constants.ActivationState.STATE_WARM
 	)
 end
 
 function TestEmconC2:test_self_defense_degraded_battery_stays_warm_under_minimize()
 	lu.assertEquals(
-		applyDegradedPolicy(
-			Medusa.Constants.NetworkDegradationPolicy.REVERT_TO_SELF_DEFENSE,
-			Medusa.Constants.ActivationState.STATE_COLD
-		),
+		applyDegradedPolicy(Medusa.Constants.NetworkDegradationPolicy.REVERT_TO_SELF_DEFENSE, Medusa.Constants.ActivationState.STATE_COLD),
 		Medusa.Constants.ActivationState.STATE_WARM
 	)
 end
 
 function TestEmconC2:test_go_dark_degraded_battery_becomes_cold()
 	lu.assertEquals(
-		applyDegradedPolicy(
-			Medusa.Constants.NetworkDegradationPolicy.GO_DARK,
-			Medusa.Constants.ActivationState.STATE_WARM
-		),
+		applyDegradedPolicy(Medusa.Constants.NetworkDegradationPolicy.GO_DARK, Medusa.Constants.ActivationState.STATE_WARM),
 		Medusa.Constants.ActivationState.STATE_COLD
 	)
 end
@@ -210,15 +236,9 @@ function TestEmconC2:test_degraded_readiness_policy_is_independent_of_minimize()
 		EMCON = { LR_SAM = Medusa.Constants.EmissionControlPolicy.MINIMIZE },
 	}
 
-	lu.assertEquals(
-		Medusa.Services.EmconService.getDesiredBatteryState(battery, 1, 1, doctrine, 10),
-		Medusa.Constants.ActivationState.STATE_WARM
-	)
+	lu.assertEquals(Medusa.Services.EmconService.getDesiredBatteryState(battery, 1, 1, doctrine, 10), Medusa.Constants.ActivationState.STATE_WARM)
 	doctrine.DegradedMode = Medusa.Constants.NetworkDegradationPolicy.GO_DARK
-	lu.assertEquals(
-		Medusa.Services.EmconService.getDesiredBatteryState(battery, 1, 1, doctrine, 10),
-		Medusa.Constants.ActivationState.STATE_COLD
-	)
+	lu.assertEquals(Medusa.Services.EmconService.getDesiredBatteryState(battery, 1, 1, doctrine, 10), Medusa.Constants.ActivationState.STATE_COLD)
 end
 
 function TestEmconC2:test_failed_readiness_is_retried_on_the_next_policy_pass()

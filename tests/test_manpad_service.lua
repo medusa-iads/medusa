@@ -365,11 +365,7 @@ function TestManpadAlertToAsleep:test_alert_transitionsToAsleep_withEmptyQuery()
 
 	evaluateSingle(bat, makeTrackStore(), makeGeoGrid({}), now, "NORMAL")
 
-	lu.assertEquals(
-		bat.Manpad.SleepWakeState,
-		"ASLEEP",
-		"state must become ASLEEP when idle timeout expires and no tracks nearby"
-	)
+	lu.assertEquals(bat.Manpad.SleepWakeState, "ASLEEP", "state must become ASLEEP when idle timeout expires and no tracks nearby")
 	lu.assertEquals(bat.Manpad.WakeReason, "NONE", "WakeReason must clear on ALERT -> ASLEEP")
 	lu.assertIsNil(bat.Manpad.AlertStartTime, "AlertStartTime must be cleared on ALERT → ASLEEP")
 end
@@ -529,11 +525,7 @@ function TestManpadScheduleWake:test_scheduleWake_duplicateGuard()
 
 	Medusa.Services.ManpadService.cueFromIADS(self.network._ctx, bat.Position)
 
-	lu.assertEquals(
-		#timerHarness.scheduledCallbacks,
-		0,
-		"cueFromIADS must not schedule when WakeTimerId is already set"
-	)
+	lu.assertEquals(#timerHarness.scheduledCallbacks, 0, "cueFromIADS must not schedule when WakeTimerId is already set")
 	lu.assertEquals(bat.Manpad.WakeTimerId, "already-scheduled", "WakeTimerId must remain unchanged on duplicate guard")
 end
 
@@ -541,16 +533,9 @@ function TestManpadScheduleWake:test_scheduleWake_emptyContextStore_isNoOp()
 	local bat = makeManpadBattery({ NetworkId = "unregistered-network-xyz" })
 	local emptyStore = newManpadView()
 
-	Medusa.Services.ManpadService.cueFromIADS(
-		{ manpadStore = emptyStore, localGeoGrid = makeGeoGrid({}) },
-		bat.Position
-	)
+	Medusa.Services.ManpadService.cueFromIADS({ manpadStore = emptyStore, localGeoGrid = makeGeoGrid({}) }, bat.Position)
 
-	lu.assertEquals(
-		#timerHarness.scheduledCallbacks,
-		0,
-		"cueFromIADS must not schedule when its explicit store is empty"
-	)
+	lu.assertEquals(#timerHarness.scheduledCallbacks, 0, "cueFromIADS must not schedule when its explicit store is empty")
 	lu.assertIsNil(bat.Manpad.WakeTimerId)
 end
 

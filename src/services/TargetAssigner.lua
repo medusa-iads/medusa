@@ -260,10 +260,7 @@ local function trackAcceptsBattery(track, batteryRole, ctx)
 		if batteryRole == BR.SR_SAM then
 			return true
 		end
-		return roleCount(track.TrackId, BR.LR_SAM)
-				+ roleCount(track.TrackId, BR.MR_SAM)
-				+ roleCount(track.TrackId, BR.GENERIC_SAM)
-			< 2
+		return roleCount(track.TrackId, BR.LR_SAM) + roleCount(track.TrackId, BR.MR_SAM) + roleCount(track.TrackId, BR.GENERIC_SAM) < 2
 	end
 	return false
 end
@@ -282,12 +279,7 @@ local function buildCandidatePairs(tracks, ctx, minId)
 			-- HARMs are handled by HarmResponseService + PointDefenseService, not WTA
 		elseif track.LifecycleState == LS.ACTIVE and meetsMinIdentification(track.TrackIdentification, minId) then
 			local threatValue = computeThreatValue(track, ctx)
-			local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(
-				ctx.geoGrid,
-				ctx.batteryStore,
-				track.Position,
-				ctx.maxRange
-			)
+			local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(ctx.geoGrid, ctx.batteryStore, track.Position, ctx.maxRange)
 			for j = 1, #batteries do
 				if trackAcceptsBattery(track, batteries[j].Role, ctx) then
 					n = tryAddPair(batteries[j], track, threatValue, n, ctx)
@@ -384,11 +376,7 @@ function Medusa.Services.TargetAssigner.emconSelfAssign(ctx)
 
 	for i = 1, #batteries do
 		local battery = batteries[i]
-		local isEmconAutonomous = roe == ROE.FREE
-			and emcon
-			and battery.ActivationState == AS.STATE_WARM
-			and isBatteryEligible(battery)
-			and emcon[battery.Role] == ECP.ALWAYS_ON
+		local isEmconAutonomous = roe == ROE.FREE and emcon and battery.ActivationState == AS.STATE_WARM and isBatteryEligible(battery) and emcon[battery.Role] == ECP.ALWAYS_ON
 		if isEmconAutonomous then
 			local trackId = findBestTrackForBattery(battery, ctx)
 			if trackId then
@@ -397,13 +385,7 @@ function Medusa.Services.TargetAssigner.emconSelfAssign(ctx)
 					Medusa.Entities.Battery.assignTrack(battery, trackObj, ctx.now, ctx.trackStore)
 				end
 				assignments[#assignments + 1] = { batteryId = battery.BatteryId, trackId = trackId }
-				_logger:info(
-					string.format(
-						"EMCON self-assign: battery %s engaging track %s",
-						battery.GroupName,
-						Medusa.Entities.Track.displayId(trackObj)
-					)
-				)
+				_logger:info(string.format("EMCON self-assign: battery %s engaging track %s", battery.GroupName, Medusa.Entities.Track.displayId(trackObj)))
 			end
 		end
 	end
@@ -453,12 +435,7 @@ local function _assignSeadPriority(tracks, ctx, minId, assignments)
 			and meetsMinIdentification(track.TrackIdentification, minId)
 			and standardMissileSlotCount(track.TrackId) == 0
 		then
-			local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(
-				ctx.geoGrid,
-				ctx.batteryStore,
-				track.Position,
-				ctx.maxRange
-			)
+			local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(ctx.geoGrid, ctx.batteryStore, track.Position, ctx.maxRange)
 			local bestPk, bestBat = 0, nil
 			for j = 1, #nearby do
 				if
@@ -482,14 +459,7 @@ local function _assignSeadPriority(tracks, ctx, minId, assignments)
 			end
 			if bestBat and bestPk >= pkFloor then
 				commitAssignment(bestBat, track, bestPk, ctx.now, assignments, bestBat.Role ~= BR.AAA)
-				_logger:info(
-					string.format(
-						"SEAD priority: battery %s to track %s (pk=%.2f)",
-						bestBat.GroupName,
-						Medusa.Entities.Track.displayId(track),
-						bestPk
-					)
-				)
+				_logger:info(string.format("SEAD priority: battery %s to track %s (pk=%.2f)", bestBat.GroupName, Medusa.Entities.Track.displayId(track), bestPk))
 			end
 		end
 	end
@@ -516,17 +486,10 @@ local function _greedyAssign(pairCount, ctx, assignments)
 			break
 		end
 		local best = _pairBuffer[bestIdx]
-		local affectsSurvival = best.battery.Role ~= BR.AAA
-			and (tactics ~= CET.SHOOT_SHOOT_FLOOD or best.battery.Role ~= BR.SR_SAM)
+		local affectsSurvival = best.battery.Role ~= BR.AAA and (tactics ~= CET.SHOOT_SHOOT_FLOOD or best.battery.Role ~= BR.SR_SAM)
 		commitAssignment(best.battery, best.track, best.pk, ctx.now, assignments, affectsSurvival)
 		_logger:info(
-			string.format(
-				"assigned battery %s to track %s (pk=%.2f, threat=%d)",
-				best.battery.GroupName,
-				Medusa.Entities.Track.displayId(best.track),
-				best.pk,
-				best.threatValue
-			)
+			string.format("assigned battery %s to track %s (pk=%.2f, threat=%d)", best.battery.GroupName, Medusa.Entities.Track.displayId(best.track), best.pk, best.threatValue)
 		)
 	end
 end
@@ -568,10 +531,7 @@ local function isHandoffEligible(battery, now)
 	if not battery.CurrentTargetTrackId or not battery.Position then
 		return false
 	end
-	if
-		battery.LastAssignmentChangeTime
-		and (now - battery.LastAssignmentChangeTime) < Medusa.Constants.HANDOFF_DWELL_SEC
-	then
+	if battery.LastAssignmentChangeTime and (now - battery.LastAssignmentChangeTime) < Medusa.Constants.HANDOFF_DWELL_SEC then
 		return false
 	end
 	return true
@@ -588,16 +548,11 @@ end
 
 --- Searches for an alternative battery with higher Pk than the current holder.
 local function findBetterBattery(track, projPos, currentPk, currentBatteryId, ctx)
-	local batteries =
-		Medusa.Services.SpatialQuery.batteriesInRadius(ctx.geoGrid, ctx.batteryStore, track.Position, ctx.maxRange)
+	local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(ctx.geoGrid, ctx.batteryStore, track.Position, ctx.maxRange)
 	local bestId, bestPk = nil, currentPk
 	for i = 1, #batteries do
 		local alt = batteries[i]
-		if
-			alt.BatteryId ~= currentBatteryId
-			and isBatteryEligible(alt)
-			and Medusa.Entities.Battery.canAcceptTrack(alt, track, ctx.doctrine)
-		then
+		if alt.BatteryId ~= currentBatteryId and isBatteryEligible(alt) and Medusa.Entities.Battery.canAcceptTrack(alt, track, ctx.doctrine) then
 			local projDist = nearestClusterDist(alt, projPos)
 			if projDist and projDist <= cappedRange(alt, ctx) then
 				local altPk = computePk(alt, track, projDist)
@@ -644,14 +599,7 @@ function Medusa.Services.TargetAssigner.evaluateSingleHandoff(battery, ctx)
 	local pk = computePk(battery, track, projDist)
 
 	if pkBelowStickyFloor(pk, pkFloor, stickyFactor) then
-		_logger:info(
-			string.format(
-				"handoff: battery %s pk=%.2f below floor for track %s",
-				battery.GroupName,
-				pk,
-				Medusa.Entities.Track.displayId(track)
-			)
-		)
+		_logger:info(string.format("handoff: battery %s pk=%.2f below floor for track %s", battery.GroupName, pk, Medusa.Entities.Track.displayId(track)))
 		return { batteryId = battery.BatteryId, trackId = battery.CurrentTargetTrackId }
 	end
 

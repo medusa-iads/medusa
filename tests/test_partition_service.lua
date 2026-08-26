@@ -328,20 +328,11 @@ function TestPartitionService:test_four_level_hierarchy_skips_a_missing_hq_acros
 	hqs.level2.Provider.Available = false
 	local middleSplit = refresh(ctx, connected)
 	lu.assertIs(partitionForBattery(middleSplit, batteries.root), partitionForBattery(middleSplit, batteries.level1))
-	lu.assertIs(
-		partitionForBattery(middleSplit, batteries.root),
-		partitionForBattery(middleSplit, batteries.siblingTop)
-	)
+	lu.assertIs(partitionForBattery(middleSplit, batteries.root), partitionForBattery(middleSplit, batteries.siblingTop))
 	lu.assertIs(partitionForBattery(middleSplit, batteries.level2), partitionForBattery(middleSplit, batteries.level3))
 	lu.assertIs(partitionForBattery(middleSplit, batteries.level2), partitionForBattery(middleSplit, batteries.level4))
-	lu.assertIs(
-		partitionForBattery(middleSplit, batteries.level2),
-		partitionForBattery(middleSplit, batteries.siblingDeep)
-	)
-	lu.assertNotIs(
-		partitionForBattery(middleSplit, batteries.level1),
-		partitionForBattery(middleSplit, batteries.level2)
-	)
+	lu.assertIs(partitionForBattery(middleSplit, batteries.level2), partitionForBattery(middleSplit, batteries.siblingDeep))
+	lu.assertNotIs(partitionForBattery(middleSplit, batteries.level1), partitionForBattery(middleSplit, batteries.level2))
 
 	hqs.level4.Provider.Available = false
 	local deepSplit = refresh(ctx, middleSplit)
@@ -352,10 +343,7 @@ function TestPartitionService:test_four_level_hierarchy_skips_a_missing_hq_acros
 	hqs.siblingTop.Provider.Available = false
 	local siblingSplit = refresh(ctx, deepSplit)
 	lu.assertIs(partitionForBattery(siblingSplit, batteries.root), partitionForBattery(siblingSplit, batteries.level1))
-	lu.assertNotIs(
-		partitionForBattery(siblingSplit, batteries.root),
-		partitionForBattery(siblingSplit, batteries.siblingTop)
-	)
+	lu.assertNotIs(partitionForBattery(siblingSplit, batteries.root), partitionForBattery(siblingSplit, batteries.siblingTop))
 	for _, battery in pairs(batteries) do
 		lu.assertEquals(capturedBattery(siblingSplit, battery).CoordinationState, C.CoordinationState.COORDINATED)
 	end
@@ -574,10 +562,7 @@ function TestPartitionService:test_supported_population_completes_within_fifteen
 	lu.assertTrue(steps + 1 <= 150)
 	lu.assertEquals(#snapshot.PartitionByCluster[""].ClusterKeys, 65)
 	lu.assertEquals(snapshot.PartitionByCluster["hq-64"], snapshot.PartitionByCluster[""])
-	lu.assertEquals(
-		capturedBattery(snapshot, { BatteryId = "sam-512" }).CoordinationState,
-		C.CoordinationState.COORDINATED
-	)
+	lu.assertEquals(capturedBattery(snapshot, { BatteryId = "sam-512" }).CoordinationState, C.CoordinationState.COORDINATED)
 end
 
 function TestPartitionService:test_population_overflow_rejects_the_refresh()

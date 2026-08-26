@@ -29,10 +29,7 @@ function TestCoverageGeometry:test_tangent_provider_has_zero_coverage()
 end
 
 function TestCoverageGeometry:test_exactly_half_is_insufficient()
-	local class = CoverageGeometry.evaluate(
-		{ x = 0, z = 0, radius = 100 },
-		{ { x = 80.79455075990342, z = 0, radius = 100 } }
-	)
+	local class = CoverageGeometry.evaluate({ x = 0, z = 0, radius = 100 }, { { x = 80.79455075990342, z = 0, radius = 100 } })
 
 	lu.assertEquals(class, Medusa.Constants.CoverageClass.INSUFFICIENT)
 end
@@ -44,10 +41,7 @@ function TestCoverageGeometry:test_more_than_half_is_sufficient()
 end
 
 function TestCoverageGeometry:test_any_valid_amount_above_half_is_sufficient()
-	local class = CoverageGeometry.evaluate(
-		{ x = 0, z = 0, radius = 100 },
-		{ { x = 80.79455055990342, z = 0, radius = 100 } }
-	)
+	local class = CoverageGeometry.evaluate({ x = 0, z = 0, radius = 100 }, { { x = 80.79455055990342, z = 0, radius = 100 } })
 
 	lu.assertEquals(class, Medusa.Constants.CoverageClass.SUFFICIENT)
 end

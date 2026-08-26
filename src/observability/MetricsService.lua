@@ -71,8 +71,7 @@ end
 
 function Medusa.Observability.MetricsService.counter(name, help, labelKeys)
 	if labelKeys then
-		Medusa.Observability.MetricsService._registry[name] =
-			{ type = "counter", help = help or "", label_keys = labelKeys, series = {} }
+		Medusa.Observability.MetricsService._registry[name] = { type = "counter", help = help or "", label_keys = labelKeys, series = {} }
 	else
 		Medusa.Observability.MetricsService._registry[name] = { type = "counter", help = help or "", value = 0 }
 	end
@@ -80,8 +79,7 @@ end
 
 function Medusa.Observability.MetricsService.gauge(name, help, labelKeys)
 	if labelKeys then
-		Medusa.Observability.MetricsService._registry[name] =
-			{ type = "gauge", help = help or "", label_keys = labelKeys, series = {} }
+		Medusa.Observability.MetricsService._registry[name] = { type = "gauge", help = help or "", label_keys = labelKeys, series = {} }
 	else
 		Medusa.Observability.MetricsService._registry[name] = { type = "gauge", help = help or "", value = 0 }
 	end
@@ -372,13 +370,7 @@ local function serializeLabeledSummary(name, entry)
 		if qVals then
 			for i = 1, #entry.quantiles do
 				n = n + 1
-				lines[n] = string.format(
-					'%s{%s,quantile="%s"} %s',
-					name,
-					key,
-					tostring(entry.quantiles[i]),
-					tostring(qVals[i])
-				)
+				lines[n] = string.format('%s{%s,quantile="%s"} %s', name, key, tostring(entry.quantiles[i]), tostring(qVals[i]))
 			end
 		end
 		n = n + 1
@@ -418,35 +410,16 @@ function Medusa.Observability.MetricsService.serialize()
 				if entry.value == "" then
 					parts[n] = string.format("# HELP %s %s\n# TYPE %s gauge", name, entry.help, name)
 				else
-					parts[n] = string.format(
-						'# HELP %s %s\n# TYPE %s gauge\n%s{%s="%s"} 1',
-						name,
-						entry.help,
-						name,
-						name,
-						entry.label_key,
-						entry.value
-					)
+					parts[n] = string.format('# HELP %s %s\n# TYPE %s gauge\n%s{%s="%s"} 1', name, entry.help, name, name, entry.label_key, entry.value)
 				end
 			else
-				parts[n] = string.format(
-					"# HELP %s %s\n# TYPE %s %s\n%s %s",
-					name,
-					entry.help,
-					name,
-					entry.type,
-					name,
-					tostring(entry.value)
-				)
+				parts[n] = string.format("# HELP %s %s\n# TYPE %s %s\n%s %s", name, entry.help, name, entry.type, name, tostring(entry.value))
 			end
 		end
 	end
 	-- Heartbeat: epoch seconds so Grafana can detect stale data
 	n = n + 1
-	parts[n] = string.format(
-		"# HELP medusa_heartbeat_epoch Unix epoch of last export\n# TYPE medusa_heartbeat_epoch gauge\nmedusa_heartbeat_epoch %d",
-		os.time()
-	)
+	parts[n] = string.format("# HELP medusa_heartbeat_epoch Unix epoch of last export\n# TYPE medusa_heartbeat_epoch gauge\nmedusa_heartbeat_epoch %d", os.time())
 
 	local result = table.concat(parts, "\n")
 

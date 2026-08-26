@@ -45,15 +45,7 @@ local function validateConfigField(s, raw, logger)
 					valid[#valid + 1] = k
 				end
 			end
-			logger:error(
-				string.format(
-					"invalid config '%s' value '%s' (valid: %s), using '%s'",
-					s.name,
-					tostring(raw),
-					table.concat(valid, ", "),
-					tostring(s.default)
-				)
-			)
+			logger:error(string.format("invalid config '%s' value '%s' (valid: %s), using '%s'", s.name, tostring(raw), table.concat(valid, ", "), tostring(s.default)))
 			raw = nil
 		end
 		return raw or s.default

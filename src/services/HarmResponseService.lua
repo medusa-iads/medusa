@@ -40,6 +40,55 @@ local PDS = Medusa.Services.PointDefenseService
 local computeTrackCPA = Medusa.Services.HarmDetectionService.computeTrackCPA
 local _batteryBuffer = {}
 local _trackBuffer = {}
+local _previousDefenseStateByBattery = {}
+local _previouslyDefendingBatteryBuffer = {}
+
+--- Captures each battery's effective HARM defense state before clearing the per-pass response values.
+local function captureAndResetDefenseState(batteries)
+	for i = #_previouslyDefendingBatteryBuffer, 1, -1 do
+		local battery = _previouslyDefendingBatteryBuffer[i]
+		_previousDefenseStateByBattery[battery] = nil
+		_previouslyDefendingBatteryBuffer[i] = nil
+	end
+	for i = 1, #batteries do
+		local battery = batteries[i]
+		if battery.HarmDefenseState ~= nil then
+			_previousDefenseStateByBattery[battery] = battery.HarmDefenseState
+			_previouslyDefendingBatteryBuffer[#_previouslyDefendingBatteryBuffer + 1] = battery
+		end
+		battery.HarmDefenseState = nil
+		battery.HarmDefenseAvailableCapacity = 0
+		battery.HarmDefenseCommittedCapacity = 0
+		battery.HarmDefenseThreats = 0
+	end
+end
+
+--- Reports one battery's effective HARM defense state change and completes its prior-state comparison.
+local function logDefenseStateChange(battery)
+	local previousState = _previousDefenseStateByBattery[battery]
+	if previousState ~= battery.HarmDefenseState then
+		_logger:info(
+			string.format(
+				"battery %s HARM defense state %s -> %s",
+				tostring(battery.GroupName or battery.BatteryId),
+				tostring(previousState or "NONE"),
+				tostring(battery.HarmDefenseState or "NONE")
+			)
+		)
+	end
+	_previousDefenseStateByBattery[battery] = nil
+end
+
+--- Reports transitions to NONE for batteries whose prior defense state was not replaced this pass.
+local function logClearedDefenseStates()
+	for i = 1, #_previouslyDefendingBatteryBuffer do
+		local battery = _previouslyDefendingBatteryBuffer[i]
+		if _previousDefenseStateByBattery[battery] ~= nil then
+			logDefenseStateChange(battery)
+		end
+		_previouslyDefendingBatteryBuffer[i] = nil
+	end
+end
 
 --- Reports exact nonnil partition equality for HARM response sharing.
 local function sharesPartition(left, right)
@@ -65,8 +114,7 @@ local function findClosestThreatenedBattery(harmTrack, geoGrid, batteryStore, th
 	end
 	local headingX = velocity.x / horizontalSpeed
 	local headingZ = velocity.z / horizontalSpeed
-	local batteries =
-		Medusa.Services.SpatialQuery.batteriesInRadius(geoGrid, batteryStore, harmTrack.Position, C.HARM_MAX_RANGE_M)
+	local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(geoGrid, batteryStore, harmTrack.Position, C.HARM_MAX_RANGE_M)
 	local best = nil
 	local bestCpa = math.huge
 	for i = 1, #batteries do
@@ -131,28 +179,17 @@ local function collectAvailableDefenders(site, strategy, doctrine, batteryStore,
 		addAvailableDefender(site, battery, false, doctrine)
 		local poolRadius = doctrine and doctrine.PoolDefensePoints and doctrine.PoolDefensePointsRadius
 		if poolRadius then
-			local nearby =
-				Medusa.Services.SpatialQuery.batteriesInRadius(geoGrid, batteryStore, battery.Position, poolRadius)
+			local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(geoGrid, batteryStore, battery.Position, poolRadius)
 			for i = 1, #nearby do
 				local provider = nearby[i]
-				if
-					provider.BatteryId ~= battery.BatteryId
-					and not provider.IsPointDefense
-					and PDS.isProviderViable(provider)
-					and sharesPartition(provider, battery)
-				then
+				if provider.BatteryId ~= battery.BatteryId and not provider.IsPointDefense and PDS.isProviderViable(provider) and sharesPartition(provider, battery) then
 					addAvailableDefender(site, provider, false, doctrine)
 				end
 			end
 		end
 	end
 	if strategy == HRS.SHUTDOWN_UNLESS_PD or strategy == HRS.AUTO_DEFENSE then
-		local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(
-			geoGrid,
-			batteryStore,
-			battery.Position,
-			C.POINT_DEFENSE_SEARCH_RADIUS_M
-		)
+		local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(geoGrid, batteryStore, battery.Position, C.POINT_DEFENSE_SEARCH_RADIUS_M)
 		for i = 1, #nearby do
 			if PDS.canProtect(nearby[i], battery) then
 				addAvailableDefender(site, nearby[i], true, doctrine)
@@ -194,12 +231,7 @@ local function committedCapacity(site, doctrine)
 	for i = 1, #site.Defenders do
 		local defender = site.Defenders[i]
 		local battery = defender.Battery
-		if
-			PDS.isProviderViable(battery)
-			and battery.ActivationState == AS.STATE_HOT
-			and battery.CurrentTargetTrackId ~= nil
-			and site.ThreatIds[battery.CurrentTargetTrackId]
-		then
+		if PDS.isProviderViable(battery) and battery.ActivationState == AS.STATE_HOT and battery.CurrentTargetTrackId ~= nil and site.ThreatIds[battery.CurrentTargetTrackId] then
 			capacity = capacity + capacityFor(battery, doctrine)
 			ownCommitted = ownCommitted or battery == site.Battery
 			pointDefenseCommitted = pointDefenseCommitted or defender.PointDefense
@@ -219,8 +251,7 @@ local function shutdownBattery(site, now, trackStore)
 		speed = C.HARM_DEFAULT_SPEED_MPS
 	end
 	local shutdownUntil = now + distance / speed + C.HARM_SHUTDOWN_SAFETY_MARGIN_SEC
-	local stopped = battery.ActivationState == AS.STATE_COLD
-		or BatteryActivationService.goHarmShutdown(battery, now, trackStore)
+	local stopped = battery.ActivationState == AS.STATE_COLD or BatteryActivationService.goHarmShutdown(battery, now, trackStore)
 	if not stopped then
 		return false
 	end
@@ -246,14 +277,9 @@ function Medusa.Services.HarmResponseService.executeResponse(ctx)
 	local doctrine = ctx.doctrine
 	local strategy = doctrine.HARMResponse or HRS.AUTO_DEFENSE
 	local batteries = batteryStore:getAll(_batteryBuffer)
-	for i = 1, #batteries do
-		local battery = batteries[i]
-		battery.HarmDefenseState = nil
-		battery.HarmDefenseAvailableCapacity = 0
-		battery.HarmDefenseCommittedCapacity = 0
-		battery.HarmDefenseThreats = 0
-	end
+	captureAndResetDefenseState(batteries)
 	if strategy == HRS.IGNORE then
+		logClearedDefenseStates()
 		return 0
 	end
 
@@ -267,6 +293,7 @@ function Medusa.Services.HarmResponseService.executeResponse(ctx)
 	end
 	PDS.reconcileProviders(ctx)
 	if #harms == 0 then
+		logClearedDefenseStates()
 		return 0
 	end
 	local threatRadiusM = doctrine.HARMShutdownM or C.HARM_DEFAULT_THREAT_RADIUS_M
@@ -345,6 +372,8 @@ function Medusa.Services.HarmResponseService.executeResponse(ctx)
 				tostring(battery.HarmDefenseState)
 			)
 		)
+		logDefenseStateChange(battery)
 	end
+	logClearedDefenseStates()
 	return shutdowns
 end

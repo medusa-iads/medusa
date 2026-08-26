@@ -79,17 +79,8 @@ function Medusa.Services.PointDefenseService.reconcileProviders(ctx)
 	for i = 1, #batteries do
 		local provider = batteries[i]
 		local isPointDefense = false
-		if
-			PD_ROLES[provider.Role]
-			and provider.Position
-			and Medusa.Services.PointDefenseService.isProviderViable(provider)
-		then
-			local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(
-				ctx.geoGrid,
-				batteryStore,
-				provider.Position,
-				C.POINT_DEFENSE_SEARCH_RADIUS_M
-			)
+		if PD_ROLES[provider.Role] and provider.Position and Medusa.Services.PointDefenseService.isProviderViable(provider) then
+			local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(ctx.geoGrid, batteryStore, provider.Position, C.POINT_DEFENSE_SEARCH_RADIUS_M)
 			for j = 1, #nearby do
 				if Medusa.Services.PointDefenseService.canProtect(provider, nearby[j]) then
 					isPointDefense = true
@@ -145,10 +136,7 @@ end
 function Medusa.Services.PointDefenseService.activateClosestHarm(provider, threats, now, doctrine, trackStore)
 	if provider.CurrentTargetTrackId then
 		for i = 1, #threats do
-			if
-				threats[i].TrackId == provider.CurrentTargetTrackId
-				and Medusa.Services.PointDefenseService.canEngageHarm(provider, threats[i], doctrine)
-			then
+			if threats[i].TrackId == provider.CurrentTargetTrackId and Medusa.Services.PointDefenseService.canEngageHarm(provider, threats[i], doctrine) then
 				return confirmHotOrRelease(provider, threats[i], now, trackStore)
 			end
 		end
@@ -160,10 +148,7 @@ function Medusa.Services.PointDefenseService.activateClosestHarm(provider, threa
 		local track = threats[i]
 		if Medusa.Services.PointDefenseService.canEngageHarm(provider, track, doctrine) then
 			local distance = Distance2D(provider.Position, track.Position)
-			if
-				distance < bestDistance
-				or (distance == bestDistance and bestTrack and tostring(track.TrackId) < tostring(bestTrack.TrackId))
-			then
+			if distance < bestDistance or (distance == bestDistance and bestTrack and tostring(track.TrackId) < tostring(bestTrack.TrackId)) then
 				bestTrack = track
 				bestDistance = distance
 			end
@@ -173,13 +158,7 @@ function Medusa.Services.PointDefenseService.activateClosestHarm(provider, threa
 		return false
 	end
 	if confirmHotOrRelease(provider, bestTrack, now, trackStore) then
-		_logger:info(
-			string.format(
-				"battery %s committed to closest HARM %s",
-				provider.GroupName or provider.BatteryId,
-				Medusa.Entities.Track.displayId(bestTrack)
-			)
-		)
+		_logger:info(string.format("battery %s committed to closest HARM %s", provider.GroupName or provider.BatteryId, Medusa.Entities.Track.displayId(bestTrack)))
 		return true
 	end
 	return false

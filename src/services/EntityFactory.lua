@@ -78,9 +78,7 @@ local function classifyUnitRoles(desc)
 	local roles = {}
 	local composite = nil
 
-	if
-		(a["AA_missile"] and a["SAM SR"] and a["SAM TR"]) or (a["AA_missile"] and a["SR SAM"] and a["IR Guided SAM"])
-	then
+	if (a["AA_missile"] and a["SAM SR"] and a["SAM TR"]) or (a["AA_missile"] and a["SR SAM"] and a["IR Guided SAM"]) then
 		composite = BUR.TLAR
 	elseif a["SAM TR"] and a["SAM LL"] then
 		composite = BUR.TELAR
@@ -215,9 +213,7 @@ local function hasNamedRole(dto, role)
 end
 
 -- selene: allow(undefined_variable)
-local _weaponRangeOverrides = (type(MEDUSA_CONFIG) == "table" and type(MEDUSA_CONFIG.WeaponRangeOverrides) == "table")
-		and MEDUSA_CONFIG.WeaponRangeOverrides
-	or nil
+local _weaponRangeOverrides = (type(MEDUSA_CONFIG) == "table" and type(MEDUSA_CONFIG.WeaponRangeOverrides) == "table") and MEDUSA_CONFIG.WeaponRangeOverrides or nil
 
 local function resolveWeaponRange(typeName, dcsRange)
 	if not _weaponRangeOverrides or not typeName then
@@ -381,9 +377,7 @@ function Medusa.Services.EntityFactory.reconcileSensorsFromDTO(dto, stores, netw
 	local namedAwacs = hasNamedRole(dto, Role.AWACS)
 	local namedSensor = hasNamedRole(dto, Role.EWR) or hasNamedRole(dto, Role.GCI)
 	local autoDiscoverEwrs = not doctrine or doctrine.AutoDiscoverEwrs ~= false
-	local eligible = namedAwacs
-		or namedSensor
-		or (autoDiscoverEwrs and inventory.searchRadarCount > 0 and inventory.launcherCount == 0)
+	local eligible = namedAwacs or namedSensor or (autoDiscoverEwrs and inventory.searchRadarCount > 0 and inventory.launcherCount == 0)
 	if not eligible then
 		stores.sensors:removeByGroupName(dto.groupName)
 		return 0
@@ -432,8 +426,7 @@ local function createBatteryUnit(unit, unitId, batteryRole, roles, position, con
 	local unitName = getUnitName(unit)
 	local unitTypeName = unitName and GetUnitType(unitName) or nil
 	local desc = GetUnitDesc(unit)
-	local suppressionEligible = (batteryRole == BR.AAA or batteryRole == BR.MANPAD)
-		and (hasRole(roles, BUR.AAA) or hasRole(roles, BUR.MANPAD))
+	local suppressionEligible = (batteryRole == BR.AAA or batteryRole == BR.MANPAD) and (hasRole(roles, BUR.AAA) or hasRole(roles, BUR.MANPAD))
 	local health = suppressionEligible and unitName and GetUnitHealth(unitName) or nil
 	local life = health and health.CurrentLife or nil
 	local initialLife = health and health.InitialLife or nil
@@ -461,17 +454,14 @@ local function createBatteryUnit(unit, unitId, batteryRole, roles, position, con
 		Roles = roles,
 		AmmoCount = ammoCount,
 		AmmoTypes = ammoTypes,
-		OperationalStatus = initiallyDamaged and Medusa.Constants.UnitOperationalStatus.DAMAGED
-			or Medusa.Constants.UnitOperationalStatus.ACTIVE,
+		OperationalStatus = initiallyDamaged and Medusa.Constants.UnitOperationalStatus.DAMAGED or Medusa.Constants.UnitOperationalStatus.ACTIVE,
 		LastKnownLife = life,
 		InitialLife = initialLife,
 		InitialDamagePending = initiallyDamaged,
 		Position = position,
 		CrewSkill = crewSkill or context.defaultCrewSkill,
 	})
-	logger:debug(
-		string.format("[%s] roles=%s, ammo=%d", unitTypeName or "unknown", table.concat(roles, ","), ammoCount)
-	)
+	logger:debug(string.format("[%s] roles=%s, ammo=%d", unitTypeName or "unknown", table.concat(roles, ","), ammoCount))
 	return batteryUnit, ammoKnown
 end
 
@@ -485,8 +475,7 @@ local function populateBatteryUnits(battery, units, inventory, batteryRole, cont
 		local unitId = GetUnitID(units[i])
 		if unitId then
 			local roles = inventory.rolesByIndex[i]
-			local batteryUnit, unitAmmoKnown =
-				createBatteryUnit(units[i], unitId, batteryRole, roles, inventory.positionsByIndex[i], context)
+			local batteryUnit, unitAmmoKnown = createBatteryUnit(units[i], unitId, batteryRole, roles, inventory.positionsByIndex[i], context)
 			battery.Units[#battery.Units + 1] = batteryUnit
 			ammoKnown = ammoKnown and unitAmmoKnown
 			if hasRole(roles, BUR.TELAR) then
@@ -734,8 +723,7 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 		GroupCategory = dto.category,
 		Position = position,
 		Role = batteryRole,
-		GroupDiameterM = batteryRole == BR.AAA and measureHorizontalGroupDiameter(inventory.positionsByIndex, #units)
-			or nil,
+		GroupDiameterM = batteryRole == BR.AAA and measureHorizontalGroupDiameter(inventory.positionsByIndex, #units) or nil,
 	})
 
 	local hasTelar, hasCommandPost = populateBatteryUnits(battery, units, inventory, batteryRole, context)
@@ -758,14 +746,7 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 		battery.Position = clusterResult.centroid
 		battery.PositionAnchorUnitId = nil
 		battery.ClusterSpreadRadius = clusterResult.spreadRadius
-		logger:info(
-			string.format(
-				"battery %s: %d launcher clusters detected (spread=%.0fm)",
-				dto.groupName,
-				#clusterResult.clusters,
-				clusterResult.spreadRadius
-			)
-		)
+		logger:info(string.format("battery %s: %d launcher clusters detected (spread=%.0fm)", dto.groupName, #clusterResult.clusters, clusterResult.spreadRadius))
 	end
 
 	battery.SystemType = classifySystemType(battery.Units)
@@ -778,11 +759,7 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 		Medusa.Services.AaaService.rebuildHeadings(battery)
 		Medusa.Services.AaaService.initializeMode(battery)
 	end
-	if
-		battery.Role == Medusa.Constants.BatteryRole.LR_SAM
-		and battery.WeaponRangeMax
-		and battery.WeaponRangeMax > Medusa.Constants.VLR_THRESHOLD_M
-	then
+	if battery.Role == Medusa.Constants.BatteryRole.LR_SAM and battery.WeaponRangeMax and battery.WeaponRangeMax > Medusa.Constants.VLR_THRESHOLD_M then
 		battery.Role = Medusa.Constants.BatteryRole.VLR_SAM
 		local vlrDefaults = Medusa.Constants.SystemTypeDefaults[battery.Role]
 		if vlrDefaults then
@@ -790,17 +767,10 @@ local function createBattery(dto, stores, networkId, harmSystems, units, invento
 		end
 	end
 	if not battery.WeaponRangeMax or battery.WeaponRangeMax <= 0 then
-		logger:info(
-			string.format(
-				"battery %s has launchers but no weapon range (DCS descriptor may be missing range data)",
-				battery.GroupName
-			)
-		)
+		logger:info(string.format("battery %s has launchers but no weapon range (DCS descriptor may be missing range data)", battery.GroupName))
 	end
 	battery.HarmDefenseCapacity = Medusa.Services.EntityFactory.computeHarmDefenseCapacity(battery, harmSystems)
-	logger:debug(
-		string.format("battery %s: HARM defense capacity=%.1f", battery.GroupName, battery.HarmDefenseCapacity)
-	)
+	logger:debug(string.format("battery %s: HARM defense capacity=%.1f", battery.GroupName, battery.HarmDefenseCapacity))
 	stores.batteries:add(battery)
 	logBatteryCreation(battery)
 	return "battery", 1
@@ -809,8 +779,7 @@ end
 local function createManpad(dto, stores, networkId, units, inventory, context)
 	cacheUnitPositions(units, inventory)
 	local doctrine = context.doctrine
-	local audioRangeM = doctrine and doctrine.MANPAD and doctrine.MANPAD.AudioRangeM
-		or Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M
+	local audioRangeM = doctrine and doctrine.MANPAD and doctrine.MANPAD.AudioRangeM or Medusa.Constants.Manpad.AUDIO_RANGE_MAX_M
 	local position = nil
 	for i = 1, #units do
 		if hasRole(inventory.rolesByIndex[i], BUR.MANPAD) then
@@ -852,14 +821,7 @@ local function createManpad(dto, stores, networkId, units, inventory, context)
 	Medusa.Services.ManpadService.rebuildHeadings(battery)
 
 	stores.manpads:add(battery)
-	logger:info(
-		string.format(
-			"manpad %s: %d soldiers (%d headings cached)",
-			battery.GroupName,
-			#battery.Units,
-			battery.Manpad.UnitHeadingCount
-		)
-	)
+	logger:info(string.format("manpad %s: %d soldiers (%d headings cached)", battery.GroupName, #battery.Units, battery.Manpad.UnitHeadingCount))
 	return "manpad", 1
 end
 
@@ -871,8 +833,7 @@ function Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, har
 	local context = {
 		doctrine = doctrine,
 		crewSkillIndex = crewSkillIndex,
-		defaultCrewSkill = crewSuppression and crewSuppression.DefaultCrewSkill
-			or Medusa.Constants.CrewSuppression.DEFAULT_CREW_SKILL,
+		defaultCrewSkill = crewSuppression and crewSuppression.DefaultCrewSkill or Medusa.Constants.CrewSuppression.DEFAULT_CREW_SKILL,
 	}
 	local namedAwacs = hasNamedRole(dto, Role.AWACS)
 	local namedSensor = hasNamedRole(dto, Role.EWR) or hasNamedRole(dto, Role.GCI)
@@ -880,9 +841,7 @@ function Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, har
 
 	if dto.parsed.isHQ then
 		createHQ(dto, stores, units, inventory)
-		local sensorEligible = namedAwacs
-			or namedSensor
-			or (autoDiscoverEwrs and inventory.searchRadarCount > 0 and inventory.launcherCount == 0)
+		local sensorEligible = namedAwacs or namedSensor or (autoDiscoverEwrs and inventory.searchRadarCount > 0 and inventory.launcherCount == 0)
 		if sensorEligible then
 			local _, sensorCount = createSensors(dto, stores, networkId, units, inventory)
 			if sensorCount > 0 then
@@ -900,10 +859,7 @@ function Medusa.Services.EntityFactory.createFromDTO(dto, stores, networkId, har
 	if inventory.manpadCount > 0 and inventory.manpadCount >= inventory.aaaCount then
 		return createManpad(dto, stores, networkId, units, inventory, context)
 	end
-	if
-		inventory.aaaCount > inventory.manpadCount
-		and (inventory.searchRadarCount == 0 or inventory.aaaCount >= 2 * inventory.searchRadarCount)
-	then
+	if inventory.aaaCount > inventory.manpadCount and (inventory.searchRadarCount == 0 or inventory.aaaCount >= 2 * inventory.searchRadarCount) then
 		return createBattery(dto, stores, networkId, harmSystems, units, inventory, BR.AAA, context)
 	end
 	if namedSensor or (inventory.searchRadarCount > 0 and autoDiscoverEwrs) then

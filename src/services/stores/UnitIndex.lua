@@ -84,10 +84,7 @@ function Medusa.Services.UnitIndex:validateRegistration(data)
 		if identitiesConflict(identity.UnitName, data.UnitName) then
 			return false, "unit name conflicts with current identity"
 		end
-		if
-			identitiesConflict(identity.GroupId, data.GroupId)
-			and (identity.GroupName == nil or data.GroupName == nil or identity.GroupName ~= data.GroupName)
-		then
+		if identitiesConflict(identity.GroupId, data.GroupId) and (identity.GroupName == nil or data.GroupName == nil or identity.GroupName ~= data.GroupName) then
 			return false, "group ID conflicts with current identity"
 		end
 		if identitiesConflict(identity.GroupName, data.GroupName) then
@@ -113,8 +110,7 @@ function Medusa.Services.UnitIndex:register(data)
 		error("managed unit registration failed: " .. reason)
 	end
 
-	local identity = (data.UnitId and self._byUnitId[data.UnitId])
-		or (data.UnitName and self._byUnitName[data.UnitName])
+	local identity = (data.UnitId and self._byUnitId[data.UnitId]) or (data.UnitName and self._byUnitName[data.UnitName])
 	if not identity then
 		identity = {
 			UnitName = data.UnitName,
@@ -168,11 +164,7 @@ function Medusa.Services.UnitIndex:resolve(unitId, unitName)
 	end
 	if unitId then
 		local previousAlias = byName.EventUnitId
-		if
-			previousAlias
-			and not byName.RegisteredUnitIds[previousAlias]
-			and self._byUnitId[previousAlias] == byName
-		then
+		if previousAlias and not byName.RegisteredUnitIds[previousAlias] and self._byUnitId[previousAlias] == byName then
 			self._byUnitId[previousAlias] = nil
 		end
 		byName.EventUnitId = unitId

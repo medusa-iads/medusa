@@ -148,10 +148,7 @@ function TestManpadPositionRefresh:test_empty_store_noop()
 
 	lu.assertIsNil(cursor(), "cursor must stay nil when store is empty")
 	lu.assertEquals(#grid.calls, 0, "updatePosition must not be called on empty store")
-	lu.assertNil(
-		self._metricCounts["medusa_manpad_position_refreshes_total"],
-		"metric must not be incremented on empty store"
-	)
+	lu.assertNil(self._metricCounts["medusa_manpad_position_refreshes_total"], "metric must not be incremented on empty store")
 end
 
 -- ---------------------------------------------------------------
@@ -178,11 +175,7 @@ function TestManpadPositionRefresh:test_first_refresh_succeeds_and_advances_curs
 	lu.assertEquals(#grid.calls, 1, "updatePosition must be called exactly once")
 	lu.assertEquals(grid.calls[1].entityId, bat.BatteryId, "updatePosition called with correct BatteryId")
 	lu.assertEquals(grid.calls[1].defaultType, "Manpad", "updatePosition called with defaultType 'Manpad'")
-	lu.assertEquals(
-		self._metricCounts["medusa_manpad_position_refreshes_total"],
-		1,
-		"metric must be incremented once on success"
-	)
+	lu.assertEquals(self._metricCounts["medusa_manpad_position_refreshes_total"], 1, "metric must be incremented once on success")
 end
 
 -- ---------------------------------------------------------------
@@ -222,11 +215,7 @@ function TestManpadPositionRefresh:test_refresh_succeeds_when_past_min_interval(
 	lu.assertNotNil(bat.Position, "Position must be updated when interval is met")
 	lu.assertEquals(bat.Manpad.LastPositionRefreshTime, 70, "LastPositionRefreshTime must be updated to now=70")
 	lu.assertEquals(#grid.calls, 1, "updatePosition must be called once")
-	lu.assertEquals(
-		self._metricCounts["medusa_manpad_position_refreshes_total"],
-		1,
-		"metric must be incremented on successful refresh"
-	)
+	lu.assertEquals(self._metricCounts["medusa_manpad_position_refreshes_total"], 1, "metric must be incremented on successful refresh")
 end
 
 -- ---------------------------------------------------------------
@@ -275,10 +264,7 @@ function TestManpadPositionRefresh:test_nil_unit_position_does_not_stamp()
 	lu.assertNil(bat.Position, "Position must remain nil when unit position is nil")
 	lu.assertNil(bat.Manpad.LastPositionRefreshTime, "LastPositionRefreshTime must stay nil when position lookup fails")
 	lu.assertEquals(#grid.calls, 0, "updatePosition must not be called when unit position is nil")
-	lu.assertNil(
-		self._metricCounts["medusa_manpad_position_refreshes_total"],
-		"metric must not be incremented when position lookup fails"
-	)
+	lu.assertNil(self._metricCounts["medusa_manpad_position_refreshes_total"], "metric must not be incremented when position lookup fails")
 end
 
 -- ---------------------------------------------------------------
@@ -296,10 +282,7 @@ function TestManpadPositionRefresh:test_unit_missing_unitname_advances_cursor_bu
 	lu.assertNil(bat.Position, "Position must remain nil when UnitName is absent")
 	lu.assertNil(bat.Manpad.LastPositionRefreshTime, "LastPositionRefreshTime must remain nil when UnitName is absent")
 	lu.assertEquals(#grid.calls, 0, "updatePosition must not be called when UnitName is absent")
-	lu.assertNil(
-		self._metricCounts["medusa_manpad_position_refreshes_total"],
-		"metric must not be incremented when UnitName is absent"
-	)
+	lu.assertNil(self._metricCounts["medusa_manpad_position_refreshes_total"], "metric must not be incremented when UnitName is absent")
 end
 
 function TestManpadPositionRefresh:test_storeOrderChanges_doNotRepeatBattery()

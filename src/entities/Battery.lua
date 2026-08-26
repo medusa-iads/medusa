@@ -73,11 +73,7 @@ function Medusa.Entities.Battery.validateManpadState(role, manpad)
 	if manpad.LastAlertedTime ~= nil and type(manpad.LastAlertedTime) ~= "number" then
 		error("MANPAD LastAlertedTime must be a number")
 	end
-	if
-		type(manpad.AudioCueRangeM) ~= "number"
-		or manpad.AudioCueRangeM < MC.AUDIO_RANGE_MIN_M
-		or manpad.AudioCueRangeM > MC.AUDIO_RANGE_MAX_M
-	then
+	if type(manpad.AudioCueRangeM) ~= "number" or manpad.AudioCueRangeM < MC.AUDIO_RANGE_MIN_M or manpad.AudioCueRangeM > MC.AUDIO_RANGE_MAX_M then
 		error("MANPAD AudioCueRangeM must be within the supported range")
 	end
 	if type(manpad.UnitHeadings) ~= "table" then
@@ -269,13 +265,7 @@ end
 
 --- Enforces same-partition, suppression, coordination, and degraded doctrine policy for battery and track.
 function Medusa.Entities.Battery.canAcceptTrack(battery, track, doctrine)
-	if
-		not battery
-		or not track
-		or not battery.PartitionKey
-		or battery.PartitionKey ~= track.PartitionKey
-		or Medusa.Entities.Battery.isCrewSuppressed(battery)
-	then
+	if not battery or not track or not battery.PartitionKey or battery.PartitionKey ~= track.PartitionKey or Medusa.Entities.Battery.isCrewSuppressed(battery) then
 		return false
 	end
 	if battery.CoordinationState == Medusa.Constants.CoordinationState.COORDINATED then
@@ -284,11 +274,8 @@ function Medusa.Entities.Battery.canAcceptTrack(battery, track, doctrine)
 	if doctrine and doctrine.DegradedMode == Medusa.Constants.NetworkDegradationPolicy.REVERT_TO_AUTONOMOUS then
 		return true
 	end
-	local defensive = track.AssessedAircraftType == Medusa.Constants.AssessedAircraftType.HARM
-		or track.IsSeadThreat == true
-	return defensive
-		and doctrine
-		and doctrine.DegradedMode == Medusa.Constants.NetworkDegradationPolicy.REVERT_TO_SELF_DEFENSE
+	local defensive = track.AssessedAircraftType == Medusa.Constants.AssessedAircraftType.HARM or track.IsSeadThreat == true
+	return defensive and doctrine and doctrine.DegradedMode == Medusa.Constants.NetworkDegradationPolicy.REVERT_TO_SELF_DEFENSE
 end
 
 function Medusa.Entities.Battery.isCrewSuppressed(battery)
@@ -501,12 +488,7 @@ function Medusa.Entities.Battery.recomputeEnvelope(battery)
 
 	for i = 1, #battery.Units do
 		local unit = battery.Units[i]
-		if
-			Medusa.Entities.Battery.isAmmoBearingUnit(battery, unit)
-			and unit.AmmoCount
-			and unit.AmmoCount > 0
-			and unit.AmmoTypes
-		then
+		if Medusa.Entities.Battery.isAmmoBearingUnit(battery, unit) and unit.AmmoCount and unit.AmmoCount > 0 and unit.AmmoTypes then
 			totalAmmo = totalAmmo + Medusa.Entities.Battery.accumulateLauncherAmmo(unit, env)
 		end
 	end
@@ -686,8 +668,7 @@ function Medusa.Entities.Battery.computeEffectiveRanges(battery)
 	local searchDown = not Medusa.Entities.Battery.hasRoleAlive(battery, SEARCH_ROLES)
 
 	if searchDown and battery.RadarDependencyPolicy == RDP.OPTIONAL_DEGRADED then
-		battery.EffectiveDetectionRangeMax =
-			math.floor((battery.DetectionRangeMax or 0) * DEGRADED_DETECTION_RANGE_PERCENT / 100)
+		battery.EffectiveDetectionRangeMax = math.floor((battery.DetectionRangeMax or 0) * DEGRADED_DETECTION_RANGE_PERCENT / 100)
 		battery.EffectiveReactionDelaySec = math.ceil(battery.ReactionDelaySec * REACTION_DELAY_MULTIPLIER_ON_DEGRADE)
 	elseif searchDown and battery.RadarDependencyPolicy == RDP.REQUIRED then
 		battery.EffectiveDetectionRangeMax = 0

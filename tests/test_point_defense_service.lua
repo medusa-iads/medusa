@@ -209,13 +209,7 @@ function TestPointDefenseActivation:test_assigns_nearest_eligible_harm_with_stab
 	self.trackStore:add(nearestLaterId)
 	self.trackStore:add(nearestFirstId)
 
-	local ready = PDS.activateClosestHarm(
-		self.provider,
-		{ farther, nearestLaterId, nearestFirstId },
-		1000,
-		self.doctrine,
-		self.trackStore
-	)
+	local ready = PDS.activateClosestHarm(self.provider, { farther, nearestLaterId, nearestFirstId }, 1000, self.doctrine, self.trackStore)
 
 	lu.assertTrue(ready)
 	lu.assertEquals(self.provider.CurrentTargetTrackId, "harm-a")

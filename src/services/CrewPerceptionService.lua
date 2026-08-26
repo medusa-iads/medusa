@@ -158,11 +158,7 @@ local function nextBatteryAfter(batteries, batteryId)
 		if not first or battery.BatteryId < first.BatteryId then
 			first = battery
 		end
-		if
-			batteryId
-			and battery.BatteryId > batteryId
-			and (not nextBattery or battery.BatteryId < nextBattery.BatteryId)
-		then
+		if batteryId and battery.BatteryId > batteryId and (not nextBattery or battery.BatteryId < nextBattery.BatteryId) then
 			nextBattery = battery
 		end
 	end

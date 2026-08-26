@@ -221,14 +221,7 @@ function Medusa.Services.BatteryStore:add(battery)
 	end
 	self._count = self._count + 1
 
-	self._logger:debug(
-		string.format(
-			"added battery %s (groupId=%s, count=%d)",
-			battery.BatteryId,
-			tostring(battery.GroupId),
-			self._count
-		)
-	)
+	self._logger:debug(string.format("added battery %s (groupId=%s, count=%d)", battery.BatteryId, tostring(battery.GroupId), self._count))
 end
 
 function Medusa.Services.BatteryStore:get(batteryId)

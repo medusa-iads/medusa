@@ -82,8 +82,7 @@ configureRawWorldEventTrace()
 Medusa.Core.IadsById = {}
 local nets = Medusa.Config:getNetworks()
 local aaaBarrageState = Medusa.Services.AaaService.newBarrageState()
-local blackBoxWeaponStore =
-	Medusa.Services.BlackBoxWeaponStore:new(Medusa.Constants.CrewSuppression.WEAPON_TRACK_CAPACITY)
+local blackBoxWeaponStore = Medusa.Services.BlackBoxWeaponStore:new(Medusa.Constants.CrewSuppression.WEAPON_TRACK_CAPACITY)
 local crewSkillIndex = Medusa.Services.MissionUnitSkillIndex.new(env and env.mission)
 local suppressionEnabled = false
 local function publishTerminalEvent(terminalEvent)
@@ -92,9 +91,7 @@ local function publishTerminalEvent(terminalEvent)
 		if iads then
 			local ok, err = pcall(iads.enqueueTerminalEvent, iads, terminalEvent)
 			if not ok then
-				_entryLog:error(
-					string.format("terminal-event delivery failed for IADS %s: %s", tostring(nets[i].id), tostring(err))
-				)
+				_entryLog:error(string.format("terminal-event delivery failed for IADS %s: %s", tostring(nets[i].id), tostring(err)))
 			end
 		end
 	end
@@ -123,13 +120,7 @@ for i = 1, #nets do
 		if iads then
 			pcall(iads.stop, iads)
 		end
-		_entryLog:error(
-			string.format(
-				"IADS %s construction or initialization failed; other networks will continue: %s",
-				tostring(n.id),
-				tostring(result)
-			)
-		)
+		_entryLog:error(string.format("IADS %s construction or initialization failed; other networks will continue: %s", tostring(n.id), tostring(result)))
 	end
 end
 if suppressionEnabled then
@@ -146,13 +137,7 @@ for i = 1, #nets do
 		if not started or not result then
 			pcall(iads.stop, iads)
 			Medusa.Core.IadsById[n.id] = nil
-			_entryLog:error(
-				string.format(
-					"IADS %s start failed; other networks will continue: %s",
-					tostring(n.id),
-					tostring(result)
-				)
-			)
+			_entryLog:error(string.format("IADS %s start failed; other networks will continue: %s", tostring(n.id), tostring(result)))
 		end
 	end
 end
@@ -177,17 +162,7 @@ Medusa.API = {
 }
 
 -- Prometheus metrics file export (requires file-system access + PrometheusEnabled config)
-if
-	Medusa.Config:get().PrometheusEnabled
-	and io
-	and io.open
-	and os
-	and os.rename
-	and os.remove
-	and lfs
-	and lfs.writedir
-	and lfs.attributes
-then
+if Medusa.Config:get().PrometheusEnabled and io and io.open and os and os.rename and os.remove and lfs and lfs.writedir and lfs.attributes then
 	local _promLogger = Medusa.Logger:ns("Prometheus")
 	local _promPath = (lfs and lfs.writedir and lfs.writedir() or "") .. "Logs/medusa_metrics.prom"
 	local _promTempPath = _promPath .. ".tmp"
@@ -211,8 +186,7 @@ then
 		local measured, size = pcall(lfs.attributes, _promTempPath, "size")
 		if not measured or size ~= #payload then
 			os.remove(_promTempPath)
-			return false,
-				"temporary file size mismatch: expected=" .. tostring(#payload) .. " actual=" .. tostring(size)
+			return false, "temporary file size mismatch: expected=" .. tostring(#payload) .. " actual=" .. tostring(size)
 		end
 
 		local published, publishError = os.rename(_promTempPath, _promPath)
@@ -231,10 +205,7 @@ then
 		if not published then
 			local restored, restoreError = os.rename(_promPreviousPath, _promPath)
 			os.remove(_promTempPath)
-			return false,
-				"metrics file publish failed: " .. tostring(publishError) .. "; previous file restored=" .. tostring(
-					restored == true
-				) .. ": " .. tostring(restoreError)
+			return false, "metrics file publish failed: " .. tostring(publishError) .. "; previous file restored=" .. tostring(restored == true) .. ": " .. tostring(restoreError)
 		end
 		os.remove(_promPreviousPath)
 		return true
@@ -267,8 +238,6 @@ then
 	scheduleMetricsExport()
 else
 	if Medusa.Config:get().PrometheusEnabled then
-		Medusa.Logger
-			:ns("Prometheus")
-			:info("enabled but io, os, or lfs is sanitized; desanitize them in MissionScripting.lua")
+		Medusa.Logger:ns("Prometheus"):info("enabled but io, os, or lfs is sanitized; desanitize them in MissionScripting.lua")
 	end
 end

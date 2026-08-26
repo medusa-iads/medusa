@@ -269,8 +269,7 @@ local function walkTree(node, prefix, lines)
 		local name = ks[idx]
 		local child = node.children[name]
 		local connector = "|__ "
-		lines[#lines + 1] =
-			string.format("%s%s%s(%s)", prefix, connector, tostring(child.name), tostring(child.size or 0))
+		lines[#lines + 1] = string.format("%s%s%s(%s)", prefix, connector, tostring(child.name), tostring(child.size or 0))
 		local nextPrefix = prefix .. ((idx == #ks) and "    " or "|   ")
 		walkTree(child, nextPrefix, lines)
 	end

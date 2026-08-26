@@ -199,13 +199,7 @@ function Medusa.Services.TrackManager:_createNewTrack(report, now)
 		return nil
 	end
 	Medusa.Observability.MetricsService.inc("medusa_tracks_created_total")
-	self._logger:debug(
-		string.format(
-			"created track %s for network %s",
-			Medusa.Entities.Track.displayId(track),
-			tostring(report.NetworkId)
-		)
-	)
+	self._logger:debug(string.format("created track %s for network %s", Medusa.Entities.Track.displayId(track), tostring(report.NetworkId)))
 	return track
 end
 
@@ -279,8 +273,8 @@ function Medusa.Services.TrackManager:_updateExistingTrack(trackId, report, now)
 	return track
 end
 
---- Removes one active track from the store, spatial index, source index, and event stream.
-function Medusa.Services.TrackManager:_removeStoredTrack(track, now)
+--- Removes one track from runtime indexes and records its terminal lifecycle reason after successful store removal.
+function Medusa.Services.TrackManager:_removeStoredTrack(track, now, reason)
 	if not track then
 		return false
 	end
@@ -288,6 +282,7 @@ function Medusa.Services.TrackManager:_removeStoredTrack(track, now)
 	if not removed then
 		return false
 	end
+	Medusa.Entities.Track.transitionLifecycle(track, Medusa.Constants.TrackLifecycleState.EXPIRED, reason)
 	if self._geoGrid then
 		self._geoGrid:remove(track.TrackId)
 	end
@@ -307,7 +302,7 @@ function Medusa.Services.TrackManager:retirePartitionIncarnations(currentPartiti
 		local track = tracks[i]
 		if track.PartitionKey ~= nil and not currentPartitionKeys[track.PartitionKey] then
 			releaseAssignedBatteries(track, self._batteryRepository, now)
-			if self:_removeStoredTrack(track, now) then
+			if self:_removeStoredTrack(track, now, "partition retired") then
 				self:_releaseDisplayIds(track)
 				retiredCount = retiredCount + 1
 			end
@@ -355,7 +350,7 @@ function Medusa.Services.TrackManager:pruneStale(now)
 	for i = 1, #staleIds do
 		local track = self._store:get(staleIds[i])
 		if track then
-			track.LifecycleState = LS.STALE
+			Medusa.Entities.Track.transitionLifecycle(track, LS.STALE, "memory timeout")
 			self._eventBus:publish({ id = "TrackBecameStale", TrackId = staleIds[i], timestamp = now })
 		end
 	end
@@ -387,7 +382,7 @@ function Medusa.Services.TrackManager:pruneStale(now)
 				self:_releaseDisplayIds(track)
 			end
 		end
-		self:_removeStoredTrack(track, now)
+		self:_removeStoredTrack(track, now, "memory expired")
 	end
 
 	-- Evict stale dormant entries
@@ -430,14 +425,7 @@ function Medusa.Services.TrackManager:mergeTracks(survivingTrackId, absorbedTrac
 		MergedTrackId = absorbedTrackId,
 		timestamp = now or GetTime(),
 	})
-	self._logger:info(
-		string.format(
-			"merged track %s into track %s; retained %s as an alias",
-			absorbedDisplayId,
-			Medusa.Entities.Track.displayId(survivor),
-			absorbedDisplayId
-		)
-	)
+	self._logger:info(string.format("merged track %s into track %s; retained %s as an alias", absorbedDisplayId, Medusa.Entities.Track.displayId(survivor), absorbedDisplayId))
 	return survivor
 end
 

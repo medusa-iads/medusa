@@ -58,12 +58,7 @@ function Medusa.Services.DiscoveryService:new(provider, opts)
 		_listener = nil,
 		_knownById = {},
 		_knownIdByName = {},
-		_logger = Medusa.Logger:ns(
-			string.format(
-				"%sServices.Discovery",
-				(opts and opts.id) and string.format("%s | ", tostring(opts.id)) or ""
-			)
-		),
+		_logger = Medusa.Logger:ns(string.format("%sServices.Discovery", (opts and opts.id) and string.format("%s | ", tostring(opts.id)) or "")),
 		_coalitionId = opts and opts.coalitionId or nil,
 		_prefix = opts and opts.prefix or nil,
 		_birthMetricLabels = { network = opts and opts.id or nil, event = "BIRTH" },
@@ -261,11 +256,7 @@ function Medusa.Services.DiscoveryService:enableDynamicAdds()
 		if accepted then
 			service._birthPending[groupName] = true
 		else
-			Medusa.Observability.MetricsService.inc(
-				"medusa_world_events_dropped_total",
-				nil,
-				service._birthMetricLabels
-			)
+			Medusa.Observability.MetricsService.inc("medusa_world_events_dropped_total", nil, service._birthMetricLabels)
 		end
 		return accepted
 	end
@@ -308,13 +299,7 @@ function Medusa.Services.DiscoveryService:enableDynamicAdds()
 			return false
 		end
 		if gCoalId ~= self._coalitionId then
-			self._logger:trace(
-				string.format(
-					"group coalition: %s not equal to IADS coalition: %s",
-					tostring(gCoalId),
-					tostring(self._coalitionId)
-				)
-			)
+			self._logger:trace(string.format("group coalition: %s not equal to IADS coalition: %s", tostring(gCoalId), tostring(self._coalitionId)))
 			return false
 		end
 		event._groupName = groupName

@@ -394,16 +394,10 @@ function TestIadsNetwork:test_unit_lost_with_empty_name_uses_the_captured_unit_i
 	lu.assertFalse(provider.Available)
 	lu.assertNil(sensorStore:getByUnitId(8112))
 	local diagnostics = table.concat(messages, "\n")
+	lu.assertStrContains(diagnostics, "death event accepted: unitId=8111 unitName=nil identitySource=unit-id batteryId=nil sensorUnitId=nil providerName=iads.alpha.hq-provider")
 	lu.assertStrContains(
 		diagnostics,
-		"death event accepted: unitId=8111 unitName=nil identitySource=unit-id batteryId=nil sensorUnitId=nil providerName=iads.alpha.hq-provider"
-	)
-	lu.assertStrContains(
-		diagnostics,
-		string.format(
-			"death event accepted: unitId=8112 unitName=nil identitySource=unit-id batteryId=nil sensorUnitId=%s providerName=nil",
-			sensor.SensorUnitId
-		)
+		string.format("death event accepted: unitId=8112 unitName=nil identitySource=unit-id batteryId=nil sensorUnitId=%s providerName=nil", sensor.SensorUnitId)
 	)
 end
 
@@ -467,10 +461,7 @@ function TestIadsNetwork:test_unit_lost_resolves_sensor_and_provider_event_ids_t
 	)
 	lu.assertStrContains(
 		diagnostics,
-		string.format(
-			"death event accepted: unitId=39 unitName=pt.east.ewr.local-1 identitySource=unit-name batteryId=nil sensorUnitId=%s providerName=nil",
-			sensor.SensorUnitId
-		)
+		string.format("death event accepted: unitId=39 unitName=pt.east.ewr.local-1 identitySource=unit-name batteryId=nil sensorUnitId=%s providerName=nil", sensor.SensorUnitId)
 	)
 end
 
@@ -1134,8 +1125,7 @@ function TestIadsNetwork:test_new_id_hq_sensor_restoration_keeps_its_frozen_chil
 	for i = 1, #restored do
 		restored[i].Position = { x = 0, y = 0, z = 0 }
 		restored[i].DetectionRangeMax = 1000
-		local provider =
-			unitIndex:getRegisteredOwner(restored[i].UnitId, Medusa.Constants.UnitOwnerKind.COMMAND_PROVIDER)
+		local provider = unitIndex:getRegisteredOwner(restored[i].UnitId, Medusa.Constants.UnitOwnerKind.COMMAND_PROVIDER)
 		c2Store:setProviderUnavailable(provider)
 	end
 
@@ -1265,9 +1255,7 @@ function TestIadsNetwork:test_partition_commit_rekeys_assets_admitted_during_a_s
 	lu.assertNotEquals(sensor.PartitionKey, retired.Key)
 	lu.assertNotEquals(battery.PartitionKey, retired.Key)
 	lu.assertNotEquals(sensor.PartitionKey, battery.PartitionKey)
-	lu.assertFalse(
-		Medusa.Entities.Battery.canAcceptTrack(battery, { PartitionKey = sensor.PartitionKey }, iads._doctrine)
-	)
+	lu.assertFalse(Medusa.Entities.Battery.canAcceptTrack(battery, { PartitionKey = sensor.PartitionKey }, iads._doctrine))
 end
 
 function TestIadsNetwork:test_discovery_routes_ewr_to_sensors()
@@ -3735,9 +3723,7 @@ function TestIadsNetwork:test_command_provider_loss_recomputes_partition_coverag
 	lu.assertStrContains(logOutput, "topology=[<root>:sustained | east:sustained]")
 	lu.assertFalse(command.Providers[1].Available)
 	lu.assertIsNil(command.Providers[1].UnitId)
-	lu.assertNil(
-		iads:getAssetIndex():unitIndex():getRegisteredOwner(10020, Medusa.Constants.UnitOwnerKind.COMMAND_PROVIDER)
-	)
+	lu.assertNil(iads:getAssetIndex():unitIndex():getRegisteredOwner(10020, Medusa.Constants.UnitOwnerKind.COMMAND_PROVIDER))
 	lu.assertNotNil(battery.PartitionKey)
 	lu.assertNotEquals(battery.PartitionKey, connectedKey)
 	lu.assertTrue(battery.IsActingAsEWR)
@@ -3961,10 +3947,7 @@ function TestIadsSuppressionEvents:test_stop_and_restart_replace_hit_subscriptio
 		HarnessWorldEventBus:publish(event)
 	end
 	lu.assertEquals(iads:_processHitEvents(1), 1)
-	lu.assertStrContains(
-		Medusa.Observability.MetricsService.serialize(),
-		'medusa_crew_suppression_event_queue_depth{network="T"} 1'
-	)
+	lu.assertStrContains(Medusa.Observability.MetricsService.serialize(), 'medusa_crew_suppression_event_queue_depth{network="T"} 1')
 
 	iads:stop()
 	lu.assertIsNil(HarnessWorldEventBus._subscribers[world.event.S_EVENT_HIT])

@@ -167,18 +167,8 @@ do
 		end
 
 		setRingBuffer(ms, MISSION_NETWORK, "blackbox_metadata_cache", Medusa.Services.BlackBoxService._cacheOrder)
-		setRingBuffer(
-			ms,
-			MISSION_NETWORK,
-			"blackbox_weapon_tracks",
-			blackBoxWeaponStore and blackBoxWeaponStore._tracks
-		)
-		setRingBuffer(
-			ms,
-			MISSION_NETWORK,
-			"blackbox_cannon_candidates",
-			blackBoxWeaponStore and blackBoxWeaponStore._cannonCandidates
-		)
+		setRingBuffer(ms, MISSION_NETWORK, "blackbox_weapon_tracks", blackBoxWeaponStore and blackBoxWeaponStore._tracks)
+		setRingBuffer(ms, MISSION_NETWORK, "blackbox_cannon_candidates", blackBoxWeaponStore and blackBoxWeaponStore._cannonCandidates)
 	end
 end
 
@@ -264,26 +254,10 @@ function Medusa.Observability.MetricsSnapshot.register(netLabel)
 	MetricsService.gauge("medusa_sensors_total", "Total sensors in network", netLabel)
 	MetricsService.gauge("medusa_tracks_active", "Active tracks in network", netLabel)
 	MetricsService.counter("medusa_ticks_total", "Total ticks processed", netLabel)
-	MetricsService.counter(
-		"medusa_partition_refresh_attempts_total",
-		"Partition snapshot build attempts, including bootstrap",
-		netLabel
-	)
-	MetricsService.counter(
-		"medusa_partition_refresh_failures_total",
-		"Partition snapshot build failures, including bootstrap",
-		netLabel
-	)
-	MetricsService.counter(
-		"medusa_partition_provider_overflow_total",
-		"Battery coverage evaluations rejected because provider capacity was exceeded",
-		netLabel
-	)
-	MetricsService.counter(
-		"medusa_world_events_dropped_total",
-		"World events dropped by bounded queues",
-		{ "network", "event" }
-	)
+	MetricsService.counter("medusa_partition_refresh_attempts_total", "Partition snapshot build attempts, including bootstrap", netLabel)
+	MetricsService.counter("medusa_partition_refresh_failures_total", "Partition snapshot build failures, including bootstrap", netLabel)
+	MetricsService.counter("medusa_partition_provider_overflow_total", "Battery coverage evaluations rejected because provider capacity was exceeded", netLabel)
+	MetricsService.counter("medusa_world_events_dropped_total", "World events dropped by bounded queues", { "network", "event" })
 
 	MetricsService.counter("medusa_battery_go_hot_total", "Battery transitions to HOT", netLabel)
 	MetricsService.counter("medusa_battery_go_warm_total", "Battery transitions to WARM", netLabel)
@@ -300,22 +274,10 @@ function Medusa.Observability.MetricsSnapshot.register(netLabel)
 	MetricsService.counter("medusa_last_chance_fired_total", "Shots fired during last-chance salvo", netLabel)
 	MetricsService.counter("medusa_roe_changes_total", "Runtime ROE changes via API", netLabel)
 	MetricsService.counter("medusa_track_promotions_total", "Track identification promotions", netLabel)
-	MetricsService.counter(
-		"medusa_battery_unit_position_refreshes_total",
-		"Managed battery-unit position refreshes",
-		netLabel
-	)
-	MetricsService.counter(
-		"medusa_crew_suppression_applications_total",
-		"Crew suppression applications",
-		crewCauseLabel
-	)
+	MetricsService.counter("medusa_battery_unit_position_refreshes_total", "Managed battery-unit position refreshes", netLabel)
+	MetricsService.counter("medusa_crew_suppression_applications_total", "Crew suppression applications", crewCauseLabel)
 	MetricsService.counter("medusa_crew_suppression_recoveries_total", "Crew suppression recoveries", crewCauseLabel)
-	MetricsService.counter(
-		"medusa_crew_suppression_dropped_events_total",
-		"Crew suppression events rejected or dropped",
-		{ "network", "reason" }
-	)
+	MetricsService.counter("medusa_crew_suppression_dropped_events_total", "Crew suppression events rejected or dropped", { "network", "reason" })
 
 	MetricsService.gauge("medusa_rolling_pk", "Network rolling kill probability", netLabel)
 	MetricsService.gauge("medusa_effective_pk_floor", "Effective PkFloor after rolling adjustment", netLabel)
@@ -323,62 +285,24 @@ function Medusa.Observability.MetricsSnapshot.register(netLabel)
 	MetricsService.gauge("medusa_batteries_warm", "Batteries in WARM state", netLabel)
 	MetricsService.gauge("medusa_batteries_cold", "Batteries in COLD state", netLabel)
 	MetricsService.gauge("medusa_engagements_active", "Batteries currently engaging targets", netLabel)
-	MetricsService.gauge(
-		"medusa_world_event_queue_depth",
-		"World events awaiting bounded processing",
-		{ "network", "event" }
-	)
-	MetricsService.gauge(
-		"medusa_ringbuffer_items",
-		"Current entries in each persistent RingBuffer category",
-		{ "network", "buffer" }
-	)
-	MetricsService.gauge(
-		"medusa_ringbuffer_capacity_items",
-		"Current capacity of each persistent RingBuffer category",
-		{ "network", "buffer" }
-	)
-	MetricsService.gauge(
-		"medusa_ammo_reconciliation_queue_depth",
-		"Battery-unit ammunition identities awaiting bounded reconciliation",
-		netLabel
-	)
+	MetricsService.gauge("medusa_world_event_queue_depth", "World events awaiting bounded processing", { "network", "event" })
+	MetricsService.gauge("medusa_ringbuffer_items", "Current entries in each persistent RingBuffer category", { "network", "buffer" })
+	MetricsService.gauge("medusa_ringbuffer_capacity_items", "Current capacity of each persistent RingBuffer category", { "network", "buffer" })
+	MetricsService.gauge("medusa_ammo_reconciliation_queue_depth", "Battery-unit ammunition identities awaiting bounded reconciliation", netLabel)
 	MetricsService.gauge("medusa_tracks_hostile", "Tracks identified as HOSTILE", netLabel)
 	MetricsService.gauge("medusa_tracks_harm", "Tracks assessed as HARM", netLabel)
 	MetricsService.gauge("medusa_ammo_remaining", "Total missiles remaining across all batteries", netLabel)
 	MetricsService.gauge("medusa_batteries_rearming", "Batteries out of ammo awaiting rearm", netLabel)
 	MetricsService.gauge("medusa_crew_suppressed_batteries", "AAA and MANPAD groups under crew suppression", netLabel)
-	MetricsService.gauge(
-		"medusa_crew_suppression_event_queue_depth",
-		"Validated HIT events awaiting damage processing",
-		netLabel
-	)
-	MetricsService.gauge(
-		"medusa_crew_suppression_impact_queue_depth",
-		"Terminal events awaiting crew-suppression proximity evaluation",
-		netLabel
-	)
-	MetricsService.gauge(
-		"medusa_crew_suppression_weapons_tracked",
-		"Weapon candidates in the bounded explosive-impact tracker"
-	)
-	MetricsService.counter(
-		"medusa_crew_suppression_weapon_outcomes_total",
-		"Bounded weapon-tracking outcomes",
-		{ "outcome" }
-	)
+	MetricsService.gauge("medusa_crew_suppression_event_queue_depth", "Validated HIT events awaiting damage processing", netLabel)
+	MetricsService.gauge("medusa_crew_suppression_impact_queue_depth", "Terminal events awaiting crew-suppression proximity evaluation", netLabel)
+	MetricsService.gauge("medusa_crew_suppression_weapons_tracked", "Weapon candidates in the bounded explosive-impact tracker")
+	MetricsService.counter("medusa_crew_suppression_weapon_outcomes_total", "Bounded weapon-tracking outcomes", { "outcome" })
 	for _, outcome in pairs(Medusa.Constants.CrewSuppressionWeaponOutcome) do
 		MetricsService.inc("medusa_crew_suppression_weapon_outcomes_total", 0, { outcome = outcome })
 	end
-	MetricsService.gauge(
-		"medusa_crew_suppression_cannon_queue_depth",
-		"Cannon bursts awaiting bounded terminal-point estimation"
-	)
-	MetricsService.counter(
-		"medusa_crew_suppression_cannon_outcomes_total",
-		"Bounded cannon terminal-estimation outcomes",
-		{ "outcome" }
-	)
+	MetricsService.gauge("medusa_crew_suppression_cannon_queue_depth", "Cannon bursts awaiting bounded terminal-point estimation")
+	MetricsService.counter("medusa_crew_suppression_cannon_outcomes_total", "Bounded cannon terminal-estimation outcomes", { "outcome" })
 	for _, outcome in pairs(Medusa.Constants.CrewSuppressionCannonOutcome) do
 		MetricsService.inc("medusa_crew_suppression_cannon_outcomes_total", 0, { outcome = outcome })
 	end
@@ -386,67 +310,16 @@ function Medusa.Observability.MetricsSnapshot.register(netLabel)
 	local defaultQuantiles = { 0.5, 0.9, 0.99 }
 	local tickQuantiles = { 0.5, 0.9, 0.95, 0.99 }
 	MetricsService.summary("medusa_tick_duration_seconds", "Total tick processing time", tickQuantiles, nil, netLabel)
-	MetricsService.summary(
-		"medusa_poll_sensors_duration_seconds",
-		"Sensor polling step time",
-		defaultQuantiles,
-		nil,
-		netLabel
-	)
-	MetricsService.summary(
-		"medusa_prune_stale_duration_seconds",
-		"Track pruning step time",
-		defaultQuantiles,
-		nil,
-		netLabel
-	)
-	MetricsService.summary(
-		"medusa_classification_duration_seconds",
-		"Track classification + aircraft type assessment",
-		defaultQuantiles,
-		nil,
-		netLabel
-	)
-	MetricsService.summary(
-		"medusa_harm_eval_duration_seconds",
-		"HARM detection + response + point defense",
-		defaultQuantiles,
-		nil,
-		netLabel
-	)
-	MetricsService.summary(
-		"medusa_assignment_duration_seconds",
-		"Target assignment (autonomous + WTA)",
-		defaultQuantiles,
-		nil,
-		netLabel
-	)
-	MetricsService.summary(
-		"medusa_handoff_duration_seconds",
-		"Handoffs + deactivations + HARM cleanup",
-		defaultQuantiles,
-		nil,
-		netLabel
-	)
+	MetricsService.summary("medusa_poll_sensors_duration_seconds", "Sensor polling step time", defaultQuantiles, nil, netLabel)
+	MetricsService.summary("medusa_prune_stale_duration_seconds", "Track pruning step time", defaultQuantiles, nil, netLabel)
+	MetricsService.summary("medusa_classification_duration_seconds", "Track classification + aircraft type assessment", defaultQuantiles, nil, netLabel)
+	MetricsService.summary("medusa_harm_eval_duration_seconds", "HARM detection + response + point defense", defaultQuantiles, nil, netLabel)
+	MetricsService.summary("medusa_assignment_duration_seconds", "Target assignment (autonomous + WTA)", defaultQuantiles, nil, netLabel)
+	MetricsService.summary("medusa_handoff_duration_seconds", "Handoffs + deactivations + HARM cleanup", defaultQuantiles, nil, netLabel)
 	MetricsService.summary("medusa_emcon_duration_seconds", "EMCON policy application", defaultQuantiles, nil, netLabel)
-	MetricsService.histogram(
-		"medusa_track_age_at_expiry_seconds",
-		"Track age when expired",
-		{ 5, 15, 30, 60, 120, 300, 600 },
-		netLabel
-	)
-	MetricsService.histogram(
-		"medusa_track_updates_at_expiry",
-		"Number of sensor updates a track received before expiring",
-		Medusa.Constants.TRACK_UPDATE_EXPIRY_BUCKETS,
-		netLabel
-	)
-	MetricsService.histogram(
-		"medusa_crew_suppression_duration_seconds",
-		"Applied crew suppression duration",
-		{ 15, 30, 60, 120, 300, 600, 1800, 3600 },
-		crewCauseLabel
-	)
+	MetricsService.histogram("medusa_track_age_at_expiry_seconds", "Track age when expired", { 5, 15, 30, 60, 120, 300, 600 }, netLabel)
+	MetricsService.histogram("medusa_track_updates_at_expiry", "Number of sensor updates a track received before expiring", Medusa.Constants.TRACK_UPDATE_EXPIRY_BUCKETS, netLabel)
+	MetricsService.histogram("medusa_crew_suppression_duration_seconds", "Applied crew suppression duration", { 15, 30, 60, 120, 300, 600, 1800, 3600 }, crewCauseLabel)
 	-- Pipeline chunk throughput
 	local phaseLabel = { "network", "phase" }
 	MetricsService.gauge("medusa_chunk_processed", "Items processed in last chunk invocation", phaseLabel)
@@ -461,11 +334,7 @@ function Medusa.Observability.MetricsSnapshot.register(netLabel)
 	MetricsService.gauge("medusa_batteries_shutdown", "Batteries in HARM shutdown", netLabel)
 	MetricsService.gauge("medusa_batteries_suppressed", "Batteries suppressed by HARMs (went cold)", netLabel)
 	MetricsService.gauge("medusa_batteries_self_defending", "Batteries self-defending against HARMs", netLabel)
-	MetricsService.gauge(
-		"medusa_batteries_pd_protected",
-		"Batteries protected by point defense against HARMs",
-		netLabel
-	)
+	MetricsService.gauge("medusa_batteries_pd_protected", "Batteries protected by point defense against HARMs", netLabel)
 	MetricsService.gauge("medusa_tracks_unknown", "Tracks identified as UNKNOWN", netLabel)
 	MetricsService.gauge("medusa_tracks_bogey", "Tracks identified as BOGEY", netLabel)
 	MetricsService.gauge("medusa_tracks_bandit", "Tracks identified as BANDIT", netLabel)
@@ -491,25 +360,9 @@ function Medusa.Observability.MetricsSnapshot.register(netLabel)
 		local definition = MANPAD_COUNTERS[i]
 		MetricsService.counter(definition[1], definition[2], netLabel)
 	end
-	MetricsService.gauge(
-		"medusa_manpad_autonomous_scan_queue_depth",
-		"MANPAD groups in the autonomous scan rotation",
-		netLabel
-	)
-	MetricsService.summary(
-		"medusa_manpad_autonomous_scan_duration_seconds",
-		"MANPAD autonomous DCS world search time",
-		defaultQuantiles,
-		nil,
-		netLabel
-	)
-	MetricsService.summary(
-		"medusa_manpad_eval_duration_seconds",
-		"ManpadService.evaluate step time",
-		defaultQuantiles,
-		nil,
-		netLabel
-	)
+	MetricsService.gauge("medusa_manpad_autonomous_scan_queue_depth", "MANPAD groups in the autonomous scan rotation", netLabel)
+	MetricsService.summary("medusa_manpad_autonomous_scan_duration_seconds", "MANPAD autonomous DCS world search time", defaultQuantiles, nil, netLabel)
+	MetricsService.summary("medusa_manpad_eval_duration_seconds", "ManpadService.evaluate step time", defaultQuantiles, nil, netLabel)
 
 	MetricsService.gauge("medusa_aaa_state", "AAA groups by operating mode and response state", {
 		"network",
@@ -521,20 +374,8 @@ function Medusa.Observability.MetricsSnapshot.register(netLabel)
 		MetricsService.counter(definition[1], definition[2], netLabel)
 	end
 	MetricsService.gauge("medusa_aaa_local_search_queue_depth", "AAA groups in the local-search rotation", netLabel)
-	MetricsService.summary(
-		"medusa_aaa_local_search_duration_seconds",
-		"AAA local DCS world search time",
-		defaultQuantiles,
-		nil,
-		netLabel
-	)
-	MetricsService.summary(
-		"medusa_aaa_eval_duration_seconds",
-		"AaaService.evaluate step time",
-		defaultQuantiles,
-		nil,
-		netLabel
-	)
+	MetricsService.summary("medusa_aaa_local_search_duration_seconds", "AAA local DCS world search time", defaultQuantiles, nil, netLabel)
+	MetricsService.summary("medusa_aaa_eval_duration_seconds", "AaaService.evaluate step time", defaultQuantiles, nil, netLabel)
 
 	-- Serialize duration stays unlabeled: it spans all networks in a single operation
 	MetricsService.summary("medusa_serialize_duration_seconds", "Time to serialize all metrics", defaultQuantiles)
@@ -552,25 +393,10 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 	if env and env.mission then
 		local d = env.mission.date
 		local t = tonumber(env.mission.start_time) or 0
-		if
-			type(d) == "table"
-			and tonumber(d.Year)
-			and tonumber(d.Month)
-			and tonumber(d.Day)
-			and t == t
-			and t ~= math.huge
-			and t ~= -math.huge
-		then
+		if type(d) == "table" and tonumber(d.Year) and tonumber(d.Month) and tonumber(d.Day) and t == t and t ~= math.huge and t ~= -math.huge then
 			local hours = math.floor(t / 3600)
 			local minutes = math.floor((t % 3600) / 60)
-			mStart = string.format(
-				"%04d-%02d-%02d:%02d-%02d",
-				tonumber(d.Year),
-				tonumber(d.Month),
-				tonumber(d.Day),
-				hours,
-				minutes
-			)
+			mStart = string.format("%04d-%02d-%02d:%02d-%02d", tonumber(d.Year), tonumber(d.Month), tonumber(d.Day), hours, minutes)
 		end
 	end
 	local missionLabels = { mission = mName, theatre = mTheatre, start = mStart }
@@ -627,11 +453,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 					if b.CurrentTargetTrackId then
 						engagedCount = engagedCount + 1
 					end
-					if
-						b.OperationalStatus == BOS.SEARCH_ONLY
-						or b.OperationalStatus == BOS.ENGAGEMENT_IMPAIRED
-						or b.OperationalStatus == BOS.INOPERATIVE
-					then
+					if b.OperationalStatus == BOS.SEARCH_ONLY or b.OperationalStatus == BOS.ENGAGEMENT_IMPAIRED or b.OperationalStatus == BOS.INOPERATIVE then
 						damagedCount = damagedCount + 1
 						allDamagedNames[#allDamagedNames + 1] = b.GroupName
 					end
@@ -701,9 +523,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 				for i = 1, #batteries do
 					local battery = batteries[i]
 					if battery.Role == Medusa.Constants.BatteryRole.AAA and battery.Aaa then
-						local mode = Medusa.Entities.Battery.isRadarDirectedAaa(battery)
-								and Medusa.Constants.Aaa.Mode.RADAR_DIRECTED
-							or Medusa.Constants.Aaa.Mode.INDEPENDENT
+						local mode = Medusa.Entities.Battery.isRadarDirectedAaa(battery) and Medusa.Constants.Aaa.Mode.RADAR_DIRECTED or Medusa.Constants.Aaa.Mode.INDEPENDENT
 						local state = battery.Aaa.ResponseState
 						if _aaaStateCounts[mode][state] ~= nil then
 							_aaaStateCounts[mode][state] = _aaaStateCounts[mode][state] + 1
@@ -755,11 +575,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 						elseif t.TrackIdentification == TI.BANDIT then
 							banditCount = banditCount + 1
 						end
-						if
-							t.HarmLikelihoodScore
-							and t.HarmLikelihoodScore > 0
-							and t.AssessedAircraftType ~= AAT.HARM
-						then
+						if t.HarmLikelihoodScore and t.HarmLikelihoodScore > 0 and t.AssessedAircraftType ~= AAT.HARM then
 							sprtCount = sprtCount + 1
 						end
 					end
@@ -805,113 +621,39 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 						local displayTid = displayTrackId(t)
 						if t.Position then
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_pos_x{network="%s",track="%s",display_track="%s"} %s',
-								id,
-								tid,
-								displayTid,
-								tostring(t.Position.x)
-							)
+							extLines[en] = string.format('medusa_track_pos_x{network="%s",track="%s",display_track="%s"} %s', id, tid, displayTid, tostring(t.Position.x))
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_pos_y{network="%s",track="%s",display_track="%s"} %s',
-								id,
-								tid,
-								displayTid,
-								tostring(t.Position.y)
-							)
+							extLines[en] = string.format('medusa_track_pos_y{network="%s",track="%s",display_track="%s"} %s', id, tid, displayTid, tostring(t.Position.y))
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_pos_z{network="%s",track="%s",display_track="%s"} %s',
-								id,
-								tid,
-								displayTid,
-								tostring(t.Position.z)
-							)
+							extLines[en] = string.format('medusa_track_pos_z{network="%s",track="%s",display_track="%s"} %s', id, tid, displayTid, tostring(t.Position.z))
 							local okLL, lat, lon = pcall(coord.LOtoLL, t.Position)
 							if okLL and lat and lon then
 								en = en + 1
-								extLines[en] = string.format(
-									'medusa_track_lat{network="%s",track="%s",display_track="%s"} %.6f',
-									id,
-									tid,
-									displayTid,
-									lat
-								)
+								extLines[en] = string.format('medusa_track_lat{network="%s",track="%s",display_track="%s"} %.6f', id, tid, displayTid, lat)
 								en = en + 1
-								extLines[en] = string.format(
-									'medusa_track_lon{network="%s",track="%s",display_track="%s"} %.6f',
-									id,
-									tid,
-									displayTid,
-									lon
-								)
+								extLines[en] = string.format('medusa_track_lon{network="%s",track="%s",display_track="%s"} %.6f', id, tid, displayTid, lon)
 							end
 						end
 						if t.Velocity then
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_vel_x{network="%s",track="%s",display_track="%s"} %s',
-								id,
-								tid,
-								displayTid,
-								tostring(t.Velocity.x)
-							)
+							extLines[en] = string.format('medusa_track_vel_x{network="%s",track="%s",display_track="%s"} %s', id, tid, displayTid, tostring(t.Velocity.x))
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_vel_y{network="%s",track="%s",display_track="%s"} %s',
-								id,
-								tid,
-								displayTid,
-								tostring(t.Velocity.y)
-							)
+							extLines[en] = string.format('medusa_track_vel_y{network="%s",track="%s",display_track="%s"} %s', id, tid, displayTid, tostring(t.Velocity.y))
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_vel_z{network="%s",track="%s",display_track="%s"} %s',
-								id,
-								tid,
-								displayTid,
-								tostring(t.Velocity.z)
-							)
-							local spd = math.sqrt(
-								t.Velocity.x * t.Velocity.x + t.Velocity.y * t.Velocity.y + t.Velocity.z * t.Velocity.z
-							)
+							extLines[en] = string.format('medusa_track_vel_z{network="%s",track="%s",display_track="%s"} %s', id, tid, displayTid, tostring(t.Velocity.z))
+							local spd = math.sqrt(t.Velocity.x * t.Velocity.x + t.Velocity.y * t.Velocity.y + t.Velocity.z * t.Velocity.z)
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_speed{network="%s",track="%s",display_track="%s"} %.1f',
-								id,
-								tid,
-								displayTid,
-								spd
-							)
+							extLines[en] = string.format('medusa_track_speed{network="%s",track="%s",display_track="%s"} %.1f', id, tid, displayTid, spd)
 						end
 						en = en + 1
-						extLines[en] = string.format(
-							'medusa_track_updates{network="%s",track="%s",display_track="%s"} %d',
-							id,
-							tid,
-							displayTid,
-							t.UpdateCount or 0
-						)
+						extLines[en] = string.format('medusa_track_updates{network="%s",track="%s",display_track="%s"} %d', id, tid, displayTid, t.UpdateCount or 0)
 						if t.FirstDetectionTime then
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_age{network="%s",track="%s",display_track="%s"} %.1f',
-								id,
-								tid,
-								displayTid,
-								now - t.FirstDetectionTime
-							)
+							extLines[en] = string.format('medusa_track_age{network="%s",track="%s",display_track="%s"} %.1f', id, tid, displayTid, now - t.FirstDetectionTime)
 						end
 						if t.HarmLikelihoodScore then
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_harm_score{network="%s",track="%s",display_track="%s"} %.3f',
-								id,
-								tid,
-								displayTid,
-								t.HarmLikelihoodScore
-							)
+							extLines[en] = string.format('medusa_track_harm_score{network="%s",track="%s",display_track="%s"} %.3f', id, tid, displayTid, t.HarmLikelihoodScore)
 						end
 					end
 				end
@@ -997,29 +739,12 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 							local trackId = track.TrackId
 							local displayTid = displayTrackId(track)
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_sprt_llr{network="%s",track="%s",display_track="%s"} %.3f',
-								id,
-								trackId,
-								displayTid,
-								state.llr or 0
-							)
+							extLines[en] = string.format('medusa_track_sprt_llr{network="%s",track="%s",display_track="%s"} %.3f', id, trackId, displayTid, state.llr or 0)
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_sprt_scans{network="%s",track="%s",display_track="%s"} %d',
-								id,
-								trackId,
-								displayTid,
-								state.scanCount or 0
-							)
+							extLines[en] = string.format('medusa_track_sprt_scans{network="%s",track="%s",display_track="%s"} %d', id, trackId, displayTid, state.scanCount or 0)
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_sprt_info{network="%s",track="%s",display_track="%s",label="%s"} 1',
-								id,
-								trackId,
-								displayTid,
-								state.label or "UNKNOWN"
-							)
+							extLines[en] =
+								string.format('medusa_track_sprt_info{network="%s",track="%s",display_track="%s",label="%s"} 1', id, trackId, displayTid, state.label or "UNKNOWN")
 							if state.lastFeat then
 								for fi = 1, 8 do
 									en = en + 1
@@ -1106,27 +831,15 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 						local bname = b.GroupName or b.BatteryId
 						if b.Position then
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_battery_pos_x{network="%s",battery="%s"} %.1f',
-								id,
-								bname,
-								b.Position.x
-							)
+							extLines[en] = string.format('medusa_battery_pos_x{network="%s",battery="%s"} %.1f', id, bname, b.Position.x)
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_battery_pos_z{network="%s",battery="%s"} %.1f',
-								id,
-								bname,
-								b.Position.z
-							)
+							extLines[en] = string.format('medusa_battery_pos_z{network="%s",battery="%s"} %.1f', id, bname, b.Position.z)
 							local okLL, lat, lon = pcall(coord.LOtoLL, b.Position)
 							if okLL and lat and lon then
 								en = en + 1
-								extLines[en] =
-									string.format('medusa_battery_lat{network="%s",battery="%s"} %.6f', id, bname, lat)
+								extLines[en] = string.format('medusa_battery_lat{network="%s",battery="%s"} %.6f', id, bname, lat)
 								en = en + 1
-								extLines[en] =
-									string.format('medusa_battery_lon{network="%s",battery="%s"} %.6f', id, bname, lon)
+								extLines[en] = string.format('medusa_battery_lon{network="%s",battery="%s"} %.6f', id, bname, lon)
 							end
 						end
 						if b.Clusters then
@@ -1135,30 +848,12 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 								local cOk, cLat, cLon = pcall(coord.LOtoLL, cpos)
 								if cOk and cLat and cLon then
 									en = en + 1
-									extLines[en] = string.format(
-										'medusa_battery_cluster_lat{network="%s",battery="%s",cluster="%d"} %.6f',
-										id,
-										bname,
-										ci,
-										cLat
-									)
+									extLines[en] = string.format('medusa_battery_cluster_lat{network="%s",battery="%s",cluster="%d"} %.6f', id, bname, ci, cLat)
 									en = en + 1
-									extLines[en] = string.format(
-										'medusa_battery_cluster_lon{network="%s",battery="%s",cluster="%d"} %.6f',
-										id,
-										bname,
-										ci,
-										cLon
-									)
+									extLines[en] = string.format('medusa_battery_cluster_lon{network="%s",battery="%s",cluster="%d"} %.6f', id, bname, ci, cLon)
 									if cpos.rangeMax then
 										en = en + 1
-										extLines[en] = string.format(
-											'medusa_battery_cluster_range_m{network="%s",battery="%s",cluster="%d"} %.0f',
-											id,
-											bname,
-											ci,
-											cpos.rangeMax
-										)
+										extLines[en] = string.format('medusa_battery_cluster_range_m{network="%s",battery="%s",cluster="%d"} %.0f', id, bname, ci, cpos.rangeMax)
 									end
 								end
 							end
@@ -1204,38 +899,17 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 						end
 						if b.WeaponRangeMax then
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_battery_weapon_range_m{network="%s",battery="%s",weapon="%s"} %.0f',
-								id,
-								bname,
-								primaryWeapon,
-								b.WeaponRangeMax
-							)
+							extLines[en] = string.format('medusa_battery_weapon_range_m{network="%s",battery="%s",weapon="%s"} %.0f', id, bname, primaryWeapon, b.WeaponRangeMax)
 						end
 						if b.EngagementRangeMax then
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_battery_engagement_range_m{network="%s",battery="%s",system="%s"} %.0f',
-								id,
-								bname,
-								b.SystemType or "",
-								b.EngagementRangeMax
-							)
+							extLines[en] =
+								string.format('medusa_battery_engagement_range_m{network="%s",battery="%s",system="%s"} %.0f', id, bname, b.SystemType or "", b.EngagementRangeMax)
 						end
 						en = en + 1
-						extLines[en] = string.format(
-							'medusa_battery_shots_fired{network="%s",battery="%s"} %d',
-							id,
-							bname,
-							b.ShotsFired or 0
-						)
+						extLines[en] = string.format('medusa_battery_shots_fired{network="%s",battery="%s"} %d', id, bname, b.ShotsFired or 0)
 						en = en + 1
-						extLines[en] = string.format(
-							'medusa_battery_ammo{network="%s",battery="%s"} %d',
-							id,
-							bname,
-							b.TotalAmmoStatus or 0
-						)
+						extLines[en] = string.format('medusa_battery_ammo{network="%s",battery="%s"} %d', id, bname, b.TotalAmmoStatus or 0)
 					end
 				end
 			end
@@ -1253,8 +927,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 			en = en + 1
 			extLines[en] = "# TYPE medusa_aaa_visual_detection_range_meters gauge"
 			en = en + 1
-			extLines[en] =
-				"# HELP medusa_aaa_visual_detection_half_angle_degrees AAA visual detection half-angle in degrees"
+			extLines[en] = "# HELP medusa_aaa_visual_detection_half_angle_degrees AAA visual detection half-angle in degrees"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_aaa_visual_detection_half_angle_degrees gauge"
 			en = en + 1
@@ -1263,8 +936,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 			extLines[en] = "# TYPE medusa_aaa_audio_range_meters gauge"
 
 			local aaaVisualRange = Medusa.Constants.LocalAircraftDetection.PRIMARY_RANGE_M
-			local aaaVisualHalfAngle =
-				math.deg(math.acos(Medusa.Constants.LocalAircraftDetection.PRIMARY_COS_HALF_ANGLE))
+			local aaaVisualHalfAngle = math.deg(math.acos(Medusa.Constants.LocalAircraftDetection.PRIMARY_COS_HALF_ANGLE))
 			en = en + 1
 			extLines[en] = string.format("medusa_aaa_visual_detection_range_meters %.0f", aaaVisualRange)
 			en = en + 1
@@ -1277,19 +949,13 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 					local doctrine = iads:getDoctrine() or {}
 					local aaaDoctrine = doctrine.AAA or {}
 					en = en + 1
-					extLines[en] = string.format(
-						'medusa_aaa_audio_range_meters{network="%s"} %.0f',
-						networkLabel,
-						aaaDoctrine.AudioRangeM or 0
-					)
+					extLines[en] = string.format('medusa_aaa_audio_range_meters{network="%s"} %.0f', networkLabel, aaaDoctrine.AudioRangeM or 0)
 					local batteries = ai:batteries():getAll()
 					for i = 1, #batteries do
 						local battery = batteries[i]
 						if battery.Role == Medusa.Constants.BatteryRole.AAA and battery.Aaa then
 							local aaaLabel = escapePrometheusLabel(battery.GroupName or battery.BatteryId)
-							local mode = Medusa.Entities.Battery.isRadarDirectedAaa(battery)
-									and Medusa.Constants.Aaa.Mode.RADAR_DIRECTED
-								or Medusa.Constants.Aaa.Mode.INDEPENDENT
+							local mode = Medusa.Entities.Battery.isRadarDirectedAaa(battery) and Medusa.Constants.Aaa.Mode.RADAR_DIRECTED or Medusa.Constants.Aaa.Mode.INDEPENDENT
 							en = en + 1
 							extLines[en] = string.format(
 								'medusa_aaa_info{network="%s",aaa="%s",mode="%s",state="%s"} 1',
@@ -1327,8 +993,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 			en = en + 1
 			extLines[en] = "# TYPE medusa_manpad_longitude_degrees gauge"
 			en = en + 1
-			extLines[en] =
-				"# HELP medusa_manpad_info MANPAD group state, wake reason, detection mode, fire readiness, and control mode"
+			extLines[en] = "# HELP medusa_manpad_info MANPAD group state, wake reason, detection mode, fire readiness, and control mode"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_manpad_info gauge"
 			en = en + 1
@@ -1336,28 +1001,23 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 			en = en + 1
 			extLines[en] = "# TYPE medusa_manpad_partition gauge"
 			en = en + 1
-			extLines[en] =
-				"# HELP medusa_manpad_heading_degrees Cached MANPAD unit heading in degrees clockwise from north"
+			extLines[en] = "# HELP medusa_manpad_heading_degrees Cached MANPAD unit heading in degrees clockwise from north"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_manpad_heading_degrees gauge"
 			en = en + 1
-			extLines[en] =
-				"# HELP medusa_manpad_narrow_detection_range_meters MANPAD narrow visual detection range in meters"
+			extLines[en] = "# HELP medusa_manpad_narrow_detection_range_meters MANPAD narrow visual detection range in meters"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_manpad_narrow_detection_range_meters gauge"
 			en = en + 1
-			extLines[en] =
-				"# HELP medusa_manpad_wide_detection_range_meters MANPAD wide visual detection range in meters"
+			extLines[en] = "# HELP medusa_manpad_wide_detection_range_meters MANPAD wide visual detection range in meters"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_manpad_wide_detection_range_meters gauge"
 			en = en + 1
-			extLines[en] =
-				"# HELP medusa_manpad_narrow_detection_half_angle_degrees MANPAD narrow visual detection half-angle in degrees"
+			extLines[en] = "# HELP medusa_manpad_narrow_detection_half_angle_degrees MANPAD narrow visual detection half-angle in degrees"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_manpad_narrow_detection_half_angle_degrees gauge"
 			en = en + 1
-			extLines[en] =
-				"# HELP medusa_manpad_wide_detection_half_angle_degrees MANPAD wide visual detection half-angle in degrees"
+			extLines[en] = "# HELP medusa_manpad_wide_detection_half_angle_degrees MANPAD wide visual detection half-angle in degrees"
 			en = en + 1
 			extLines[en] = "# TYPE medusa_manpad_wide_detection_half_angle_degrees gauge"
 
@@ -1370,8 +1030,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 			en = en + 1
 			extLines[en] = string.format("medusa_manpad_wide_detection_range_meters %.0f", manpadWideRange)
 			en = en + 1
-			extLines[en] =
-				string.format("medusa_manpad_narrow_detection_half_angle_degrees %.1f", manpadNarrowHalfAngle)
+			extLines[en] = string.format("medusa_manpad_narrow_detection_half_angle_degrees %.1f", manpadNarrowHalfAngle)
 			en = en + 1
 			extLines[en] = string.format("medusa_manpad_wide_detection_half_angle_degrees %.1f", manpadWideHalfAngle)
 
@@ -1382,8 +1041,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 					local doctrine = iads:getDoctrine() or {}
 					local posture = doctrine.Posture or Medusa.Constants.Posture.HOT_WAR
 					local manpads = ai:manpads():getAll()
-					local partitionDisplay = partitionDisplayByNetwork[id]
-						or partitionDisplayIds(ai:batteries():getAll(), manpads)
+					local partitionDisplay = partitionDisplayByNetwork[id] or partitionDisplayIds(ai:batteries():getAll(), manpads)
 					for i = 1, #manpads do
 						local manpad = manpads[i]
 						local manpadState = manpad.Manpad
@@ -1392,34 +1050,16 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 							local okLL, lat, lon = pcall(coord.LOtoLL, manpad.Position)
 							if okLL and lat and lon then
 								en = en + 1
-								extLines[en] = string.format(
-									'medusa_manpad_latitude_degrees{network="%s",manpad="%s"} %.6f',
-									networkLabel,
-									manpadLabel,
-									lat
-								)
+								extLines[en] = string.format('medusa_manpad_latitude_degrees{network="%s",manpad="%s"} %.6f', networkLabel, manpadLabel, lat)
 								en = en + 1
-								extLines[en] = string.format(
-									'medusa_manpad_longitude_degrees{network="%s",manpad="%s"} %.6f',
-									networkLabel,
-									manpadLabel,
-									lon
-								)
+								extLines[en] = string.format('medusa_manpad_longitude_degrees{network="%s",manpad="%s"} %.6f', networkLabel, manpadLabel, lon)
 							end
 						end
 						if manpadState then
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_manpad_partition{network="%s",manpad="%s"} %d',
-								networkLabel,
-								manpadLabel,
-								partitionDisplay[manpad.PartitionKey] or 0
-							)
-							local detectionMode = Medusa.Services.ManpadService.detectionMode(
-								manpadState.SleepWakeState,
-								posture,
-								manpadState.AlertCycleCount
-							)
+							extLines[en] =
+								string.format('medusa_manpad_partition{network="%s",manpad="%s"} %d', networkLabel, manpadLabel, partitionDisplay[manpad.PartitionKey] or 0)
+							local detectionMode = Medusa.Services.ManpadService.detectionMode(manpadState.SleepWakeState, posture, manpadState.AlertCycleCount)
 							local wakeReason = manpadState.WakeReason or Medusa.Constants.Manpad.WakeReason.NONE
 							local canFire = Medusa.Services.ManpadService.canFire(manpad)
 							en = en + 1
@@ -1488,26 +1128,11 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 						if b.HarmDefenseState then
 							local bname = b.GroupName or b.BatteryId
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_battery_harm_defense{network="%s",battery="%s",state="%s"} 1',
-								id,
-								bname,
-								b.HarmDefenseState
-							)
+							extLines[en] = string.format('medusa_battery_harm_defense{network="%s",battery="%s",state="%s"} 1', id, bname, b.HarmDefenseState)
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_battery_harm_threats{network="%s",battery="%s"} %d',
-								id,
-								bname,
-								b.HarmDefenseThreats
-							)
+							extLines[en] = string.format('medusa_battery_harm_threats{network="%s",battery="%s"} %d', id, bname, b.HarmDefenseThreats)
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_battery_harm_defenders{network="%s",battery="%s"} %.1f',
-								id,
-								bname,
-								b.HarmDefenseAvailableCapacity
-							)
+							extLines[en] = string.format('medusa_battery_harm_defenders{network="%s",battery="%s"} %.1f', id, bname, b.HarmDefenseAvailableCapacity)
 							en = en + 1
 							extLines[en] = string.format(
 								'medusa_battery_harm_ratio{network="%s",battery="%s"} %.2f',
@@ -1516,12 +1141,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 								b.HarmDefenseThreats > 0 and b.HarmDefenseAvailableCapacity / b.HarmDefenseThreats or 0
 							)
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_battery_harm_committed_capacity{network="%s",battery="%s"} %.1f',
-								id,
-								bname,
-								b.HarmDefenseCommittedCapacity
-							)
+							extLines[en] = string.format('medusa_battery_harm_committed_capacity{network="%s",battery="%s"} %.1f', id, bname, b.HarmDefenseCommittedCapacity)
 							en = en + 1
 							extLines[en] = string.format(
 								'medusa_battery_harm_committed_ratio{network="%s",battery="%s"} %.2f',
@@ -1563,12 +1183,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 								displayTrackId(lastChanceTrack)
 							)
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_battery_last_chance_shots_remaining{network="%s",battery="%s"} %d',
-								id,
-								bname,
-								b.LastChanceShotsRemaining or 0
-							)
+							extLines[en] = string.format('medusa_battery_last_chance_shots_remaining{network="%s",battery="%s"} %d', id, bname, b.LastChanceShotsRemaining or 0)
 						end
 					end
 				end
@@ -1606,18 +1221,11 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 							local okLL, lat, lon = pcall(coord.LOtoLL, s.Position)
 							if okLL and lat and lon then
 								en = en + 1
-								extLines[en] =
-									string.format('medusa_sensor_lat{network="%s",sensor="%s"} %.6f', id, sname, lat)
+								extLines[en] = string.format('medusa_sensor_lat{network="%s",sensor="%s"} %.6f', id, sname, lat)
 								en = en + 1
-								extLines[en] =
-									string.format('medusa_sensor_lon{network="%s",sensor="%s"} %.6f', id, sname, lon)
+								extLines[en] = string.format('medusa_sensor_lon{network="%s",sensor="%s"} %.6f', id, sname, lon)
 								en = en + 1
-								extLines[en] = string.format(
-									'medusa_sensor_pos_y{network="%s",sensor="%s"} %.1f',
-									id,
-									sname,
-									s.Position.y or 0
-								)
+								extLines[en] = string.format('medusa_sensor_pos_y{network="%s",sensor="%s"} %.1f', id, sname, s.Position.y or 0)
 							end
 						end
 						en = en + 1
@@ -1632,12 +1240,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 						)
 						if s.DetectionRangeMax and s.DetectionRangeMax > 0 then
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_sensor_detection_range_m{network="%s",sensor="%s"} %.0f',
-								id,
-								sname,
-								s.DetectionRangeMax
-							)
+							extLines[en] = string.format('medusa_sensor_detection_range_m{network="%s",sensor="%s"} %.0f', id, sname, s.DetectionRangeMax)
 						end
 					end
 				end
@@ -1699,14 +1302,8 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 								end
 							end
 							en = en + 1
-							extLines[en] = string.format(
-								'medusa_track_best_pk{network="%s",track="%s",display_track="%s",battery="%s"} %.3f',
-								id,
-								t.TrackId,
-								displayTid,
-								bestBatt,
-								bestPk
-							)
+							extLines[en] =
+								string.format('medusa_track_best_pk{network="%s",track="%s",display_track="%s",battery="%s"} %.3f', id, t.TrackId, displayTid, bestBatt, bestPk)
 							en = en + 1
 							extLines[en] = string.format(
 								'medusa_track_second_pk{network="%s",track="%s",display_track="%s",battery="%s"} %.3f',
@@ -1737,13 +1334,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 				local adizEnabled = doctrine.ADIZEnabled and "true" or "false"
 				local adizNm = doctrine.ADIZBufferNm or 12
 				en = en + 1
-				extLines[en] = string.format(
-					'medusa_posture{network="%s",posture="%s",adiz_enabled="%s",adiz_nm="%.0f"} 1',
-					netId,
-					posture,
-					adizEnabled,
-					adizNm
-				)
+				extLines[en] = string.format('medusa_posture{network="%s",posture="%s",adiz_enabled="%s",adiz_nm="%.0f"} 1', netId, posture, adizEnabled, adizNm)
 
 				local llPolys = iads:getBorderPolygonsLL()
 				for zi = 1, #llPolys do
@@ -1754,12 +1345,7 @@ function Medusa.Observability.MetricsSnapshot.installSnapshot()
 							parts[#parts + 1] = string.format("%.6f,%.6f", llPoly[vi].lat, llPoly[vi].lon)
 						end
 						en = en + 1
-						extLines[en] = string.format(
-							'medusa_border_zone{network="%s",zone_idx="%d",vertices="%s"} 1',
-							netId,
-							zi - 1,
-							table.concat(parts, ";")
-						)
+						extLines[en] = string.format('medusa_border_zone{network="%s",zone_idx="%d",vertices="%s"} 1', netId, zi - 1, table.concat(parts, ";"))
 					end
 				end
 			end

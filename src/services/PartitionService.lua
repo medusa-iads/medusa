@@ -69,8 +69,7 @@ end
 
 --- Returns whether the child and, when required, root command centers keep an edge available.
 local function edgeAvailable(edge, nodesByGroupId, rootAvailable)
-	return anyCommandCenterAvailable(edge.CommandCenterGroupIds or {}, nodesByGroupId)
-		and (edge.ParentKey ~= "" or rootAvailable)
+	return anyCommandCenterAvailable(edge.CommandCenterGroupIds or {}, nodesByGroupId) and (edge.ParentKey ~= "" or rootAvailable)
 end
 
 --- Returns connected topology components and the component indexed by each cluster.
@@ -117,20 +116,13 @@ end
 
 --- Returns whether sensor is an operational EWR, GCI, or AWACS partition provider.
 local function sensorIsProvider(sensor)
-	return sensor.Available
-		and (
-			sensor.SensorType == C.SensorType.EWR
-			or sensor.SensorType == C.SensorType.GCI
-			or sensor.SensorType == C.SensorType.AWACS
-		)
+	return sensor.Available and (sensor.SensorType == C.SensorType.EWR or sensor.SensorType == C.SensorType.GCI or sensor.SensorType == C.SensorType.AWACS)
 end
 
 --- Returns whether battery is the operational SAM-as-EWR provider selected by doctrine.
 local function batteryIsProvider(battery)
 	local status = battery.OperationalStatus
-	return battery.IsActingAsEWR == true
-		and (status == C.BatteryOperationalStatus.ACTIVE or status == C.BatteryOperationalStatus.SEARCH_ONLY)
-		and battery.HasSearchRadar
+	return battery.IsActingAsEWR == true and (status == C.BatteryOperationalStatus.ACTIVE or status == C.BatteryOperationalStatus.SEARCH_ONLY) and battery.HasSearchRadar
 end
 
 --- Returns whether battery can provide SAM-as-EWR coverage from captured operational facts.
@@ -253,11 +245,7 @@ local function finalizePartitions(pending)
 		local component = pending.Components[i]
 		local sustained = component.Sustained == true
 		local old = previousByCluster[component.ClusterKeys[1]]
-		local key = old
-				and old.Sustained == sustained
-				and sameClusters(old.ClusterKeys, component.ClusterKeys)
-				and old.Key
-			or NewULID()
+		local key = old and old.Sustained == sustained and sameClusters(old.ClusterKeys, component.ClusterKeys) and old.Key or NewULID()
 		local partition = Medusa.Entities.Partition.new({
 			Key = key,
 			ClusterKeys = component.ClusterKeys,
@@ -362,8 +350,7 @@ local function evaluateBattery(pending, battery)
 	end
 	local providers = candidateProviders(pending, envelope, partition)
 	local coverage, overflow = CoverageGeometry.evaluate(envelope, providers)
-	return coverage == C.CoverageClass.SUFFICIENT and C.CoordinationState.COORDINATED or C.CoordinationState.DEGRADED,
-		overflow
+	return coverage == C.CoverageClass.SUFFICIENT and C.CoordinationState.COORDINATED or C.CoordinationState.DEGRADED, overflow
 end
 
 --- Rejects refresh input counts above the supported sensor, command-center, battery, or total ceilings.
@@ -375,13 +362,7 @@ local function validateCapacity(ctx)
 		error(string.format("partition sensor capacity exceeded: %d > %d", sensorCount, C.C2.MAX_SENSORS))
 	end
 	if commandCenterCount > C.C2.MAX_COMMAND_CENTERS then
-		error(
-			string.format(
-				"partition command-center capacity exceeded: %d > %d",
-				commandCenterCount,
-				C.C2.MAX_COMMAND_CENTERS
-			)
-		)
+		error(string.format("partition command-center capacity exceeded: %d > %d", commandCenterCount, C.C2.MAX_COMMAND_CENTERS))
 	end
 	if batteryCount > C.C2.MAX_BATTERIES then
 		error(string.format("partition battery capacity exceeded: %d > %d", batteryCount, C.C2.MAX_BATTERIES))

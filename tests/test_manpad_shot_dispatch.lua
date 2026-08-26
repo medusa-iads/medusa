@@ -219,14 +219,8 @@ function TestManpadServiceOnShot:test_onShot_hot_resetsHotSubfields()
 	local C = Medusa.Constants
 	lu.assertNotNil(bat.Manpad.HotUntil, "HotUntil must not be nil after onShot while HOT")
 	local delta = bat.Manpad.HotUntil - now
-	lu.assertTrue(
-		delta >= C.Manpad.HOT_MIN_SEC,
-		string.format("HotUntil delta (%d) must be >= Manpad.HOT_MIN_SEC", delta)
-	)
-	lu.assertTrue(
-		delta <= C.Manpad.HOT_MAX_SEC,
-		string.format("HotUntil delta (%d) must be <= Manpad.HOT_MAX_SEC", delta)
-	)
+	lu.assertTrue(delta >= C.Manpad.HOT_MIN_SEC, string.format("HotUntil delta (%d) must be >= Manpad.HOT_MIN_SEC", delta))
+	lu.assertTrue(delta <= C.Manpad.HOT_MAX_SEC, string.format("HotUntil delta (%d) must be <= Manpad.HOT_MAX_SEC", delta))
 	lu.assertEquals(bat.Manpad.AlertStartTime, now, "AlertStartTime must be set to now when HOT")
 end
 

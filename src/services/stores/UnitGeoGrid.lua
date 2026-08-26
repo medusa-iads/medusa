@@ -136,12 +136,7 @@ do
 	end
 
 	function Grid:beginQuery(position, radiusMeters)
-		if
-			not validPosition(position)
-			or type(radiusMeters) ~= "number"
-			or radiusMeters < 0
-			or radiusMeters > self._cellSizeMeters
-		then
+		if not validPosition(position) or type(radiusMeters) ~= "number" or radiusMeters < 0 or radiusMeters > self._cellSizeMeters then
 			return nil
 		end
 		local cells = {}
@@ -207,10 +202,7 @@ do
 				local dz = location.Position.z - cursor.Position.z
 				local horizontalDistanceSquared = dx * dx + dz * dz
 				local distanceSquared = horizontalDistanceSquared + dy * dy
-				if
-					not cursor.NearestVisitedDistanceSquared
-					or distanceSquared < cursor.NearestVisitedDistanceSquared
-				then
+				if not cursor.NearestVisitedDistanceSquared or distanceSquared < cursor.NearestVisitedDistanceSquared then
 					cursor.NearestVisitedDistanceSquared = distanceSquared
 				end
 				if horizontalDistanceSquared <= cursor.RadiusSquared then

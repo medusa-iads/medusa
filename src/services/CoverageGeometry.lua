@@ -74,20 +74,12 @@ local function coveredIntervals(circle, circles, circleIndex)
 			local dz = other.z - circle.z
 			local distance = math.sqrt(dx * dx + dz * dz)
 			if distance <= math.abs(other.radius - circle.radius) + EPSILON then
-				if
-					other.radius > circle.radius
-					or (math.abs(other.radius - circle.radius) <= EPSILON and otherIndex < circleIndex)
-				then
+				if other.radius > circle.radius or (math.abs(other.radius - circle.radius) <= EPSILON and otherIndex < circleIndex) then
 					return nil, true
 				end
 			elseif distance < other.radius + circle.radius - EPSILON then
 				local centerAngle = math.atan2(dz, dx)
-				local cosine = clamp(
-					(distance * distance + circle.radius * circle.radius - other.radius * other.radius)
-						/ (2 * distance * circle.radius),
-					-1,
-					1
-				)
+				local cosine = clamp((distance * distance + circle.radius * circle.radius - other.radius * other.radius) / (2 * distance * circle.radius), -1, 1)
 				local halfAngle = math.acos(cosine)
 				addInterval(intervals, centerAngle - halfAngle, centerAngle + halfAngle)
 			end
@@ -117,12 +109,7 @@ end
 --- Returns the signed area contribution of the circle boundary arc from first through last radians.
 local function arcArea(circle, first, last)
 	local radius = circle.radius
-	return 0.5
-		* (
-			radius * circle.x * (math.sin(last) - math.sin(first))
-			+ radius * circle.z * (math.cos(first) - math.cos(last))
-			+ radius * radius * (last - first)
-		)
+	return 0.5 * (radius * circle.x * (math.sin(last) - math.sin(first)) + radius * circle.z * (math.cos(first) - math.cos(last)) + radius * radius * (last - first))
 end
 
 --- Returns the analytic floating-point union area of circles within the 128-provider ceiling.

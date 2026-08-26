@@ -421,12 +421,7 @@ function TestSensorPollingServicePollSensor:test_acceptsWeaponObjects()
 	GetControllerDetectedTargets = function(_)
 		return {
 			{
-				object = makeDcsObject(
-					"AGM-88C #001",
-					{ x = 1, y = 500, z = 2 },
-					{ x = 300, y = -50, z = 0 },
-					Object.Category.WEAPON
-				),
+				object = makeDcsObject("AGM-88C #001", { x = 1, y = 500, z = 2 }, { x = 300, y = -50, z = 0 }, Object.Category.WEAPON),
 			},
 		}
 	end
@@ -447,12 +442,7 @@ function TestSensorPollingServicePollSensor:test_skipsStaticObjects()
 	GetControllerDetectedTargets = function(_)
 		return {
 			{
-				object = makeDcsObject(
-					"building-1",
-					{ x = 1, y = 0, z = 2 },
-					{ x = 0, y = 0, z = 0 },
-					Object.Category.STATIC
-				),
+				object = makeDcsObject("building-1", { x = 1, y = 0, z = 2 }, { x = 0, y = 0, z = 0 }, Object.Category.STATIC),
 			},
 		}
 	end

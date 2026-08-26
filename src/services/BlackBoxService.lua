@@ -149,8 +149,7 @@ do
 			logger:error(string.format("explosive terminal-event publication failed: %s", tostring(err)))
 			return
 		end
-		local outcome = source == C.CrewSuppressionTerminalSource.HIT and C.CrewSuppressionWeaponOutcome.IMPACT_HIT
-			or C.CrewSuppressionWeaponOutcome.IMPACT_TERRAIN
+		local outcome = source == C.CrewSuppressionTerminalSource.HIT and C.CrewSuppressionWeaponOutcome.IMPACT_HIT or C.CrewSuppressionWeaponOutcome.IMPACT_TERRAIN
 		recordOutcome(outcome)
 		logger:debug(
 			string.format(
@@ -176,13 +175,7 @@ do
 			return
 		end
 		recordCannonOutcome(C.CrewSuppressionCannonOutcome.ESTIMATED_FORWARD)
-		logger:debug(
-			string.format(
-				"cannon terminal event published: id=%s source=%s",
-				tostring(terminalEvent.TerminalEventId),
-				terminalEvent.Source
-			)
-		)
+		logger:debug(string.format("cannon terminal event published: id=%s source=%s", tostring(terminalEvent.TerminalEventId), terminalEvent.Source))
 	end
 
 	function Service.onShot(store, event, observedAt)
@@ -301,14 +294,7 @@ do
 		end
 		local shotId, hitId, shootingStartId = subscriptionIds[1], subscriptionIds[2], subscriptionIds[3]
 		store:setSubscriptions(bus, shotId, hitId, shootingStartId)
-		logger:debug(
-			string.format(
-				"weapon observation subscriptions active: SHOT=%s HIT=%s SHOOTING_START=%s",
-				tostring(shotId),
-				tostring(hitId),
-				tostring(shootingStartId)
-			)
-		)
+		logger:debug(string.format("weapon observation subscriptions active: SHOT=%s HIT=%s SHOOTING_START=%s", tostring(shotId), tostring(hitId), tostring(shootingStartId)))
 		return true
 	end
 
@@ -367,14 +353,7 @@ do
 			end
 		end
 		if record.HitPosition then
-			publishExplosiveTerminal(
-				store,
-				record,
-				record.HitPosition,
-				record.HitObservedAt or now,
-				C.CrewSuppressionTerminalSource.HIT,
-				sink
-			)
+			publishExplosiveTerminal(store, record, record.HitPosition, record.HitObservedAt or now, C.CrewSuppressionTerminalSource.HIT, sink)
 			return false
 		end
 		local exists = IsWeaponExist(record.Weapon)
@@ -515,11 +494,7 @@ do
 		if now - record.ObservedAt > C.CrewSuppression.CANNON_CANDIDATE_MAX_AGE_SEC then
 			recordCannonOutcome(C.CrewSuppressionCannonOutcome.EXPIRED)
 			logger:debug(
-				string.format(
-					"cannon estimate rejected: candidate expired age=%.3fs maxAge=%.3fs",
-					now - record.ObservedAt,
-					C.CrewSuppression.CANNON_CANDIDATE_MAX_AGE_SEC
-				)
+				string.format("cannon estimate rejected: candidate expired age=%.3fs maxAge=%.3fs", now - record.ObservedAt, C.CrewSuppression.CANNON_CANDIDATE_MAX_AGE_SEC)
 			)
 			return
 		end
@@ -549,14 +524,7 @@ do
 			return
 		end
 		logger:debug(
-			string.format(
-				"cannon ballistic projection accepted: source=%s position=(%.1f,%.1f,%.1f) segments=%d",
-				CANNON_SOURCE,
-				position.x,
-				position.y,
-				position.z,
-				segments
-			)
+			string.format("cannon ballistic projection accepted: source=%s position=(%.1f,%.1f,%.1f) segments=%d", CANNON_SOURCE, position.x, position.y, position.z, segments)
 		)
 		publishCannonTerminal(store, position, record.ObservedAt, sink)
 	end
@@ -579,9 +547,7 @@ do
 		end
 		MetricsService.set("medusa_crew_suppression_cannon_queue_depth", store:cannonSize())
 		if processed > 0 then
-			logger:trace(
-				string.format("cannon estimator update: processed=%d queued=%d", processed, store:cannonSize())
-			)
+			logger:trace(string.format("cannon estimator update: processed=%d queued=%d", processed, store:cannonSize()))
 		end
 		return processed
 	end
@@ -593,8 +559,7 @@ do
 		local weaponBefore = store:size()
 		local cannonBefore = store:cannonSize()
 		local weaponCount = Service.update(store, now, terminalSink, C.CrewSuppression.WEAPON_SAMPLES_PER_UPDATE)
-		local cannonCount =
-			Service.updateCannons(store, now, terminalSink, C.CrewSuppression.CANNON_ESTIMATES_PER_UPDATE)
+		local cannonCount = Service.updateCannons(store, now, terminalSink, C.CrewSuppression.CANNON_ESTIMATES_PER_UPDATE)
 		store:recordUpdateWork(weaponCount, weaponBefore, cannonCount, cannonBefore)
 		local summaryIntervalSec = C.Diagnostics.WORK_SUMMARY_INTERVAL_SEC
 		local summary = store:takeWorkSummary(now, summaryIntervalSec)

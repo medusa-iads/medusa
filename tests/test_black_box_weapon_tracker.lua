@@ -407,10 +407,7 @@ function TestBlackBoxWeaponTracker:test_start_stop_and_restart_own_exactly_one_s
 	lu.assertEquals(#bus.subscriptions, 3)
 	lu.assertEquals(bus.subscriptions[3][1], world.event.S_EVENT_SHOOTING_START)
 	lu.assertNotEquals(bus.subscriptions[3][1], world.event.S_EVENT_SHOOTING_END)
-	lu.assertStrContains(
-		table.concat(self.logMessages, "\n"),
-		"weapon observation subscriptions active: SHOT=1 HIT=2 SHOOTING_START=3"
-	)
+	lu.assertStrContains(table.concat(self.logMessages, "\n"), "weapon observation subscriptions active: SHOT=1 HIT=2 SHOOTING_START=3")
 	lu.assertTrue(Medusa.Services.BlackBoxService.stop(self.store))
 	lu.assertEquals(bus.removed, { 1, 2, 3 })
 	lu.assertEquals(self.store:size(), 0)

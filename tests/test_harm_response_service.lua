@@ -127,6 +127,18 @@ TestHarmResponseCapacity = {}
 
 function TestHarmResponseCapacity:setUp()
 	setupMocks()
+	self.originalInfo = env.info
+	self.originalLogLevel = Medusa.Logger:getLevel()
+	self.infoMessages = {}
+	env.info = function(message)
+		self.infoMessages[#self.infoMessages + 1] = message
+	end
+	Medusa.Logger:setLevel(C.LogLevel.INFO)
+end
+
+function TestHarmResponseCapacity:tearDown()
+	env.info = self.originalInfo
+	Medusa.Logger:setLevel(self.originalLogLevel)
 end
 
 function TestHarmResponseCapacity:test_ignore_clears_prior_claim_without_commanding_battery()
@@ -138,6 +150,27 @@ function TestHarmResponseCapacity:test_ignore_clears_prior_claim_without_command
 	lu.assertNil(battery.HarmShutdownUntil)
 end
 
+function TestHarmResponseCapacity:test_state_transitions_log_once_at_info()
+	local battery = makeBattery({ HarmDefenseCapacity = 4 })
+	local harm = makeHarm("harm-1")
+	local ctx = makeContext({ battery }, { harm }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
+
+	HRS.executeResponse(ctx)
+	HRS.executeResponse(ctx)
+	ctx.trackStore:remove(harm.TrackId)
+	HRS.executeResponse(ctx)
+
+	local transitions = {}
+	for i = 1, #self.infoMessages do
+		if string.find(self.infoMessages[i], "HARM defense state", 1, true) then
+			transitions[#transitions + 1] = self.infoMessages[i]
+		end
+	end
+	lu.assertEquals(#transitions, 2)
+	lu.assertStrContains(transitions[1], "battery battery-1 HARM defense state NONE -> INTERCEPTING")
+	lu.assertStrContains(transitions[2], "battery battery-1 HARM defense state INTERCEPTING -> NONE")
+end
+
 function TestHarmResponseCapacity:test_available_capacity_must_strictly_exceed_threats_before_attempt()
 	local battery = makeBattery({ HarmDefenseCapacity = 2 })
 	local first = makeHarm("harm-1", 10000, -200)
@@ -147,11 +180,7 @@ function TestHarmResponseCapacity:test_available_capacity_must_strictly_exceed_t
 		readinessCalls = readinessCalls + 1
 		return true
 	end
-	local ctx = makeContext(
-		{ battery },
-		{ first, second },
-		{ HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 }
-	)
+	local ctx = makeContext({ battery }, { first, second }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
 
 	lu.assertEquals(HRS.executeResponse(ctx), 1)
 	lu.assertEquals(battery.HarmDefenseAvailableCapacity, 2)
@@ -164,11 +193,7 @@ end
 function TestHarmResponseCapacity:test_success_requires_committed_hot_assigned_capacity()
 	local battery = makeBattery({ HarmDefenseCapacity = 4 })
 	local harm = makeHarm("harm-1")
-	local ctx = makeContext(
-		{ battery },
-		{ harm },
-		{ HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 }
-	)
+	local ctx = makeContext({ battery }, { harm }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
 
 	lu.assertEquals(HRS.executeResponse(ctx), 0)
 	lu.assertEquals(battery.HarmDefenseAvailableCapacity, 4)
@@ -189,11 +214,7 @@ function TestHarmResponseCapacity:test_failed_hot_attempt_rolls_back_assignment_
 		end
 		return true
 	end
-	local ctx = makeContext(
-		{ battery },
-		{ harm },
-		{ HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 }
-	)
+	local ctx = makeContext({ battery }, { harm }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
 
 	lu.assertEquals(HRS.executeResponse(ctx), 1)
 	lu.assertEquals(battery.HarmDefenseAvailableCapacity, 4)
@@ -224,11 +245,7 @@ function TestHarmResponseCapacity:test_partial_point_defense_commitment_below_th
 	ControllerSetROE = function(controller)
 		return controller.name ~= "provider-b"
 	end
-	local ctx = makeContext(
-		{ protected, firstProvider, secondProvider },
-		{ first, second },
-		{ HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 }
-	)
+	local ctx = makeContext({ protected, firstProvider, secondProvider }, { first, second }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
 
 	lu.assertEquals(HRS.executeResponse(ctx), 1)
 	lu.assertEquals(protected.HarmDefenseAvailableCapacity, 3)
@@ -247,11 +264,7 @@ function TestHarmResponseCapacity:test_viable_proximity_point_defense_can_keep_s
 		HarmDefenseCapacity = 4,
 	})
 	local harm = makeHarm("harm-1")
-	local ctx = makeContext(
-		{ protected, provider },
-		{ harm },
-		{ HARMResponse = C.HarmResponseStrategy.SHUTDOWN_UNLESS_PD, HARMShutdownM = 5000 }
-	)
+	local ctx = makeContext({ protected, provider }, { harm }, { HARMResponse = C.HarmResponseStrategy.SHUTDOWN_UNLESS_PD, HARMShutdownM = 5000 })
 
 	lu.assertEquals(HRS.executeResponse(ctx), 0)
 	lu.assertTrue(provider.IsPointDefense)
@@ -277,11 +290,7 @@ function TestHarmResponseCapacity:test_unknown_ammo_and_cross_partition_capacity
 		HarmDefenseCapacity = 8,
 		PartitionKey = "partition-b",
 	})
-	local ctx = makeContext(
-		{ protected, unknown, crossPartition },
-		{ makeHarm("harm-1") },
-		{ HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 }
-	)
+	local ctx = makeContext({ protected, unknown, crossPartition }, { makeHarm("harm-1") }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
 
 	lu.assertEquals(HRS.executeResponse(ctx), 1)
 	lu.assertEquals(protected.HarmDefenseAvailableCapacity, 0)
@@ -294,11 +303,7 @@ function TestHarmResponseCapacity:test_inferred_launcher_is_not_counted_as_a_har
 	launcher.AssessedAircraftType = C.AssessedAircraftType.FIGHTER
 	launcher.IsSeadThreat = true
 	launcher.IsHarmLauncher = true
-	local ctx = makeContext(
-		{ battery },
-		{ launcher },
-		{ HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 }
-	)
+	local ctx = makeContext({ battery }, { launcher }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
 
 	lu.assertEquals(HRS.executeResponse(ctx), 0)
 	lu.assertEquals(battery.HarmDefenseThreats, 0)

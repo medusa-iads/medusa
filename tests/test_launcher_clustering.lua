@@ -177,12 +177,7 @@ function TestClusterLaunchers:test_single_launcher_no_clusters()
 		{ x = 0, y = 0, z = 0 },
 	})
 	local stores = makeStores()
-	Medusa.Services.EntityFactory.createFromDTO(
-		{ groupId = 1, groupName = "SA8-1", parsed = { roles = { "battery" } } },
-		stores,
-		"net-1",
-		{}
-	)
+	Medusa.Services.EntityFactory.createFromDTO({ groupId = 1, groupName = "SA8-1", parsed = { roles = { "battery" } } }, stores, "net-1", {})
 	local battery = stores.batteries:getByGroupId(1)
 	lu.assertNotNil(battery)
 	lu.assertNil(battery.Clusters)
@@ -196,12 +191,7 @@ function TestClusterLaunchers:test_tight_group_no_clusters()
 		{ x = 500, y = 0, z = 0 },
 	})
 	local stores = makeStores()
-	Medusa.Services.EntityFactory.createFromDTO(
-		{ groupId = 2, groupName = "SA8-2", parsed = { roles = { "battery" } } },
-		stores,
-		"net-1",
-		{}
-	)
+	Medusa.Services.EntityFactory.createFromDTO({ groupId = 2, groupName = "SA8-2", parsed = { roles = { "battery" } } }, stores, "net-1", {})
 	local battery = stores.batteries:getByGroupId(2)
 	lu.assertNotNil(battery)
 	lu.assertNil(battery.Clusters)
@@ -214,12 +204,7 @@ function TestClusterLaunchers:test_two_distant_launchers_creates_two_clusters()
 		{ x = dist, y = 0, z = 0 },
 	})
 	local stores = makeStores()
-	Medusa.Services.EntityFactory.createFromDTO(
-		{ groupId = 3, groupName = "SA8-3", parsed = { roles = { "battery" } } },
-		stores,
-		"net-1",
-		{}
-	)
+	Medusa.Services.EntityFactory.createFromDTO({ groupId = 3, groupName = "SA8-3", parsed = { roles = { "battery" } } }, stores, "net-1", {})
 	local battery = stores.batteries:getByGroupId(3)
 	lu.assertNotNil(battery)
 	lu.assertNotNil(battery.Clusters)
@@ -240,12 +225,7 @@ function TestClusterLaunchers:test_three_launchers_two_close_one_far()
 		{ x = farDist, y = 0, z = 0 },
 	})
 	local stores = makeStores()
-	Medusa.Services.EntityFactory.createFromDTO(
-		{ groupId = 4, groupName = "SA8-4", parsed = { roles = { "battery" } } },
-		stores,
-		"net-1",
-		{}
-	)
+	Medusa.Services.EntityFactory.createFromDTO({ groupId = 4, groupName = "SA8-4", parsed = { roles = { "battery" } } }, stores, "net-1", {})
 	local battery = stores.batteries:getByGroupId(4)
 	lu.assertNotNil(battery)
 	lu.assertNotNil(battery.Clusters)
@@ -265,12 +245,7 @@ function TestClusterLaunchers:test_four_launchers_in_line_four_clusters()
 		{ x = step * 3, y = 0, z = 0 },
 	})
 	local stores = makeStores()
-	Medusa.Services.EntityFactory.createFromDTO(
-		{ groupId = 5, groupName = "SA8-5", parsed = { roles = { "battery" } } },
-		stores,
-		"net-1",
-		{}
-	)
+	Medusa.Services.EntityFactory.createFromDTO({ groupId = 5, groupName = "SA8-5", parsed = { roles = { "battery" } } }, stores, "net-1", {})
 	local battery = stores.batteries:getByGroupId(5)
 	lu.assertNotNil(battery)
 	lu.assertNotNil(battery.Clusters)

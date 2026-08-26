@@ -49,12 +49,17 @@ local function sensorGroupState(sensors)
 	return state
 end
 
---- Records one sensor group's Medusa EMCON state and derived radar status on its current members.
-local function recordSensorState(sensors, state)
+--- Records one sensor group's EMCON state and radar status, and reports an actual state change with its reason.
+local function recordSensorState(sensors, state, reason)
+	local previousState = sensorGroupState(sensors)
 	local radarStatus = state == AS.STATE_WARM and C.RadarStatus.ACTIVE or C.RadarStatus.DARK
 	for i = 1, #sensors do
 		sensors[i].EmconState = state
 		sensors[i].RadarStatus = radarStatus
+	end
+	if previousState ~= state then
+		local groupName = sensors[1] and sensors[1].GroupName or "unknown"
+		_logger:info(string.format("sensor group %s EMCON %s -> %s reason=%s", tostring(groupName), tostring(previousState), tostring(state), tostring(reason)))
 	end
 end
 
@@ -63,12 +68,7 @@ function Medusa.Services.EmconService.getDesiredState(batteryIndex, _batteryCoun
 
 	if policy == ECP.MINIMIZE and SENSOR_ROLES[role] then
 		if not _minimizeWarned[role] then
-			_logger:error(
-				string.format(
-					"EMCON MINIMIZE on %s role would disable all sensor input, making the IADS non-functional. Forcing ALWAYS_ON",
-					role
-				)
-			)
+			_logger:error(string.format("EMCON MINIMIZE on %s role would disable all sensor input, making the IADS non-functional. Forcing ALWAYS_ON", role))
 			_minimizeWarned[role] = true
 		end
 		policy = ECP.ALWAYS_ON
@@ -153,10 +153,7 @@ local function _shouldSkip(battery, doctrine, now)
 		return true
 	end
 	local holdDownSec = doctrine and doctrine.HoldDownSec or 15
-	if
-		battery.ActivationState == AS.STATE_HOT
-		and Medusa.Entities.Battery.isWithinDeactivationHoldDown(battery, now, holdDownSec)
-	then
+	if battery.ActivationState == AS.STATE_HOT and Medusa.Entities.Battery.isWithinDeactivationHoldDown(battery, now, holdDownSec) then
 		return true
 	end
 	if battery.OperationalStatus == BOS.DESTROYED or battery.OperationalStatus == BOS.INOPERATIVE then
@@ -220,16 +217,7 @@ function Medusa.Services.EmconService.logSchedule(ctx)
 	local slotDur = interval + quietDur
 	local cycleDur = numGroups * slotDur
 	local quietStr = quietDur > 0 and string.format(", %ds quiet between groups", quietDur) or ""
-	_logger:info(
-		string.format(
-			"COORDINATED_ROTATION schedule (%d groups, %ds radiate%s, %ds cycle):\n%s",
-			numGroups,
-			interval,
-			quietStr,
-			cycleDur,
-			table.concat(parts, "\n")
-		)
-	)
+	_logger:info(string.format("COORDINATED_ROTATION schedule (%d groups, %ds radiate%s, %ds cycle):\n%s", numGroups, interval, quietStr, cycleDur, table.concat(parts, "\n")))
 end
 
 --- Applies battery and ground-sensor EMCON requests and counts transitions whose wrappers returned true.
@@ -254,9 +242,7 @@ function Medusa.Services.EmconService.applyPolicy(ctx, network)
 	if network then
 		local lastCount = network._emconLastSensorCount
 		if lastCount ~= nil and totalSensorCount ~= lastCount then
-			_logger:info(
-				string.format("sensor pool changed (%d -> %d), rebuilding rotation groups", lastCount, totalSensorCount)
-			)
+			_logger:info(string.format("sensor pool changed (%d -> %d), rebuilding rotation groups", lastCount, totalSensorCount))
 			Medusa.Services.EmconService.logSchedule(ctx)
 		end
 		network._emconLastSensorCount = totalSensorCount
@@ -287,17 +273,17 @@ function Medusa.Services.EmconService.applyPolicy(ctx, network)
 		local sensors = sensorStore:getByGroupName(groupName, _sensorBuffer)
 		local isAirborne = sensors and sensors[1] and sensors[1].IsAirborne
 		if isAirborne then
-			recordSensorState(sensors, AS.STATE_WARM)
+			recordSensorState(sensors, AS.STATE_WARM, "airborne")
 		else
 			local sensorType = sensors and sensors[1] and sensors[1].SensorType or C.SensorType.EWR
 			local desired = Medusa.Services.EmconService.getDesiredState(i, #sensorGroups, doctrine, now, sensorType)
 			local currentState = sensorGroupState(sensors)
 			if desired ~= currentState then
 				if BatteryActivationService.setSensorState(groupName, desired) then
-					recordSensorState(sensors, desired)
+					recordSensorState(sensors, desired, "policy")
 					transitions = transitions + 1
 				else
-					recordSensorState(sensors, AS.INITIALIZING)
+					recordSensorState(sensors, AS.INITIALIZING, "controller command failed")
 				end
 			end
 		end

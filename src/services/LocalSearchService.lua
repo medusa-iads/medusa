@@ -164,8 +164,7 @@ function Medusa.Services.LocalSearchService:_replenish(now)
 	if self.tokenTime == nil or now < self.tokenTime then
 		self.tokens = self.quotaPerSec
 	else
-		self.tokens =
-			math.min(self.quotaPerSec, (self.tokens or self.quotaPerSec) + (now - self.tokenTime) * self.quotaPerSec)
+		self.tokens = math.min(self.quotaPerSec, (self.tokens or self.quotaPerSec) + (now - self.tokenTime) * self.quotaPerSec)
 	end
 	self.tokenTime = now
 end
@@ -190,12 +189,7 @@ function Medusa.Services.LocalSearchService:refresh(batteries, now, shouldScan)
 		if battery then
 			self.queue:push(batteryId)
 			local cache = self.cacheByBatteryId[batteryId]
-			if
-				battery.Position
-				and shouldScan(battery)
-				and (not cache or now >= cache.ExpiresAt)
-				and self:_scan(battery, now)
-			then
+			if battery.Position and shouldScan(battery) and (not cache or now >= cache.ExpiresAt) and self:_scan(battery, now) then
 				self.tokens = self.tokens - 1
 				remaining = remaining - 1
 				if remaining == 0 then

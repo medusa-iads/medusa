@@ -68,12 +68,7 @@ function Medusa.Services.GroupNameParser:_findRoleIndexes(segments, tokens)
 		local seg = string.lower(segments[i])
 		if
 			tokens
-			and (
-				segmentMatchesToken(seg, tokens.GCI)
-				or isEwrToken(seg, tokens.EWR)
-				or segmentMatchesToken(seg, tokens.HQ)
-				or segmentMatchesToken(seg, tokens.AWACS or "awacs")
-			)
+			and (segmentMatchesToken(seg, tokens.GCI) or isEwrToken(seg, tokens.EWR) or segmentMatchesToken(seg, tokens.HQ) or segmentMatchesToken(seg, tokens.AWACS or "awacs"))
 		then
 			roleIndexes[#roleIndexes + 1] = i
 		end

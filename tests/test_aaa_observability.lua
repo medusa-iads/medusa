@@ -139,9 +139,7 @@ function TestAaaObservability:test_snapshot_exports_bounded_state_and_excludes_g
 	lu.assertTrue(contains(output, 'medusa_aaa_barrage_infections_total{network="red"} 0'))
 	lu.assertTrue(contains(output, 'medusa_crew_suppressed_batteries{network="red"} 1'))
 	lu.assertTrue(contains(output, 'medusa_crew_suppression_applications_total{network="red",cause="DAMAGE"} 1'))
-	lu.assertTrue(
-		contains(output, 'medusa_crew_suppression_dropped_events_total{network="red",reason="QUEUE_OVERFLOW"} 1')
-	)
+	lu.assertTrue(contains(output, 'medusa_crew_suppression_dropped_events_total{network="red",reason="QUEUE_OVERFLOW"} 1'))
 	lu.assertTrue(contains(output, 'medusa_crew_suppression_weapon_outcomes_total{outcome="TRACKER_FULL"} 0'))
 	lu.assertEquals(MS._registry.medusa_tick_duration_seconds.quantiles, { 0.5, 0.9, 0.95, 0.99 })
 	lu.assertEquals(MS._registry.medusa_crew_suppression_applications_total.label_keys, { "network", "cause" })
@@ -166,9 +164,7 @@ function TestAaaObservability:test_extended_snapshot_exports_aaa_state_headings_
 
 	local output = MS.serialize()
 
-	lu.assertTrue(
-		contains(output, 'medusa_aaa_info{network="red",aaa="RED-AAA",mode="INDEPENDENT",state="LOCAL_ACQUISITION"} 1')
-	)
+	lu.assertTrue(contains(output, 'medusa_aaa_info{network="red",aaa="RED-AAA",mode="INDEPENDENT",state="LOCAL_ACQUISITION"} 1'))
 	lu.assertTrue(contains(output, 'medusa_aaa_heading_degrees{network="red",aaa="RED-AAA",heading_index="1"} 90.0'))
 	lu.assertTrue(contains(output, 'medusa_aaa_audio_range_meters{network="red"} 6500'))
 	lu.assertTrue(contains(output, 'medusa_battery_ammo{network="red",battery="RED-AAA"} 250'))

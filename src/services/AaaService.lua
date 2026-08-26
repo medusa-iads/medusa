@@ -51,8 +51,7 @@ local BARRAGE_STATES = {
 	[ARS.BARRAGE_FIRE] = true,
 	[ARS.BARRAGE_PAUSE] = true,
 }
-local VISUAL_SEARCH_RADIUS_M =
-	math.sqrt(C.LocalAircraftDetection.PRIMARY_RANGE_M ^ 2 + C.LocalAircraftDetection.RELATIVE_ALTITUDE_CEILING_M ^ 2)
+local VISUAL_SEARCH_RADIUS_M = math.sqrt(C.LocalAircraftDetection.PRIMARY_RANGE_M ^ 2 + C.LocalAircraftDetection.RELATIVE_ALTITUDE_CEILING_M ^ 2)
 local POSTURE_CHANCE_MULTIPLIER = {
 	[C.Posture.HOT_WAR] = 1,
 	[C.Posture.WARM_WAR] = 0.75,
@@ -61,6 +60,18 @@ local POSTURE_CHANCE_MULTIPLIER = {
 local batteryBuffer = {}
 local independentBuffer = {}
 local candidateBuffer = {}
+
+--- Commits one AAA response-state change and records its operational reason.
+local function transitionResponseState(battery, newState, reason)
+	local aaa = battery.Aaa
+	local oldState = aaa.ResponseState
+	if oldState == newState then
+		return false
+	end
+	aaa.ResponseState = newState
+	logger:info(string.format("AAA %s state %s -> %s reason=%s", tostring(battery.GroupName), tostring(oldState), tostring(newState), tostring(reason)))
+	return true
+end
 
 function Medusa.Services.AaaService.newBarrageState()
 	return {
@@ -168,12 +179,12 @@ local function requestFireTaskStop(battery)
 end
 
 --- Clears Medusa's response and barrage ownership for one AAA battery.
-local function clearResponse(ctx, battery)
+local function clearResponse(ctx, battery, reason)
 	cancelPendingInfection(battery)
 	requestFireTaskStop(battery)
 	releaseBarrageParticipant(ctx.barrageState, battery)
 	local aaa = battery.Aaa
-	aaa.ResponseState = ARS.IDLE
+	transitionResponseState(battery, ARS.IDLE, reason or "response cleared")
 	aaa.ResponseAt = nil
 	aaa.ResponseUntil = nil
 	aaa.PendingTarget = nil
@@ -182,12 +193,11 @@ local function clearResponse(ctx, battery)
 end
 
 --- Clears one AAA response and requests COLD readiness.
-local function endResponse(ctx, battery)
-	clearResponse(ctx, battery)
+local function endResponse(ctx, battery, reason)
+	clearResponse(ctx, battery, reason or "response complete")
 	if battery.ActivationState ~= AS.STATE_COLD then
 		BAS.goCold(battery, ctx.now, ctx.trackStore)
 	end
-	logger:debug(string.format("AAA %s returned to IDLE", battery.GroupName))
 	return battery.ActivationState == AS.STATE_COLD
 end
 
@@ -196,7 +206,7 @@ function Medusa.Services.AaaService.suppressBattery(ctx, battery)
 	if battery.Role ~= BR.AAA then
 		return false
 	end
-	clearResponse(ctx, battery)
+	clearResponse(ctx, battery, "crew suppression")
 	return true
 end
 
@@ -211,7 +221,7 @@ local function reconcileMode(ctx, battery)
 		ctx.spatialIndex:withdrawBattery(battery.BatteryId)
 	end
 	if aaa.ResponseState ~= ARS.IDLE then
-		if not endResponse(ctx, battery) then
+		if not endResponse(ctx, battery, "mode changed") then
 			return nil
 		end
 	end
@@ -287,11 +297,10 @@ end
 
 local function alert(battery, target, source, now)
 	local aaa = battery.Aaa
-	aaa.ResponseState = ARS.ALERT
+	transitionResponseState(battery, ARS.ALERT, source .. " detection")
 	aaa.ResponseAt = now + AC.REACTION_DELAY_SEC
 	aaa.PendingTarget = captureDetection(target)
-	local metricName = source == DETECTION_SOURCE.VISUAL and "medusa_aaa_visual_detections_total"
-		or "medusa_aaa_audio_detections_total"
+	local metricName = source == DETECTION_SOURCE.VISUAL and "medusa_aaa_visual_detections_total" or "medusa_aaa_audio_detections_total"
 	Medusa.Observability.MetricsService.inc(metricName)
 	logger:debug(string.format("AAA %s detected %s by %s", battery.GroupName, target.UnitName, source))
 end
@@ -322,15 +331,7 @@ local function tryDetection(ctx, search, battery, audioRangeM)
 				alert(battery, target, DETECTION_SOURCE.AUDIO, ctx.now)
 				return true
 			end
-			logger:debug(
-				string.format(
-					"AAA %s failed audio detection of %s (roll=%.3f chance=%.3f)",
-					battery.GroupName,
-					target.UnitName,
-					roll,
-					chance
-				)
-			)
+			logger:debug(string.format("AAA %s failed audio detection of %s (roll=%.3f chance=%.3f)", battery.GroupName, target.UnitName, roll, chance))
 		end
 	end
 	return false
@@ -358,10 +359,9 @@ end
 
 local function beginLocalAcquisition(battery, now)
 	local aaa = battery.Aaa
-	aaa.ResponseState = ARS.LOCAL_ACQUISITION
+	transitionResponseState(battery, ARS.LOCAL_ACQUISITION, "local response selected")
 	aaa.ResponseUntil = now + AC.LOCAL_ACQUISITION_DURATION_SEC
 	Medusa.Observability.MetricsService.inc("medusa_aaa_local_acquisition_responses_total")
-	logger:debug(string.format("AAA %s selected LOCAL_ACQUISITION", battery.GroupName))
 end
 
 local function createFireAtPointTask(point)
@@ -414,19 +414,17 @@ local function beginAreaFire(battery, target, now)
 	if not pushFireTask(battery, predicted) then
 		return false
 	end
-	battery.Aaa.ResponseState = ARS.AREA_FIRE
+	transitionResponseState(battery, ARS.AREA_FIRE, "area fire selected")
 	battery.Aaa.ResponseUntil = now + AC.AREA_FIRE_DURATION_SEC
 	Medusa.Observability.MetricsService.inc("medusa_aaa_area_fire_responses_total")
-	logger:debug(string.format("AAA %s selected AREA_FIRE", battery.GroupName))
 	return true
 end
 
 --- Requests a fire-task stop and starts the next barrage pause.
 local function beginBarragePause(battery, now)
 	requestFireTaskStop(battery)
-	battery.Aaa.ResponseState = ARS.BARRAGE_PAUSE
+	transitionResponseState(battery, ARS.BARRAGE_PAUSE, "barrage pause")
 	battery.Aaa.ResponseUntil = now + randomDuration(AC.BARRAGE_PAUSE_MIN_SEC, AC.BARRAGE_PAUSE_MAX_SEC)
-	logger:debug(string.format("AAA %s paused barrage fire", battery.GroupName))
 end
 
 --- Reserves global barrage capacity and reports whether the initial pause was established.
@@ -460,10 +458,9 @@ local function beginBarrageBurst(battery, now, sourceFirePoint)
 	if not pushFireTask(battery, point) then
 		return false
 	end
-	battery.Aaa.ResponseState = ARS.BARRAGE_FIRE
+	transitionResponseState(battery, ARS.BARRAGE_FIRE, "barrage burst")
 	battery.Aaa.ResponseUntil = now + randomDuration(AC.BARRAGE_BURST_MIN_SEC, AC.BARRAGE_BURST_MAX_SEC)
 	Medusa.Observability.MetricsService.inc("medusa_aaa_barrage_bursts_total", nil, { network = battery.NetworkId })
-	logger:debug(string.format("AAA %s started barrage burst", battery.GroupName))
 	return true
 end
 
@@ -473,10 +470,7 @@ local function isInfectionEligible(battery)
 		return false
 	end
 	local state = battery.Aaa.ResponseState
-	return battery.OperationalStatus == BOS.ACTIVE
-		and not Battery.isCrewSuppressed(battery)
-		and Battery.hasKnownAmmo(battery)
-		and (state == ARS.IDLE or state == ARS.ALERT)
+	return battery.OperationalStatus == BOS.ACTIVE and not Battery.isCrewSuppressed(battery) and Battery.hasKnownAmmo(battery) and (state == ARS.IDLE or state == ARS.ALERT)
 end
 
 --- Revalidates and applies a delayed barrage delivery.
@@ -577,14 +571,8 @@ function Medusa.Services.AaaService.onShot(ctx, battery, unit, now)
 		barrageState = ctx.barrageState,
 		doctrine = ctx.doctrine,
 	}
-	local neighbors = NeighborPropagationService.findRecipients(
-		ctx.localGeoGrid or ctx.geoGrid,
-		ctx.batteryStore,
-		battery.Position,
-		AC.BARRAGE_PROPAGATION_RANGE_M,
-		"Aaa",
-		battery.BatteryId
-	)
+	local neighbors =
+		NeighborPropagationService.findRecipients(ctx.localGeoGrid or ctx.geoGrid, ctx.batteryStore, battery.Position, AC.BARRAGE_PROPAGATION_RANGE_M, "Aaa", battery.BatteryId)
 	local scheduled = 0
 	for i = 1, #neighbors do
 		local neighbor = neighbors[i]
@@ -615,11 +603,7 @@ local function beginResponse(ctx, search, battery)
 	aaa.ResponseAt = nil
 	local detectedTarget = aaa.PendingTarget
 	local unit = detectedTarget and GetUnit(detectedTarget.UnitName) or nil
-	if
-		not unit
-		or not search:isHostileAircraft(unit)
-		or (battery.ActivationState ~= AS.STATE_HOT and not BAS.forceGoHot(battery, ctx.now))
-	then
+	if not unit or not search:isHostileAircraft(unit) or (battery.ActivationState ~= AS.STATE_HOT and not BAS.forceGoHot(battery, ctx.now)) then
 		resumeBarrageOrFinish(ctx, battery)
 		return
 	end
@@ -731,8 +715,7 @@ function Medusa.Services.AaaService.evaluate(ctx)
 	local search = getLocalSearch(ctx, searchRadiusM)
 	search:refresh(independentBuffer, ctx.now, function(battery)
 		local state = battery.Aaa.ResponseState
-		return (state == ARS.IDLE or state == ARS.BARRAGE_FIRE or state == ARS.BARRAGE_PAUSE)
-			and ctx.doctrine.ROE ~= C.ROEState.HOLD
+		return (state == ARS.IDLE or state == ARS.BARRAGE_FIRE or state == ARS.BARRAGE_PAUSE) and ctx.doctrine.ROE ~= C.ROEState.HOLD
 	end)
 	for i = 1, #independentBuffer do
 		evaluateBattery(ctx, search, independentBuffer[i], audioRangeM)
@@ -777,7 +760,7 @@ function Medusa.Services.AaaService.cleanupBattery(ctx, battery)
 		return true
 	end
 	if battery.OperationalStatus == BOS.DESTROYED then
-		clearResponse(ctx, battery)
+		clearResponse(ctx, battery, "battery destroyed")
 		return true
 	end
 	if battery.Aaa.ResponseState == ARS.IDLE and not battery.Aaa.LastFirePoint then
@@ -785,5 +768,5 @@ function Medusa.Services.AaaService.cleanupBattery(ctx, battery)
 		releaseBarrageParticipant(ctx.barrageState, battery)
 		return true
 	end
-	return endResponse(ctx, battery)
+	return endResponse(ctx, battery, "cleanup")
 end

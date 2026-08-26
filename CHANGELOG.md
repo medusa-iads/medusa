@@ -10,6 +10,7 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Added
 
 - Command-and-control partitions based on mission HQ placement, live command providers, and radar coverage.
+- INFO logs for AAA response-state, MANPAD sleep/wake-state, sensor EMCON, battery HARM-defense, and track-lifecycle transitions.
 
 ### Changed
 

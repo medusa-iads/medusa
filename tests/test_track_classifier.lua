@@ -302,9 +302,7 @@ function TestUpdateIdentifications:test_bandit_promoted_to_hostile_via_hostile_i
 
 	-- Second observation at +61s: sustained intent met, promotes to HOSTILE
 	Medusa.Entities.Track.update(track, { x = 12200, y = 5000, z = 0 }, track.Velocity, 1061)
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 })
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 }))
 	lu.assertEquals(track.TrackIdentification, "HOSTILE")
 end
 
@@ -328,9 +326,7 @@ function TestUpdateIdentifications:test_bandit_not_promoted_when_diverging()
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 	lu.assertNil(track.HostileIntentStart)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 })
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 }))
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 end
 
@@ -348,9 +344,7 @@ function TestUpdateIdentifications:test_hostile_intent_ignores_battery_in_anothe
 
 	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ doctrine = doctrine, maxRange = 200000 }))
 	Medusa.Entities.Track.update(track, { x = 12200, y = 5000, z = 0 }, track.Velocity, 1061)
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 })
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 }))
 
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 	lu.assertNil(track.HostileIntentStart)

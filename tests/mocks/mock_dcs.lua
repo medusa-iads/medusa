@@ -191,76 +191,19 @@ trigger = {
 			return true
 		end,
 		lineToAll = function(coalition, id, startPoint, endPoint, color, lineType, readOnly, message)
-			trigger.action._trackCall(
-				"lineToAll",
-				coalition,
-				id,
-				startPoint,
-				endPoint,
-				color,
-				lineType,
-				readOnly,
-				message
-			)
+			trigger.action._trackCall("lineToAll", coalition, id, startPoint, endPoint, color, lineType, readOnly, message)
 			return true
 		end,
 		circleToAll = function(coalition, id, center, radius, color, fillColor, lineType, readOnly, message)
-			trigger.action._trackCall(
-				"circleToAll",
-				coalition,
-				id,
-				center,
-				radius,
-				color,
-				fillColor,
-				lineType,
-				readOnly,
-				message
-			)
+			trigger.action._trackCall("circleToAll", coalition, id, center, radius, color, fillColor, lineType, readOnly, message)
 			return true
 		end,
 		rectToAll = function(coalition, id, startPoint, endPoint, color, fillColor, lineType, readOnly, message)
-			trigger.action._trackCall(
-				"rectToAll",
-				coalition,
-				id,
-				startPoint,
-				endPoint,
-				color,
-				fillColor,
-				lineType,
-				readOnly,
-				message
-			)
+			trigger.action._trackCall("rectToAll", coalition, id, startPoint, endPoint, color, fillColor, lineType, readOnly, message)
 			return true
 		end,
-		quadToAll = function(
-			coalition,
-			id,
-			point1,
-			point2,
-			point3,
-			point4,
-			color,
-			fillColor,
-			lineType,
-			readOnly,
-			message
-		)
-			trigger.action._trackCall(
-				"quadToAll",
-				coalition,
-				id,
-				point1,
-				point2,
-				point3,
-				point4,
-				color,
-				fillColor,
-				lineType,
-				readOnly,
-				message
-			)
+		quadToAll = function(coalition, id, point1, point2, point3, point4, color, fillColor, lineType, readOnly, message)
+			trigger.action._trackCall("quadToAll", coalition, id, point1, point2, point3, point4, color, fillColor, lineType, readOnly, message)
 			return true
 		end,
 		textToAll = function(coalition, id, point, color, fillColor, fontSize, readOnly, text)
@@ -268,18 +211,7 @@ trigger = {
 			return true
 		end,
 		arrowToAll = function(coalition, id, startPoint, endPoint, color, fillColor, lineType, readOnly, message)
-			trigger.action._trackCall(
-				"arrowToAll",
-				coalition,
-				id,
-				startPoint,
-				endPoint,
-				color,
-				fillColor,
-				lineType,
-				readOnly,
-				message
-			)
+			trigger.action._trackCall("arrowToAll", coalition, id, startPoint, endPoint, color, fillColor, lineType, readOnly, message)
 			return true
 		end,
 		markupToAll = function(...)

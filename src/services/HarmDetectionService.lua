@@ -116,17 +116,7 @@ function Medusa.Services.HarmDetectionService.computeTrackCPA(track, targetPos)
 	if not vel then
 		return math.huge
 	end
-	return Medusa.Services.HarmDetectionService.computeCPA3D(
-		track.Position.x,
-		track.Position.y,
-		track.Position.z,
-		vel.x,
-		vel.y,
-		vel.z,
-		targetPos.x,
-		targetPos.y,
-		targetPos.z
-	)
+	return Medusa.Services.HarmDetectionService.computeCPA3D(track.Position.x, track.Position.y, track.Position.z, vel.x, vel.y, vel.z, targetPos.x, targetPos.y, targetPos.z)
 end
 
 --- @type fun(px:number,py:number,pz:number,vx:number,vy:number,vz:number,ex:number,ey:number,ez:number):number,number Local alias for CPA computation
@@ -210,12 +200,7 @@ end
 --- @param threatRadiusM number Maximum projected horizontal miss distance
 --- @return table|nil battery Closest relevant radar battery, or nil
 local function findCandidateBattery(track, geoGrid, batteryStore, threatRadiusM)
-	local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(
-		geoGrid,
-		batteryStore,
-		track.Position,
-		Medusa.Constants.HARM_MAX_RANGE_M
-	)
+	local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(geoGrid, batteryStore, track.Position, Medusa.Constants.HARM_MAX_RANGE_M)
 	local best, bestDist = nil, math.huge
 	for i = 1, #batteries do
 		local b = batteries[i]
@@ -275,19 +260,7 @@ local function extractFeatures(curr, prev, dt, targetPos, assessmentState, balli
 	_feat[F_ACCEL] = (speed - prevSpeed) / dt
 
 	local linearCpa = computeCPA3D(cp.x, cp.y, cp.z, cv.x, cv.y, cv.z, targetPos.x, targetPos.y, targetPos.z)
-	local ballisticCpa = computeBallisticCPA(
-		cp.x,
-		cp.y,
-		cp.z,
-		cv.x,
-		cv.y,
-		cv.z,
-		targetPos.x,
-		targetPos.y,
-		targetPos.z,
-		ballisticDt,
-		ballisticMaxT
-	)
+	local ballisticCpa = computeBallisticCPA(cp.x, cp.y, cp.z, cv.x, cv.y, cv.z, targetPos.x, targetPos.y, targetPos.z, ballisticDt, ballisticMaxT)
 	_feat[F_CPA] = math.min(linearCpa, ballisticCpa)
 
 	if assessmentState.prevCpa and assessmentState.prevTime then
@@ -403,15 +376,7 @@ local function logStateChange(track, previousLabel, state, feat)
 	end
 	local detail = feat and (" [" .. formatFeatureLLRs(feat) .. "]") or ""
 	_logger:info(
-		string.format(
-			"track %s ARM %s -> %s (LLR=%.2f, scans=%d)%s",
-			Medusa.Entities.Track.displayId(track),
-			previousLabel,
-			state.label,
-			state.llr,
-			state.scanCount,
-			detail
-		)
+		string.format("track %s ARM %s -> %s (LLR=%.2f, scans=%d)%s", Medusa.Entities.Track.displayId(track), previousLabel, state.label, state.llr, state.scanCount, detail)
 	)
 end
 
@@ -526,15 +491,7 @@ end
 --- @param ballisticMaxT number Ballistic sim max steps
 --- @param threatRadiusM number|nil Projected-path relevance radius
 --- @return boolean reclassified True if this track was newly classified as HARM
-function Medusa.Services.HarmDetectionService.assessSingleTrack(
-	track,
-	tracks,
-	geoGrid,
-	batteryStore,
-	ballisticDt,
-	ballisticMaxT,
-	threatRadiusM
-)
+function Medusa.Services.HarmDetectionService.assessSingleTrack(track, tracks, geoGrid, batteryStore, ballisticDt, ballisticMaxT, threatRadiusM)
 	local LS = Medusa.Constants.TrackLifecycleState
 	local vel = track.Velocity
 	if track.LifecycleState ~= LS.ACTIVE or not vel or track.IsHarmLauncher then
@@ -551,13 +508,7 @@ function Medusa.Services.HarmDetectionService.assessSingleTrack(
 		Medusa.Observability.MetricsService.inc("medusa_harm_confirmed_total")
 		track.AssessedAircraftType = AAT.HARM
 		track.IsSeadThreat = true
-		_logger:info(
-			string.format(
-				"track %s classified as HARM (ARM CONFIRMED, LLR=%.2f)",
-				Medusa.Entities.Track.displayId(track),
-				state.llr
-			)
-		)
+		_logger:info(string.format("track %s classified as HARM (ARM CONFIRMED, LLR=%.2f)", Medusa.Entities.Track.displayId(track), state.llr))
 		Medusa.Services.HarmDetectionService._backtrackLauncher(track, tracks)
 		return true
 	elseif label == HAS.CLEARED then
@@ -585,17 +536,7 @@ function Medusa.Services.HarmDetectionService.assessHarmThreats(ctx)
 	local ballisticDt, ballisticMaxT, threatRadiusM = Medusa.Services.HarmDetectionService.getAssessContext(ctx)
 
 	for i = 1, #tracks do
-		if
-			Medusa.Services.HarmDetectionService.assessSingleTrack(
-				tracks[i],
-				tracks,
-				geoGrid,
-				batteryStore,
-				ballisticDt,
-				ballisticMaxT,
-				threatRadiusM
-			)
-		then
+		if Medusa.Services.HarmDetectionService.assessSingleTrack(tracks[i], tracks, geoGrid, batteryStore, ballisticDt, ballisticMaxT, threatRadiusM) then
 			reclassified = reclassified + 1
 		end
 	end
@@ -637,12 +578,7 @@ function Medusa.Services.HarmDetectionService._backtrackLauncher(harmTrack, allT
 
 	for i = 1, #allTracks do
 		local candidate = allTracks[i]
-		if
-			candidate.TrackId ~= harmTrack.TrackId
-			and candidate.AssessedAircraftType ~= AAT.HARM
-			and candidate.PositionHistory
-			and sharesPartition(harmTrack, candidate)
-		then
+		if candidate.TrackId ~= harmTrack.TrackId and candidate.AssessedAircraftType ~= AAT.HARM and candidate.PositionHistory and sharesPartition(harmTrack, candidate) then
 			local cHistory = candidate.PositionHistory:toArray()
 			for ci = 1, #cHistory do
 				local entry = cHistory[ci]

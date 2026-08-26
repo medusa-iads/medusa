@@ -52,10 +52,7 @@ end
 function TestDiscoveryService:test_when_birth_event_published_should_enqueue_and_add()
 	-- Arrange: service with coalition/prefix
 	-- Use BLUE to match mock Group.getByName():getCoalition() = 2
-	local svc = Medusa.Services.DiscoveryService:new(
-		nil,
-		{ coalitionId = (coalition and coalition.side and coalition.side.BLUE) or 2, prefix = "iads" }
-	)
+	local svc = Medusa.Services.DiscoveryService:new(nil, { coalitionId = (coalition and coalition.side and coalition.side.BLUE) or 2, prefix = "iads" })
 	local added
 	svc:setListener({
 		onAdded = function(dto)
@@ -104,10 +101,7 @@ function TestDiscoveryService:test_when_added_should_emit_onAdded()
 			category = "ground",
 		},
 	})
-	local svc = Medusa.Services.DiscoveryService:new(
-		provider,
-		{ coalitionId = (coalition and coalition.side and coalition.side.RED) or 1, prefix = "iads" }
-	)
+	local svc = Medusa.Services.DiscoveryService:new(provider, { coalitionId = (coalition and coalition.side and coalition.side.RED) or 1, prefix = "iads" })
 	local events = {}
 	svc:setListener({
 		onAdded = function(dto)
@@ -180,10 +174,7 @@ function TestDiscoveryService:test_when_removed_should_not_emit_onRemoved_in_add
 		},
 	}
 	local provider = make_provider(entries)
-	local svc = Medusa.Services.DiscoveryService:new(
-		provider,
-		{ coalitionId = (coalition and coalition.side and coalition.side.RED) or 1, prefix = "iads" }
-	)
+	local svc = Medusa.Services.DiscoveryService:new(provider, { coalitionId = (coalition and coalition.side and coalition.side.RED) or 1, prefix = "iads" })
 	local removed = 0
 	svc:setListener({
 		onRemoved = function()
@@ -210,10 +201,7 @@ function TestDiscoveryService:test_when_rescanned_should_not_duplicate_adds()
 		},
 	}
 	local provider = make_provider(entries)
-	local svc = Medusa.Services.DiscoveryService:new(
-		provider,
-		{ coalitionId = (coalition and coalition.side and coalition.side.RED) or 1, prefix = "iads" }
-	)
+	local svc = Medusa.Services.DiscoveryService:new(provider, { coalitionId = (coalition and coalition.side and coalition.side.RED) or 1, prefix = "iads" })
 	local added = 0
 	svc:setListener({
 		onAdded = function()
@@ -239,10 +227,7 @@ function TestDiscoveryService:test_same_id_rescan_reports_rediscovery_without_a_
 			category = "ground",
 		},
 	})
-	local svc = Medusa.Services.DiscoveryService:new(
-		provider,
-		{ coalitionId = (coalition and coalition.side and coalition.side.RED) or 1, prefix = "iads" }
-	)
+	local svc = Medusa.Services.DiscoveryService:new(provider, { coalitionId = (coalition and coalition.side and coalition.side.RED) or 1, prefix = "iads" })
 	local added = 0
 	local rediscovered = 0
 	svc:setListener({
@@ -350,8 +335,7 @@ end
 function TestDiscoveryService:test_birth_work_remains_bounded_when_both_queues_fill()
 	local svc = Medusa.Services.DiscoveryService:new(make_provider({}), { coalitionId = 1, prefix = "iads" })
 	lu.assertTrue(svc:enableDynamicAdds())
-	local capacity = Medusa.Constants.WorldEventQueue.BIRTH_CAPACITY
-		+ Medusa.Constants.WorldEventQueue.BIRTH_OVERFLOW_CAPACITY
+	local capacity = Medusa.Constants.WorldEventQueue.BIRTH_CAPACITY + Medusa.Constants.WorldEventQueue.BIRTH_OVERFLOW_CAPACITY
 	for id = 1, capacity do
 		lu.assertTrue(svc._birthQueue:enqueue({ _groupName = string.format("iads.pending.%d", id) }))
 	end

@@ -211,11 +211,12 @@ function TestCrewSuppressionService:test_successful_suppression_logs_group_cause
 
 	lu.assertTrue(CrewSuppressionService.processDamage(ctx, 101))
 
-	lu.assertEquals(#self.infoMessages, 1)
+	lu.assertEquals(#self.infoMessages, 2)
 	lu.assertStrContains(self.infoMessages[1], "[ Medusa | INFO | CrewSuppressionService ]")
 	lu.assertStrContains(self.infoMessages[1], "red.local-defense")
 	lu.assertStrContains(self.infoMessages[1], "cause=DAMAGE")
 	lu.assertStrContains(self.infoMessages[1], "duration=120s")
+	lu.assertStrContains(self.infoMessages[2], "[ Medusa | INFO | AaaService ] AAA red.local-defense state AREA_FIRE -> IDLE reason=crew suppression")
 end
 
 function TestCrewSuppressionService:test_missing_health_logs_damage_evaluation_at_debug()

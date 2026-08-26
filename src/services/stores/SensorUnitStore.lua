@@ -88,15 +88,7 @@ function Medusa.Services.SensorUnitStore:add(sensor)
 	end
 	self._groupNamesDirty = true
 
-	self._logger:debug(
-		string.format(
-			"added sensor %s (unitId=%s, type=%s, count=%d)",
-			sensor.SensorUnitId,
-			tostring(sensor.UnitId),
-			sensorType,
-			self._count
-		)
-	)
+	self._logger:debug(string.format("added sensor %s (unitId=%s, type=%s, count=%d)", sensor.SensorUnitId, tostring(sensor.UnitId), sensorType, self._count))
 	return true
 end
 

@@ -233,8 +233,7 @@ end
 --- Spawns one hidden probe group and reports whether its DCS group became available.
 function Medusa.Services.SensorProbingService:_spawnProbe(typeName, position)
 	local probeName = string.format("MEDUSA_PROBE_%s_%04d", typeName:gsub("[^%w]", "_"), math.random(1000, 9999))
-	local unitEntry =
-		BuildUnitEntry(typeName, probeName .. "_u1", position.x, position.z, 0, 0, { skill = "Excellent" })
+	local unitEntry = BuildUnitEntry(typeName, probeName .. "_u1", position.x, position.z, 0, 0, { skill = "Excellent" })
 	if not unitEntry then
 		self._logger:error(string.format("failed to build unit entry for type '%s'", typeName))
 		self._cache[typeName] = false

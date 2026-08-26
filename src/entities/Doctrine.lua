@@ -249,15 +249,7 @@ function Medusa.Entities.Doctrine.new(overrides)
 						valid[#valid + 1] = k
 					end
 				end
-				_logger:error(
-					string.format(
-						"invalid '%s' value '%s' (valid: %s), using '%s'",
-						s.name,
-						tostring(raw),
-						table.concat(valid, ", "),
-						tostring(s.default)
-					)
-				)
+				_logger:error(string.format("invalid '%s' value '%s' (valid: %s), using '%s'", s.name, tostring(raw), table.concat(valid, ", "), tostring(s.default)))
 				raw = nil
 			end
 			doctrine[s.name] = raw or s.default
@@ -286,14 +278,7 @@ function Medusa.Entities.Doctrine.new(overrides)
 		elseif s.type == "boolean" then
 			if type(raw) ~= "boolean" then
 				if raw ~= nil then
-					_logger:error(
-						string.format(
-							"invalid '%s' Boolean value '%s', using '%s'",
-							s.name,
-							tostring(raw),
-							tostring(s.default)
-						)
-					)
+					_logger:error(string.format("invalid '%s' Boolean value '%s', using '%s'", s.name, tostring(raw), tostring(s.default)))
 				end
 				raw = s.default
 			end
@@ -322,13 +307,7 @@ function Medusa.Entities.Doctrine.new(overrides)
 	end
 	local enabled = crewSuppressionOverrides.Enabled
 	if enabled ~= nil and type(enabled) ~= "boolean" then
-		_logger:error(
-			string.format(
-				"invalid CrewSuppression.Enabled value '%s', using '%s'",
-				tostring(enabled),
-				tostring(Medusa.Constants.CrewSuppression.DEFAULT_ENABLED)
-			)
-		)
+		_logger:error(string.format("invalid CrewSuppression.Enabled value '%s', using '%s'", tostring(enabled), tostring(Medusa.Constants.CrewSuppression.DEFAULT_ENABLED)))
 		enabled = nil
 	end
 	if enabled == nil then
@@ -338,13 +317,7 @@ function Medusa.Entities.Doctrine.new(overrides)
 	local defaultCrewSkill = Medusa.Constants.CrewSuppression.DEFAULT_CREW_SKILL
 	local crewSkill = crewSuppressionOverrides.DefaultCrewSkill
 	if crewSkill ~= nil and Medusa.Constants.CrewSkill[crewSkill] ~= crewSkill then
-		_logger:error(
-			string.format(
-				"invalid CrewSuppression.DefaultCrewSkill value '%s', using '%s'",
-				tostring(crewSkill),
-				defaultCrewSkill
-			)
-		)
+		_logger:error(string.format("invalid CrewSuppression.DefaultCrewSkill value '%s', using '%s'", tostring(crewSkill), defaultCrewSkill))
 		crewSkill = nil
 	end
 	doctrine.CrewSuppression.DefaultCrewSkill = crewSkill or defaultCrewSkill

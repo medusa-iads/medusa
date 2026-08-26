@@ -199,7 +199,19 @@ TestTrackManagerPruneStale = {}
 
 function TestTrackManagerPruneStale:setUp()
 	setupMocks()
+	self.originalInfo = env.info
+	self.originalLogLevel = Medusa.Logger:getLevel()
+	self.infoMessages = {}
+	env.info = function(message)
+		self.infoMessages[#self.infoMessages + 1] = message
+	end
+	Medusa.Logger:setLevel(Medusa.Constants.LogLevel.INFO)
 	self.mgr = Medusa.Services.TrackManager:new()
+end
+
+function TestTrackManagerPruneStale:tearDown()
+	env.info = self.originalInfo
+	Medusa.Logger:setLevel(self.originalLogLevel)
 end
 
 function TestTrackManagerPruneStale:test_pruneStale_activeBecomeStale()
@@ -224,6 +236,30 @@ function TestTrackManagerPruneStale:test_pruneStale_staleBecomesExpired()
 	self.mgr:pruneStale(pruneTime)
 
 	lu.assertEquals(self.mgr:getStore():count(), 0)
+end
+
+function TestTrackManagerPruneStale:test_lifecycle_transitions_log_once_at_info()
+	local track = self.mgr:processReport(makeReport())
+	local pruneTime = mockTime + 61
+	self.mgr:pruneStale(pruneTime)
+	mockTime = pruneTime + 1
+	self.mgr:processReport(makeReport())
+	pruneTime = mockTime + 61
+	self.mgr:pruneStale(pruneTime)
+	self.mgr:pruneStale(pruneTime)
+
+	local transitions = {}
+	for i = 1, #self.infoMessages do
+		if string.find(self.infoMessages[i], "lifecycle", 1, true) then
+			transitions[#transitions + 1] = self.infoMessages[i]
+		end
+	end
+	lu.assertEquals(#transitions, 4)
+	lu.assertStrContains(transitions[1], "track AE0001 lifecycle ACTIVE -> STALE reason=memory timeout")
+	lu.assertStrContains(transitions[2], "track AE0001 lifecycle STALE -> ACTIVE reason=observation resumed")
+	lu.assertStrContains(transitions[3], "track AE0001 lifecycle ACTIVE -> STALE reason=memory timeout")
+	lu.assertStrContains(transitions[4], "track AE0001 lifecycle STALE -> EXPIRED reason=memory expired")
+	lu.assertEquals(track.LifecycleState, Medusa.Constants.TrackLifecycleState.EXPIRED)
 end
 
 function TestTrackManagerPruneStale:test_expiry_releases_battery_assignment_before_removal()

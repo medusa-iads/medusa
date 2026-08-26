@@ -56,9 +56,7 @@ function Medusa.Services.GeospatialIndexService:new(cellSizeMeters)
 	local o = {
 		_networkedGeoGrid = GeoGrid(cellSizeMeters, { "Battery", "Track" }),
 		_localGeoGrid = GeoGrid(cellSizeMeters, { "Manpad", "Aaa" }),
-		_suppressibleUnitGeoGrid = Medusa.Services.UnitGeoGrid:new(
-			Medusa.Constants.CrewSuppression.EXPLOSIVE_RADIUS_MAX_M
-		),
+		_suppressibleUnitGeoGrid = Medusa.Services.UnitGeoGrid:new(Medusa.Constants.CrewSuppression.EXPLOSIVE_RADIUS_MAX_M),
 	}
 	setmetatable(o, { __index = Medusa.Services.GeospatialIndexService })
 	return o
@@ -69,8 +67,7 @@ function Medusa.Services.GeospatialIndexService:suppressibleUnitGeoGrid()
 end
 
 local function isSuppressibleUnit(unit)
-	return Battery.unitHasRole(unit, Medusa.Constants.BatteryUnitRole.AAA)
-		or Battery.unitHasRole(unit, Medusa.Constants.BatteryUnitRole.MANPAD)
+	return Battery.unitHasRole(unit, Medusa.Constants.BatteryUnitRole.AAA) or Battery.unitHasRole(unit, Medusa.Constants.BatteryUnitRole.MANPAD)
 end
 
 function Medusa.Services.GeospatialIndexService:syncSuppressibleUnit(unit)
@@ -78,11 +75,7 @@ function Medusa.Services.GeospatialIndexService:syncSuppressibleUnit(unit)
 		return false
 	end
 	self._suppressibleUnitGeoGrid:remove(unit.UnitId)
-	if
-		not isSuppressibleUnit(unit)
-		or unit.OperationalStatus == Medusa.Constants.UnitOperationalStatus.DESTROYED
-		or not unit.Position
-	then
+	if not isSuppressibleUnit(unit) or unit.OperationalStatus == Medusa.Constants.UnitOperationalStatus.DESTROYED or not unit.Position then
 		return false
 	end
 	return self._suppressibleUnitGeoGrid:add(unit.UnitId, unit.Position)

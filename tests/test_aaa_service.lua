@@ -805,15 +805,11 @@ function TestAaaService:test_barrage_participant_cap_is_shared_across_networks()
 	local barrageState = Medusa.Services.AaaService.newBarrageState()
 	Medusa.Services.AaaService.setBarrageLimit(barrageState, "first-network", 1)
 	Medusa.Services.AaaService.setBarrageLimit(barrageState, "second-network", 2)
-	local sourceA =
-		firingBattery({ BatteryId = "source-a", NetworkId = "first-network", GroupId = 1, GroupName = "source-a" })
-	local recipientA =
-		battery({ BatteryId = "recipient-a", NetworkId = "first-network", GroupId = 2, GroupName = "recipient-a" })
+	local sourceA = firingBattery({ BatteryId = "source-a", NetworkId = "first-network", GroupId = 1, GroupName = "source-a" })
+	local recipientA = battery({ BatteryId = "recipient-a", NetworkId = "first-network", GroupId = 2, GroupName = "recipient-a" })
 	recipientA.Units[1].UnitId = 2
-	local sourceB =
-		firingBattery({ BatteryId = "source-b", NetworkId = "second-network", GroupId = 3, GroupName = "source-b" })
-	local recipientB =
-		battery({ BatteryId = "recipient-b", NetworkId = "second-network", GroupId = 4, GroupName = "recipient-b" })
+	local sourceB = firingBattery({ BatteryId = "source-b", NetworkId = "second-network", GroupId = 3, GroupName = "source-b" })
+	local recipientB = battery({ BatteryId = "recipient-b", NetworkId = "second-network", GroupId = 4, GroupName = "recipient-b" })
 	recipientB.Units[1].UnitId = 4
 	math.random = function()
 		return 0

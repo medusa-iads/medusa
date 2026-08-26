@@ -189,16 +189,7 @@ function Medusa.Services.ApiService.setScanTiming(networkName, scanSec, quietSec
 	local prevQuiet = doctrine.QuietPeriodSec or Medusa.Constants.EMCON_DEFAULT_QUIET_PERIOD_SEC
 	doctrine.ScanSec = scanSec
 	doctrine.QuietPeriodSec = quietSec
-	_logger:info(
-		string.format(
-			"network %s ScanTiming changed: scan %s->%s quiet %s->%s",
-			networkName,
-			prevScan,
-			scanSec,
-			prevQuiet,
-			quietSec
-		)
-	)
+	_logger:info(string.format("network %s ScanTiming changed: scan %s->%s quiet %s->%s", networkName, prevScan, scanSec, prevQuiet, quietSec))
 	Medusa.Observability.MetricsService.inc("medusa_emcon_changes_total")
 	return true
 end

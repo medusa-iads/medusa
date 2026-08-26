@@ -90,14 +90,25 @@ function Medusa.Entities.Track.new(data)
 		BorderHostileDwellSec = nil,
 	}
 
-	Medusa.Entities.Track._logger:debug(
-		string.format("created track %s for network %s", Medusa.Entities.Track.displayId(o), tostring(o.NetworkId))
-	)
+	Medusa.Entities.Track._logger:debug(string.format("created track %s for network %s", Medusa.Entities.Track.displayId(o), tostring(o.NetworkId)))
 	return o
 end
 
 function Medusa.Entities.Track.displayId(track)
 	return (track and track.DisplayTrackId) or Medusa.Constants.TrackDisplayId.UNSET
+end
+
+--- Changes a track's lifecycle state and reports the reason when the state differs.
+function Medusa.Entities.Track.transitionLifecycle(track, newState, reason)
+	local previousState = track.LifecycleState
+	if previousState == newState then
+		return false
+	end
+	track.LifecycleState = newState
+	Medusa.Entities.Track._logger:info(
+		string.format("track %s lifecycle %s -> %s reason=%s", Medusa.Entities.Track.displayId(track), tostring(previousState), tostring(newState), tostring(reason))
+	)
+	return true
 end
 
 function Medusa.Entities.Track.addDisplayIdAlias(track, displayId)
@@ -114,6 +125,7 @@ function Medusa.Entities.Track.addDisplayIdAlias(track, displayId)
 	return true
 end
 
+--- Applies position and velocity observed at timestamp and reactivates a stale track.
 function Medusa.Entities.Track.update(track, position, velocity, timestamp)
 	track.Position = position
 	track.Velocity = velocity
@@ -127,7 +139,7 @@ function Medusa.Entities.Track.update(track, position, velocity, timestamp)
 	})
 
 	if track.LifecycleState == Medusa.Constants.TrackLifecycleState.STALE then
-		track.LifecycleState = Medusa.Constants.TrackLifecycleState.ACTIVE
+		Medusa.Entities.Track.transitionLifecycle(track, Medusa.Constants.TrackLifecycleState.ACTIVE, "observation resumed")
 	end
 end
 

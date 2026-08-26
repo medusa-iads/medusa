@@ -1,6 +1,7 @@
 require("_header")
 require("services.Services")
 require("core.Constants")
+require("core.Logger")
 require("entities.Battery")
 require("services.BatteryActivationService")
 require("observability.MetricsService")
@@ -57,6 +58,7 @@ local CrewPerceptionService = Medusa.Services.CrewPerceptionService
 local LocalSearchService = Medusa.Services.LocalSearchService
 local NeighborPropagationService = Medusa.Services.NeighborPropagationService
 local Battery = Medusa.Entities.Battery
+local logger = Medusa.Logger:ns("ManpadService")
 local _PRIMARY_VISUAL_PROFILES = { CrewPerceptionService.PRIMARY_PROFILE }
 local _FULL_VISUAL_PROFILES = {
 	CrewPerceptionService.PRIMARY_PROFILE,
@@ -70,6 +72,18 @@ local function randomDelay(minSec, maxSec)
 	return minSec + math.random() * (maxSec - minSec)
 end
 
+--- Commits one MANPAD sleep/wake state change and records its operational reason.
+local function transitionState(battery, newState, reason)
+	local manpad = battery.Manpad
+	local oldState = manpad.SleepWakeState
+	if oldState == newState then
+		return false
+	end
+	manpad.SleepWakeState = newState
+	logger:info(string.format("MANPAD %s state %s -> %s reason=%s", tostring(battery.GroupName), tostring(oldState), tostring(newState), tostring(reason)))
+	return true
+end
+
 function Medusa.Services.ManpadService.sampleAudioCueRange(maxRangeM)
 	local maximum = maxRangeM or C.Manpad.AUDIO_RANGE_MAX_M
 	return C.Manpad.AUDIO_RANGE_MIN_M + math.random() * (maximum - C.Manpad.AUDIO_RANGE_MIN_M)
@@ -77,7 +91,7 @@ end
 
 local function completeThreatWake(battery, wakeReason, now)
 	local manpad = battery.Manpad
-	manpad.SleepWakeState = MSWS.ALERT
+	transitionState(battery, MSWS.ALERT, wakeReason)
 	manpad.WakeReason = wakeReason
 	manpad.AlertStartTime = now
 	manpad.AlertCycleCount = manpad.AlertCycleCount + 1
@@ -98,7 +112,7 @@ local function receiveScheduledWake(battery, message, now)
 	local partitionKey = message.PartitionKey
 	if partitionKey and battery.PartitionKey ~= partitionKey then
 		if battery.Manpad.SleepWakeState == MSWS.ALERTING then
-			battery.Manpad.SleepWakeState = MSWS.ASLEEP
+			transitionState(battery, MSWS.ASLEEP, "partition changed")
 			battery.Manpad.WakeReason = MWR.NONE
 		end
 		return
@@ -121,7 +135,7 @@ local function scheduleWake(ctx, battery, wakeReason, minSec, maxSec, partitionK
 	if not maxSec then
 		maxSec = manpad.AlertCycleCount == 0 and C.Manpad.FIRST_WAKE_MAX_SEC or C.Manpad.WAKE_MAX_SEC
 	end
-	manpad.SleepWakeState = MSWS.ALERTING
+	transitionState(battery, MSWS.ALERTING, wakeReason)
 	manpad.WakeReason = wakeReason
 	if
 		not NeighborPropagationService.scheduleDelivery({
@@ -135,7 +149,7 @@ local function scheduleWake(ctx, battery, wakeReason, minSec, maxSec, partitionK
 			onDelivery = receiveScheduledWake,
 		})
 	then
-		manpad.SleepWakeState = MSWS.ASLEEP
+		transitionState(battery, MSWS.ASLEEP, "wake scheduling failed")
 		manpad.WakeReason = MWR.NONE
 		return false
 	end
@@ -221,14 +235,21 @@ function Medusa.Services.ManpadService.onShot(battery, now)
 	battery.Manpad.AlertStartTime = now
 end
 
-function Medusa.Services.ManpadService.cancelPendingWake(battery)
+--- Cancels one delayed MANPAD wake without changing the crew state.
+local function cancelWakeTimer(battery)
 	if battery.Manpad and battery.Manpad.WakeTimerId then
-		local wasAlerting = battery.Manpad.SleepWakeState == MSWS.ALERTING
 		NeighborPropagationService.cancelDelivery(battery, "Manpad", "WakeTimerId")
-		if wasAlerting then
-			battery.Manpad.SleepWakeState = MSWS.ASLEEP
-			battery.Manpad.WakeReason = MWR.NONE
-		end
+		return true
+	end
+	return false
+end
+
+--- Cancels one delayed MANPAD wake and returns an alerting crew to sleep.
+function Medusa.Services.ManpadService.cancelPendingWake(battery)
+	local wasAlerting = battery.Manpad and battery.Manpad.SleepWakeState == MSWS.ALERTING
+	if cancelWakeTimer(battery) and wasAlerting then
+		transitionState(battery, MSWS.ASLEEP, "wake canceled")
+		battery.Manpad.WakeReason = MWR.NONE
 	end
 end
 
@@ -243,9 +264,9 @@ function Medusa.Services.ManpadService.suppressBattery(battery)
 	if not battery.Manpad then
 		return false
 	end
-	Medusa.Services.ManpadService.cancelPendingWake(battery)
+	cancelWakeTimer(battery)
 	local manpad = battery.Manpad
-	manpad.SleepWakeState = MSWS.ALERT
+	transitionState(battery, MSWS.ALERT, "crew suppression")
 	manpad.WakeReason = MWR.NONE
 	manpad.AlertStartTime = nil
 	manpad.HotUntil = nil
@@ -258,15 +279,15 @@ function Medusa.Services.ManpadService.recoverFromCrewSuppression(battery, now)
 		return false
 	end
 	local manpad = battery.Manpad
-	manpad.SleepWakeState = MSWS.ALERT
+	transitionState(battery, MSWS.ALERT, "crew suppression recovery")
 	manpad.WakeReason = MWR.RECOVERY
 	manpad.AlertStartTime = now
 	return true
 end
 
 function Medusa.Services.ManpadService.onRearmed(battery, now)
-	Medusa.Services.ManpadService.cancelPendingWake(battery)
-	battery.Manpad.SleepWakeState = MSWS.ALERT
+	cancelWakeTimer(battery)
+	transitionState(battery, MSWS.ALERT, "rearmed")
 	battery.Manpad.WakeReason = MWR.REARM
 	battery.Manpad.AlertStartTime = now
 	battery.Manpad.HotUntil = nil
@@ -275,14 +296,7 @@ end
 
 --- Schedules bounded nearby sleeping MANPAD wakes and returns the accepted recipient count.
 local function wakeAsleepManpadsInRadius(ctx, centerPos, radius, wakeReason, minSec, maxSec, excludeId, track)
-	local manpads = NeighborPropagationService.findRecipients(
-		ctx.localGeoGrid or ctx.geoGrid,
-		ctx.manpadStore,
-		centerPos,
-		radius,
-		"Manpad",
-		excludeId
-	)
+	local manpads = NeighborPropagationService.findRecipients(ctx.localGeoGrid or ctx.geoGrid, ctx.manpadStore, centerPos, radius, "Manpad", excludeId)
 	local scheduledCount = 0
 	for i = 1, #manpads do
 		local battery = manpads[i]
@@ -302,15 +316,8 @@ local function onManpadGoHot(ctx, battery)
 	if radioRangeM == 0 then
 		return
 	end
-	local scheduledCount = wakeAsleepManpadsInRadius(
-		ctx,
-		battery.Position,
-		radioRangeM,
-		MWR.NEIGHBOR,
-		C.Manpad.NEIGHBOR_WAKE_MIN_SEC,
-		C.Manpad.NEIGHBOR_WAKE_MAX_SEC,
-		battery.BatteryId
-	)
+	local scheduledCount =
+		wakeAsleepManpadsInRadius(ctx, battery.Position, radioRangeM, MWR.NEIGHBOR, C.Manpad.NEIGHBOR_WAKE_MIN_SEC, C.Manpad.NEIGHBOR_WAKE_MAX_SEC, battery.BatteryId)
 	if scheduledCount > 0 then
 		Medusa.Observability.MetricsService.inc("medusa_manpad_neighbor_wakes_total", scheduledCount)
 	end
@@ -326,7 +333,7 @@ end
 
 --- Cancels an owned delayed wake before moving the MANPAD directly to ALERT.
 local function snapToAlert(battery, now, wakeReason)
-	Medusa.Services.ManpadService.cancelPendingWake(battery)
+	cancelWakeTimer(battery)
 	completeThreatWake(battery, wakeReason, now)
 end
 
@@ -364,7 +371,7 @@ local function attemptEngagement(ctx, battery, track, now, posture)
 		-- pollute the state machine with a phantom HOT.
 		return false
 	end
-	battery.Manpad.SleepWakeState = MSWS.HOT
+	transitionState(battery, MSWS.HOT, "target acquired")
 	battery.Manpad.HotUntil = now + randomDelay(C.Manpad.HOT_MIN_SEC, C.Manpad.HOT_MAX_SEC)
 	onManpadGoHot(ctx, battery)
 	Medusa.Observability.MetricsService.inc("medusa_manpad_activations_total")
@@ -474,13 +481,10 @@ end
 
 local function returnToSleep(battery, audioRangeM)
 	local manpad = battery.Manpad
-	manpad.SleepWakeState = MSWS.ASLEEP
+	transitionState(battery, MSWS.ASLEEP, "alert timeout")
 	manpad.WakeReason = MWR.NONE
 	manpad.AlertStartTime = nil
-	manpad.AudioCueRangeM = math.min(
-		audioRangeM,
-		math.max(manpad.AudioCueRangeM, Medusa.Services.ManpadService.sampleAudioCueRange(audioRangeM))
-	)
+	manpad.AudioCueRangeM = math.min(audioRangeM, math.max(manpad.AudioCueRangeM, Medusa.Services.ManpadService.sampleAudioCueRange(audioRangeM)))
 end
 
 --- Advances one MANPAD through readiness retry, alert, engagement, and cooldown policy.
@@ -502,14 +506,9 @@ local function evaluateSingle(ctx, battery, trackStore, geoGrid, now, posture, m
 	decayAlertnessIfExpired(battery, now, manpadDoctrine)
 	local state = battery.Manpad.SleepWakeState
 
-	if
-		state == MSWS.HOT
-		and battery.Manpad.HotUntil
-		and now >= battery.Manpad.HotUntil
-		and (not battery.MissileInFlightUntil or now >= battery.MissileInFlightUntil)
-	then
+	if state == MSWS.HOT and battery.Manpad.HotUntil and now >= battery.Manpad.HotUntil and (not battery.MissileInFlightUntil or now >= battery.MissileInFlightUntil) then
 		if Medusa.Services.BatteryActivationService.goCold(battery, now, trackStore) then
-			battery.Manpad.SleepWakeState = MSWS.COOLDOWN
+			transitionState(battery, MSWS.COOLDOWN, "hot period expired")
 			battery.Manpad.HotUntil = nil
 			battery.Manpad.CooldownUntil = now + C.Manpad.COOLDOWN_SEC
 		end
@@ -517,7 +516,7 @@ local function evaluateSingle(ctx, battery, trackStore, geoGrid, now, posture, m
 	end
 
 	if state == MSWS.COOLDOWN and battery.Manpad.CooldownUntil and now >= battery.Manpad.CooldownUntil then
-		battery.Manpad.SleepWakeState = MSWS.ALERT
+		transitionState(battery, MSWS.ALERT, "cooldown complete")
 		battery.Manpad.WakeReason = MWR.RECOVERY
 		battery.Manpad.AlertStartTime = now
 		battery.Manpad.CooldownUntil = nil

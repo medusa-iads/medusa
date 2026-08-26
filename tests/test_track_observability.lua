@@ -61,12 +61,11 @@ local function network(tracks, batteries, doctrine, manpads)
 			}
 		end,
 		getDoctrine = function()
-			return doctrine
-				or {
-					Posture = C.Posture.HOT_WAR,
-					DegradedMode = C.NetworkDegradationPolicy.REVERT_TO_AUTONOMOUS,
-					AAA = { AudioRangeM = 6000 },
-				}
+			return doctrine or {
+				Posture = C.Posture.HOT_WAR,
+				DegradedMode = C.NetworkDegradationPolicy.REVERT_TO_AUTONOMOUS,
+				AAA = { AudioRangeM = 6000 },
+			}
 		end,
 		getBorderPolygonsLL = function()
 			return {}
@@ -152,10 +151,7 @@ function TestTrackObservability:test_extended_metrics_keep_canonical_join_key_an
 
 	lu.assertStrContains(output, 'medusa_track_lat{network="red",track="ULID-1",display_track="AW0001"}')
 	lu.assertStrContains(output, 'medusa_track_info{network="red",track="ULID-1",display_track="AW0001",')
-	lu.assertStrContains(
-		output,
-		'medusa_battery_info{network="red",battery="SAM-1",role="GENERIC_SAM",status="ACTIVE",state="INITIALIZING",target="AW0001",target_track="ULID-1",'
-	)
+	lu.assertStrContains(output, 'medusa_battery_info{network="red",battery="SAM-1",role="GENERIC_SAM",status="ACTIVE",state="INITIALIZING",target="AW0001",target_track="ULID-1",')
 	lu.assertStrContains(output, 'medusa_track_sprt_hdg{network="red",track="ULID-1",display_track="AW0001"} 0.01')
 	lu.assertStrContains(output, 'medusa_track_sprt_acc{network="red",track="ULID-1",display_track="AW0001"} 2.00')
 end
@@ -176,8 +172,7 @@ function TestTrackObservability:test_extended_metrics_expose_battery_control_and
 	local autoA = displayBattery("AUTO-A", C.CoordinationState.DEGRADED, "partition-b")
 	local autoB = displayBattery("AUTO-B", C.CoordinationState.DEGRADED, "partition-b")
 	local coordinated = displayBattery("COORD", C.CoordinationState.COORDINATED, "partition-a")
-	local independent =
-		displayBattery("INDEPENDENT-AAA", C.CoordinationState.DEGRADED, "partition-a", C.BatteryRole.AAA)
+	local independent = displayBattery("INDEPENDENT-AAA", C.CoordinationState.DEGRADED, "partition-a", C.BatteryRole.AAA)
 	local selfDefense = displayBattery("SELF", C.CoordinationState.DEGRADED, "partition-self")
 	local goDark = displayBattery("DARK", C.CoordinationState.DEGRADED, "partition-dark")
 	local manpad = Medusa.Entities.Battery.new({
@@ -243,10 +238,7 @@ function TestTrackObservability:test_extended_metrics_expose_battery_control_and
 	lu.assertStrContains(output, 'medusa_battery_partition{network="auto",battery="AUTO-A"} 2')
 	lu.assertStrContains(output, 'medusa_battery_partition{network="auto",battery="AUTO-B"} 2')
 	lu.assertStrContains(output, 'medusa_manpad_partition{network="auto",manpad="MANPAD"} 2')
-	lu.assertStrContains(
-		output,
-		'manpad="MANPAD",state="ASLEEP",wake_reason="NONE",detection_mode="NARROW",can_fire="false",control="INDEPENDENT"'
-	)
+	lu.assertStrContains(output, 'manpad="MANPAD",state="ASLEEP",wake_reason="NONE",detection_mode="NARROW",can_fire="false",control="INDEPENDENT"')
 end
 
 function TestTrackObservability:test_last_chance_metric_exposes_display_id_and_canonical_join_key()
@@ -268,10 +260,7 @@ function TestTrackObservability:test_last_chance_metric_exposes_display_id_and_c
 
 	local output = MS.serialize()
 
-	lu.assertStrContains(
-		output,
-		'medusa_battery_last_chance{network="red",battery="SAM-1",track="ULID-1",display_track="AW0001"}'
-	)
+	lu.assertStrContains(output, 'medusa_battery_last_chance{network="red",battery="SAM-1",track="ULID-1",display_track="AW0001"}')
 end
 
 function TestTrackObservability:test_harm_metrics_separate_available_and_committed_capacity()

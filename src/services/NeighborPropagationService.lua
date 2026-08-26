@@ -13,14 +13,7 @@ local function clear(values)
 	end
 end
 
-function Medusa.Services.NeighborPropagationService.findRecipients(
-	geoGrid,
-	repository,
-	center,
-	rangeM,
-	gridType,
-	excludeId
-)
+function Medusa.Services.NeighborPropagationService.findRecipients(geoGrid, repository, center, rangeM, gridType, excludeId)
 	clear(recipientBuffer)
 	local results = geoGrid:queryRadius(center, rangeM, { gridType })
 	local ids = results[gridType .. "Ids"]
