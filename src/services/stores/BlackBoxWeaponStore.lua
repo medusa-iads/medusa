@@ -1,6 +1,29 @@
 require("_header")
 require("services.Services")
 require("core.Constants")
+--[[
+██████╗ ██╗      █████╗  ██████╗██╗  ██╗    ██████╗  ██████╗ ██╗  ██╗
+██╔══██╗██║     ██╔══██╗██╔════╝██║ ██╔╝    ██╔══██╗██╔═══██╗╚██╗██╔╝
+██████╔╝██║     ███████║██║     █████╔╝     ██████╔╝██║   ██║ ╚███╔╝
+██╔══██╗██║     ██╔══██║██║     ██╔═██╗     ██╔══██╗██║   ██║ ██╔██╗
+██████╔╝███████╗██║  ██║╚██████╗██║  ██╗    ██████╔╝╚██████╔╝██╔╝ ██╗
+╚═════╝ ╚══════╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝    ╚═════╝  ╚═════╝ ╚═╝  ╚═╝
+
+██╗    ██╗███████╗ █████╗ ██████╗  ██████╗ ███╗   ██╗    ███████╗████████╗ ██████╗ ██████╗ ███████╗
+██║    ██║██╔════╝██╔══██╗██╔══██╗██╔═══██╗████╗  ██║    ██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝
+██║ █╗ ██║█████╗  ███████║██████╔╝██║   ██║██╔██╗ ██║    ███████╗   ██║   ██║   ██║██████╔╝█████╗
+██║███╗██║██╔══╝  ██╔══██║██╔═══╝ ██║   ██║██║╚██╗██║    ╚════██║   ██║   ██║   ██║██╔══██╗██╔══╝
+╚███╔███╔╝███████╗██║  ██║██║     ╚██████╔╝██║ ╚████║    ███████║   ██║   ╚██████╔╝██║  ██║███████╗
+ ╚══╝╚══╝ ╚══════╝╚═╝  ╚═╝╚═╝      ╚═════╝ ╚═╝  ╚═══╝    ╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
+
+    What this store does
+    - Holds bounded missile, bomb, and aircraft-cannon observations used to estimate crew-suppression impacts.
+    - Owns active-weapon lookup, processing cadence, event subscriptions, and mission-wide terminal-event identifiers.
+
+    How others use it
+    - Entrypoint creates one mission-wide store and shares it with every IADS.
+    - BlackBoxService processes its observations; IadsNetwork delivers completed impact estimates to crew suppression.
+]]
 
 Medusa.Services.BlackBoxWeaponStore = {}
 
@@ -19,6 +42,11 @@ do
 			_tracks = RingBuffer(math.floor(capacity), false),
 			_byWeapon = {},
 			_cannonCandidates = RingBuffer(math.floor(cannonCapacity), false),
+			_workSummary = {
+				Weapon = { Processed = 0, Queued = 0, HighWater = 0 },
+				Cannon = { Processed = 0, Queued = 0, HighWater = 0 },
+			},
+			_nextWorkSummaryAt = nil,
 			_nextTerminalEventId = 0,
 			_nextUpdateAt = nil,
 			_eventBus = nil,
@@ -113,11 +141,59 @@ do
 		return true
 	end
 
+	--- Records one bounded weapon and cannon update for the shared 30-second work summary.
+	function Store:recordUpdateWork(weaponProcessed, weaponBefore, cannonProcessed, cannonBefore)
+		local weapon = self._workSummary.Weapon
+		weapon.Processed = weapon.Processed + weaponProcessed
+		weapon.Queued = self:size()
+		weapon.HighWater = math.max(weapon.HighWater, weaponBefore, weapon.Queued)
+
+		local cannon = self._workSummary.Cannon
+		cannon.Processed = cannon.Processed + cannonProcessed
+		cannon.Queued = self:cannonSize()
+		cannon.HighWater = math.max(cannon.HighWater, cannonBefore, cannon.Queued)
+	end
+
+	--- Returns and resets the completed shared-work interval, or nil before its deadline.
+	function Store:takeWorkSummary(now, intervalSec)
+		if not self._nextWorkSummaryAt then
+			self._nextWorkSummaryAt = now + intervalSec
+			return nil
+		end
+		if now < self._nextWorkSummaryAt then
+			return nil
+		end
+		while self._nextWorkSummaryAt <= now do
+			self._nextWorkSummaryAt = self._nextWorkSummaryAt + intervalSec
+		end
+
+		local summary = {
+			Weapon = {
+				Processed = self._workSummary.Weapon.Processed,
+				Queued = self._workSummary.Weapon.Queued,
+				HighWater = self._workSummary.Weapon.HighWater,
+			},
+			Cannon = {
+				Processed = self._workSummary.Cannon.Processed,
+				Queued = self._workSummary.Cannon.Queued,
+				HighWater = self._workSummary.Cannon.HighWater,
+			},
+		}
+		self._workSummary.Weapon.Processed = 0
+		self._workSummary.Weapon.HighWater = self._workSummary.Weapon.Queued
+		self._workSummary.Cannon.Processed = 0
+		self._workSummary.Cannon.HighWater = self._workSummary.Cannon.Queued
+		return summary
+	end
+
 	function Store:clear()
 		self._tracks:clear()
 		self._cannonCandidates:clear()
 		self._byWeapon = {}
 		self._nextUpdateAt = nil
+		self._workSummary.Weapon = { Processed = 0, Queued = 0, HighWater = 0 }
+		self._workSummary.Cannon = { Processed = 0, Queued = 0, HighWater = 0 }
+		self._nextWorkSummaryAt = nil
 	end
 
 	function Store:nextTerminalEventId()

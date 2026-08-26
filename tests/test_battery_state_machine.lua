@@ -6,6 +6,8 @@ require("core.Logger")
 require("core.Constants")
 require("entities.Entities")
 require("entities.Battery")
+require("entities.Track")
+require("services.stores.TrackStore")
 
 local Battery = Medusa.Entities.Battery
 local AS = Medusa.Constants.ActivationState
@@ -89,6 +91,77 @@ end
 function TestTransitionTo:test_returnsTrue()
 	local b = makeMinimalBattery()
 	lu.assertTrue(Battery.transitionTo(b, AS.STATE_COLD, 10))
+end
+
+-- == TestTrackAssignment ==
+
+TestTrackAssignment = {}
+
+local function makeTrack(networkId)
+	return Medusa.Entities.Track.new({
+		NetworkId = networkId,
+		Position = { x = 0, y = 0, z = 0 },
+		Velocity = { x = 0, y = 0, z = 0 },
+	})
+end
+
+TestDegradedBehavior = {}
+
+function TestDegradedBehavior:test_failed_weapons_free_request_keeps_assignment()
+	local battery = makeMinimalBattery({ CurrentTargetTrackId = "track" })
+	local original = Medusa.Services.BatteryActivationService.erectGroup
+	Medusa.Services.BatteryActivationService.erectGroup = function()
+		return false
+	end
+
+	local result = Battery.applyDegradedBehavior(battery, "SEARCH_LOST_CP_ALIVE", {})
+	Medusa.Services.BatteryActivationService.erectGroup = original
+
+	lu.assertNil(result)
+	lu.assertEquals(battery.CurrentTargetTrackId, "track")
+end
+
+function TestTrackAssignment:test_replacement_updates_both_sides()
+	local store = Medusa.Services.TrackStore:new()
+	local first = makeTrack("first")
+	local second = makeTrack("second")
+	store:add(first)
+	store:add(second)
+	local battery = makeMinimalBattery()
+
+	lu.assertTrue(Battery.assignTrack(battery, first, 10, store))
+	lu.assertTrue(Battery.assignTrack(battery, second, 20, store))
+
+	lu.assertEquals(battery.CurrentTargetTrackId, second.TrackId)
+	lu.assertFalse(first.AssignedBatteryIds:contains(battery.BatteryId))
+	lu.assertTrue(second.AssignedBatteryIds:contains(battery.BatteryId))
+	lu.assertEquals(battery.LastAssignmentChangeTime, 20)
+end
+
+function TestTrackAssignment:test_release_updates_both_sides()
+	local store = Medusa.Services.TrackStore:new()
+	local track = makeTrack("track")
+	store:add(track)
+	local battery = makeMinimalBattery()
+	Battery.assignTrack(battery, track, 10, store)
+
+	lu.assertTrue(Battery.releaseTrack(battery, store))
+
+	lu.assertNil(battery.CurrentTargetTrackId)
+	lu.assertFalse(track.AssignedBatteryIds:contains(battery.BatteryId))
+end
+
+function TestTrackAssignment:test_release_rejects_a_different_known_track()
+	local current = makeTrack("current")
+	local other = makeTrack("other")
+	local battery = makeMinimalBattery()
+	Battery.assignTrack(battery, current, 10)
+
+	lu.assertFalse(Battery.releaseTrack(battery, nil, other))
+
+	lu.assertEquals(battery.CurrentTargetTrackId, current.TrackId)
+	lu.assertTrue(current.AssignedBatteryIds:contains(battery.BatteryId))
+	lu.assertFalse(other.AssignedBatteryIds:contains(battery.BatteryId))
 end
 
 -- == TestRecomputeOperationalStatus ==

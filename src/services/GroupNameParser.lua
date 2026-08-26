@@ -68,12 +68,7 @@ function Medusa.Services.GroupNameParser:_findRoleIndexes(segments, tokens)
 		local seg = string.lower(segments[i])
 		if
 			tokens
-			and (
-				segmentMatchesToken(seg, tokens.GCI)
-				or isEwrToken(seg, tokens.EWR)
-				or segmentMatchesToken(seg, tokens.HQ)
-				or segmentMatchesToken(seg, tokens.AWACS or "awacs")
-			)
+			and (segmentMatchesToken(seg, tokens.GCI) or isEwrToken(seg, tokens.EWR) or segmentMatchesToken(seg, tokens.HQ) or segmentMatchesToken(seg, tokens.AWACS or "awacs"))
 		then
 			roleIndexes[#roleIndexes + 1] = i
 		end
@@ -110,6 +105,7 @@ function Medusa.Services.GroupNameParser:_rolesFromSegments(segments, tokens)
 	return roles, sensorType, isHq
 end
 
+--- Interprets one DCS group name after ignoring outer whitespace and retains the original name for DCS lookups.
 function Medusa.Services.GroupNameParser:parse(groupName, managedPrefix)
 	local result = {
 		isManaged = false,
@@ -126,16 +122,20 @@ function Medusa.Services.GroupNameParser:parse(groupName, managedPrefix)
 	if type(groupName) ~= "string" or #groupName == 0 then
 		return result
 	end
+	local normalizedName = TrimString(groupName)
+	if #normalizedName == 0 then
+		return result
+	end
 
-	local nameAfterPrefix = groupName
+	local nameAfterPrefix = normalizedName
 	local effectivePrefix = managedPrefix
 	if type(effectivePrefix) == "string" and #effectivePrefix > 0 then
 		local p = effectivePrefix
-		if StartsWith(groupName, p) then
-			local nextChar = string.sub(groupName, #p + 1, #p + 1)
+		if StartsWith(normalizedName, p) then
+			local nextChar = string.sub(normalizedName, #p + 1, #p + 1)
 			if nextChar == "" or not nextChar:match("%w") then
 				result.isManaged = true
-				nameAfterPrefix = string.sub(groupName, #p + 1)
+				nameAfterPrefix = string.sub(normalizedName, #p + 1)
 				local first = string.sub(nameAfterPrefix, 1, 1)
 				if first ~= "" and not first:match("%w") then
 					nameAfterPrefix = string.sub(nameAfterPrefix, 2)

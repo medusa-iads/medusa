@@ -11,7 +11,7 @@ require("services.Services")
 require("services.stores.TrackStore")
 require("services.stores.BatteryStore")
 require("services.SpatialQuery")
-require("services.MetricsService")
+require("observability.MetricsService")
 require("services.TrackClassifier")
 
 -- == Helpers ==
@@ -32,6 +32,7 @@ local function makeTrack(overrides)
 	local base = {
 		Position = { x = 1000, y = 500, z = 2000 },
 		Velocity = { x = 100, y = 0, z = 50 },
+		PartitionKey = "partition-a",
 		NetworkId = overrides and overrides.NetworkId or string.format("net-%d", math.random(1, 999999)),
 	}
 	if overrides then
@@ -61,6 +62,7 @@ local function makeBattery(overrides)
 		GroupId = 1,
 		GroupName = "SAM-1",
 		OperationalStatus = "ACTIVE",
+		PartitionKey = "partition-a",
 		Position = { x = 1000, y = 0, z = 2000 },
 		EngagementRangeMax = 50000,
 	}
@@ -300,9 +302,7 @@ function TestUpdateIdentifications:test_bandit_promoted_to_hostile_via_hostile_i
 
 	-- Second observation at +61s: sustained intent met, promotes to HOSTILE
 	Medusa.Entities.Track.update(track, { x = 12200, y = 5000, z = 0 }, track.Velocity, 1061)
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 })
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 }))
 	lu.assertEquals(track.TrackIdentification, "HOSTILE")
 end
 
@@ -326,10 +326,70 @@ function TestUpdateIdentifications:test_bandit_not_promoted_when_diverging()
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
 	lu.assertNil(track.HostileIntentStart)
 
-	Medusa.Services.TrackClassifier.updateIdentifications(
-		self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 })
-	)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 }))
 	lu.assertEquals(track.TrackIdentification, "BANDIT")
+end
+
+function TestUpdateIdentifications:test_hostile_intent_ignores_battery_in_another_partition()
+	local battery = makeBattery({ PartitionKey = "partition-b", Position = { x = 50000, y = 0, z = 0 } })
+	self.batteryStore:add(battery)
+	local track = makeTrack({
+		TrackIdentification = "BANDIT",
+		LastIdentificationTime = 900,
+		Position = { x = 0, y = 5000, z = 0 },
+		Velocity = { x = 200, y = 0, z = 0 },
+	})
+	self.trackStore:add(track)
+	local doctrine = { Posture = "WARM_WAR" }
+
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ doctrine = doctrine, maxRange = 200000 }))
+	Medusa.Entities.Track.update(track, { x = 12200, y = 5000, z = 0 }, track.Velocity, 1061)
+	Medusa.Services.TrackClassifier.updateIdentifications(self:makeCtx({ doctrine = doctrine, now = 1061, maxRange = 200000 }))
+
+	lu.assertEquals(track.TrackIdentification, "BANDIT")
+	lu.assertNil(track.HostileIntentStart)
+end
+
+function TestUpdateIdentifications:test_guilt_by_association_requires_exact_nonnull_partition()
+	local classifier = Medusa.Services.TrackClassifier
+	local promoted = makeTrack({
+		TrackId = "promoted",
+		TrackIdentification = "BANDIT",
+		Position = { x = 0, y = 1000, z = 0 },
+		Velocity = { x = 250, y = 0, z = 0 },
+	})
+	local same = makeTrack({
+		TrackId = "same",
+		TrackIdentification = "BOGEY",
+		Position = { x = 1000, y = 1000, z = 0 },
+		Velocity = { x = 250, y = 0, z = 0 },
+	})
+	local cross = makeTrack({
+		TrackId = "cross",
+		PartitionKey = "partition-b",
+		TrackIdentification = "BOGEY",
+		Position = { x = 1000, y = 1000, z = 0 },
+		Velocity = { x = 250, y = 0, z = 0 },
+	})
+	local missing = makeTrack({
+		TrackId = "missing",
+		TrackIdentification = "BOGEY",
+		Position = { x = 1000, y = 1000, z = 0 },
+		Velocity = { x = 250, y = 0, z = 0 },
+	})
+	missing.PartitionKey = nil
+	self.trackStore:add(promoted)
+	self.trackStore:add(same)
+	self.trackStore:add(cross)
+	self.trackStore:add(missing)
+	classifier.clearPromotedBuffer()
+	classifier._promotedBuffer[1] = { track = promoted, newId = "BANDIT" }
+
+	classifier.flushGuiltByAssociation({ promoted, same, cross, missing }, self:makeCtx())
+
+	lu.assertEquals(same.TrackIdentification, "BANDIT")
+	lu.assertEquals(cross.TrackIdentification, "BOGEY")
+	lu.assertEquals(missing.TrackIdentification, "BOGEY")
 end
 
 -- == TestAssessAircraftTypes ==

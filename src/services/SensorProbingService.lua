@@ -22,6 +22,7 @@ require("entities.Battery")
 
 Medusa.Services.SensorProbingService = {}
 
+--- Creates the mission-scoped probe coordinator and its empty capability cache.
 function Medusa.Services.SensorProbingService:new(coalitionId)
 	local o = {
 		_coalitionId = coalitionId,
@@ -29,17 +30,23 @@ function Medusa.Services.SensorProbingService:new(coalitionId)
 		_cache = {},
 		_pending = {},
 		_pendingCount = 0,
-		_onAllComplete = nil,
+		_completionCallbacks = {},
 		_logger = Medusa.Logger:ns("SensorProbingService"),
 		_pollCallback = nil,
+		_pollScheduled = false,
 	}
 	setmetatable(o, { __index = self })
 	o._pollCallback = function()
-		o:_pollPendingProbes()
+		o._pollScheduled = false
+		local ok, err = pcall(o._pollPendingProbes, o)
+		if not ok then
+			pcall(o._abortPendingProbes, o, string.format("poll callback failed: %s", tostring(err)))
+		end
 	end
 	return o
 end
 
+--- Starts probes for uncached unit types and calls onComplete after every probe resolves or aborts.
 function Medusa.Services.SensorProbingService:probeAll(typePositions, onComplete)
 	if not next(typePositions) then
 		if onComplete then
@@ -48,17 +55,26 @@ function Medusa.Services.SensorProbingService:probeAll(typePositions, onComplete
 		return
 	end
 
-	self._onAllComplete = onComplete
+	if onComplete then
+		self._completionCallbacks[#self._completionCallbacks + 1] = onComplete
+	end
 	self:_resolveCountryId()
 
 	local count = 0
-	local isFirst = true
 	for typeName, position in pairs(typePositions) do
-		count = count + 1
-		self:_spawnProbe(typeName, position, isFirst)
-		isFirst = false
+		if self._cache[typeName] == nil and not self._pending[typeName] then
+			count = count + 1
+			self:_spawnProbe(typeName, position)
+		end
 	end
-	self._logger:info(string.format("probing %d unique unit types", count))
+	if count > 0 then
+		self._logger:info(string.format("probing %d unique unit types", count))
+	end
+	if self._pendingCount == 0 then
+		self:_completeAll()
+	elseif not self._pollScheduled and not self:_schedulePoll() then
+		self:_abortPendingProbes("initial poll scheduling failed")
+	end
 end
 
 function Medusa.Services.SensorProbingService:getCapabilities(typeName)
@@ -150,13 +166,57 @@ function Medusa.Services.SensorProbingService:_parseSensors(sensorsTable)
 	return { detectionRangeMax = maxRange }
 end
 
+--- Removes one completed probe and completes the batch when no probe remains.
 function Medusa.Services.SensorProbingService:_onProbeComplete(typeName)
 	self._pendingCount = self._pendingCount - 1
 	self._pending[typeName] = nil
-	if self._pendingCount <= 0 and self._onAllComplete then
-		self._onAllComplete()
-		self._onAllComplete = nil
+	if self._pendingCount <= 0 then
+		self:_completeAll()
 	end
+end
+
+--- Finalizes the active probe batch and invokes its completion callback once.
+function Medusa.Services.SensorProbingService:_completeAll()
+	local callbacks = self._completionCallbacks
+	self._completionCallbacks = {}
+	for i = 1, #callbacks do
+		local ok, err = pcall(callbacks[i])
+		if not ok then
+			self._logger:error(string.format("probe completion callback failed: %s", tostring(err)))
+		end
+	end
+end
+
+--- Cancels every pending probe after a boundary failure and completes the batch safely.
+function Medusa.Services.SensorProbingService:_abortPendingProbes(reason)
+	self._logger:error(reason)
+	self._pollScheduled = false
+	local pending = self._pending
+	self._pending = {}
+	self._pendingCount = 0
+	for typeName, entry in pairs(pending) do
+		self._cache[typeName] = false
+		local cleaned, cleanupError = pcall(function()
+			local probeGroup = GetGroup(entry.groupName)
+			if probeGroup then
+				DestroyGroup(probeGroup)
+			end
+		end)
+		if not cleaned then
+			self._logger:error(string.format("probe cleanup failed for '%s': %s", typeName, tostring(cleanupError)))
+		end
+	end
+	self:_completeAll()
+end
+
+--- Reports whether registration returned a timer handle for the next probe poll.
+function Medusa.Services.SensorProbingService:_schedulePoll()
+	if self._pollScheduled then
+		return true
+	end
+	local registered, timerId = pcall(ScheduleOnce, self._pollCallback, nil, 1.0)
+	self._pollScheduled = registered and timerId ~= nil
+	return self._pollScheduled
 end
 
 function Medusa.Services.SensorProbingService:_resolveCountryId()
@@ -170,49 +230,63 @@ function Medusa.Services.SensorProbingService:_resolveCountryId()
 	end
 end
 
-function Medusa.Services.SensorProbingService:_spawnProbe(typeName, position, isFirst)
+--- Spawns one hidden probe group and reports whether its DCS group became available.
+function Medusa.Services.SensorProbingService:_spawnProbe(typeName, position)
 	local probeName = string.format("MEDUSA_PROBE_%s_%04d", typeName:gsub("[^%w]", "_"), math.random(1000, 9999))
-	local unitEntry =
-		BuildUnitEntry(typeName, probeName .. "_u1", position.x, position.z, 0, 0, { skill = "Excellent" })
+	local unitEntry = BuildUnitEntry(typeName, probeName .. "_u1", position.x, position.z, 0, 0, { skill = "Excellent" })
 	if not unitEntry then
 		self._logger:error(string.format("failed to build unit entry for type '%s'", typeName))
-		return
+		self._cache[typeName] = false
+		return false
 	end
 
 	local groupData = BuildGroupData(probeName, "Ground Nothing", { unitEntry }, nil, { visible = false })
 	if not groupData then
 		self._logger:error(string.format("failed to build group data for type '%s'", typeName))
-		return
+		self._cache[typeName] = false
+		return false
 	end
 	groupData.hidden = true
 
 	local group = AddCoalitionGroup(self._countryId, 2, groupData)
 	if not group then
 		self._logger:error(string.format("failed to spawn probe for type '%s'", typeName))
-		return
+		self._cache[typeName] = false
+		return false
 	end
 
 	self._pending[typeName] = { groupName = probeName, pollCount = 0 }
 	self._pendingCount = self._pendingCount + 1
 
-	if isFirst then
-		ScheduleOnce(self._pollCallback, nil, 1.0)
-	end
+	return true
 end
 
+--- Detects probe readiness, schedules its query, and reports whether processing may continue.
 function Medusa.Services.SensorProbingService:_checkProbeReady(typeName, entry)
 	local units = GetGroupUnits(entry.groupName)
 	if not units or #units == 0 then
 		return true
 	end
-	local selfRef = self
-	local capturedType = typeName
-	ScheduleOnce(function()
-		selfRef:_queryProbe(capturedType)
+	local registered, timerId = pcall(ScheduleOnce, function()
+		local ok, err = pcall(self._queryProbe, self, typeName)
+		if not ok then
+			self._logger:error(string.format("probe query callback failed for '%s': %s", typeName, tostring(err)))
+			local pending = self._pending[typeName]
+			if pending then
+				self._cache[typeName] = false
+				self:_onProbeComplete(typeName)
+			end
+		end
 	end, nil, 0.1)
+	if not registered or not timerId then
+		self._logger:error(string.format("probe query scheduling failed for '%s'", typeName))
+		self._cache[typeName] = false
+		self:_onProbeComplete(typeName)
+	end
 	return false
 end
 
+--- Advances pending probes and keeps the recurring poll alive only while work remains.
 function Medusa.Services.SensorProbingService:_pollPendingProbes()
 	local stillPending = false
 	for typeName, entry in pairs(self._pending) do
@@ -226,10 +300,13 @@ function Medusa.Services.SensorProbingService:_pollPendingProbes()
 		end
 	end
 	if stillPending then
-		ScheduleOnce(self._pollCallback, nil, 1.0)
+		if not self:_schedulePoll() then
+			self:_abortPendingProbes("follow-up poll scheduling failed")
+		end
 	end
 end
 
+--- Reads and caches one probe group's sensor capabilities, then releases its group.
 function Medusa.Services.SensorProbingService:_queryProbe(typeName)
 	local entry = self._pending[typeName]
 	if not entry then
@@ -258,9 +335,14 @@ function Medusa.Services.SensorProbingService:_queryProbe(typeName)
 		self._logger:error(string.format("probe query failed for '%s': %s", typeName, tostring(caps)))
 	end
 
-	local probeGroup = GetGroup(entry.groupName)
-	if probeGroup then
-		DestroyGroup(probeGroup)
+	local cleaned, cleanupError = pcall(function()
+		local probeGroup = GetGroup(entry.groupName)
+		if probeGroup then
+			DestroyGroup(probeGroup)
+		end
+	end)
+	if not cleaned then
+		self._logger:error(string.format("probe cleanup failed for '%s': %s", typeName, tostring(cleanupError)))
 	end
 	self:_onProbeComplete(typeName)
 end

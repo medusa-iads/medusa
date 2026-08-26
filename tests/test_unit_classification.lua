@@ -124,7 +124,54 @@ function TestUnitClassification:test_classifies_tlar_radar_launcher()
 	local stores = makeStores()
 	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
 	local battery = stores.batteries:getAll()[1]
-	lu.assertEquals(battery.Units[1].Roles[1], "TLAR")
+	lu.assertEquals(battery.Units[1].Roles, {
+		Medusa.Constants.BatteryUnitRole.TLAR,
+		Medusa.Constants.BatteryUnitRole.SEARCH_RADAR,
+	})
+end
+
+function TestUnitClassification:test_endpoint_capabilities_are_additive_to_combat_roles()
+	setupClassificationTest({
+		["AA_missile"] = true,
+		["SAM SR"] = true,
+		["SAM TR"] = true,
+		["SAM CC"] = true,
+	})
+	local stores = makeStores()
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
+	local unit = stores.batteries:getAll()[1].Units[1]
+
+	lu.assertEquals(unit.Roles, {
+		Medusa.Constants.BatteryUnitRole.TLAR,
+		Medusa.Constants.BatteryUnitRole.COMMAND_POST,
+		Medusa.Constants.BatteryUnitRole.SEARCH_RADAR,
+	})
+end
+
+function TestUnitClassification:test_missing_descriptor_attributes_classify_as_other()
+	setupClassificationTest({ Trucks = true })
+	local stores = makeStores()
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
+
+	lu.assertEquals(stores.batteries:getAll()[1].Units[1].Roles, { Medusa.Constants.BatteryUnitRole.OTHER })
+end
+
+function TestUnitClassification:test_aaa_members_do_not_gain_a_command_role()
+	setupClassificationTest({ AAA = true }, false)
+	local stores = makeStores()
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO(), stores, "net1")
+	local battery = stores.batteries:getAll()[1]
+
+	lu.assertEquals(battery.Units[1].Roles, { Medusa.Constants.BatteryUnitRole.AAA })
+end
+
+function TestUnitClassification:test_ewr_group_creates_only_actual_radar_sensors()
+	setupInventoryTest({ { ["SAM SR"] = true }, { ["SAM CC"] = true } })
+	local stores = makeStores()
+	Medusa.Services.EntityFactory.createFromDTO(makeDTO({ Medusa.Constants.Role.EWR }), stores, "net1")
+	local sensors = stores.sensors:getAll()
+	lu.assertEquals(#sensors, 1)
+	lu.assertEquals(sensors[1].UnitId, 1)
 end
 
 function TestUnitClassification:test_classifies_tlar_ir_guided()

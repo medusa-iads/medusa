@@ -4,33 +4,53 @@ require("mocks.mock_dcs")
 require("_header")
 require("core.Constants")
 require("core.Logger")
-require("entities.Entities")
 require("entities.Battery")
-require("services.Services")
+require("entities.Track")
 require("services.stores.BatteryStore")
 require("services.stores.TrackStore")
 require("services.BatteryActivationService")
-require("services.SpatialQuery")
 require("services.PointDefenseService")
 require("services.HarmResponseService")
 
 local AS = Medusa.Constants.ActivationState
 local BOS = Medusa.Constants.BatteryOperationalStatus
+local BR = Medusa.Constants.BatteryRole
 local C = Medusa.Constants
-local LS = Medusa.Constants.TrackLifecycleState
+local HDS = Medusa.Constants.HarmDefenseState
 local HRS = Medusa.Services.HarmResponseService
+local LS = Medusa.Constants.TrackLifecycleState
+
+local sequence = 0
 
 local function setupMocks()
+	sequence = 0
 	Medusa.Logger._initialized = false
 	Medusa.Logger:initialize()
-
+	GetTime = function()
+		return 100
+	end
+	NewULID = function()
+		sequence = sequence + 1
+		return "ULID-" .. sequence
+	end
 	GetGroupController = function(name)
 		return { name = name }
 	end
-	SetControllerOnOff = function() end
-	ControllerSetROE = function() end
-	ControllerSetAlarmState = function() end
-
+	SetControllerOnOff = function()
+		return true
+	end
+	ControllerSetROE = function()
+		return true
+	end
+	ControllerSetAlarmState = function()
+		return true
+	end
+	SetControllerOption = function()
+		return true
+	end
+	EnableGroupEmissions = function()
+		return true
+	end
 	Distance2D = function(a, b)
 		local dx = a.x - b.x
 		local dz = a.z - b.z
@@ -40,535 +60,252 @@ end
 
 local function makeBattery(overrides)
 	local data = {
+		BatteryId = "battery-" .. tostring(sequence + 1),
 		NetworkId = "net-1",
-		GroupId = 100,
-		GroupName = "SAM-1",
+		GroupId = sequence + 1,
+		GroupName = "battery-" .. tostring(sequence + 1),
+		Role = BR.LR_SAM,
 		ActivationState = AS.STATE_WARM,
 		OperationalStatus = BOS.ACTIVE,
 		StateChangeHoldDownSec = 0,
 		Position = { x = 0, y = 0, z = 0 },
+		WeaponRangeMax = 30000,
+		EngagementRangeMax = 30000,
+		EngagementRangeMin = 0,
+		EngagementAltitudeMin = 0,
+		EngagementAltitudeMax = 30000,
+		PkRangeOptimal = 15000,
+		PkRangeSigma = 30000,
+		HarmDefenseCapacity = 0,
+		TotalAmmoStatus = 8,
+		AmmoKnown = true,
+		PartitionKey = "partition-a",
+		CoordinationState = C.CoordinationState.COORDINATED,
 	}
-	if overrides then
-		for k, v in pairs(overrides) do
-			data[k] = v
-		end
+	for key, value in pairs(overrides or {}) do
+		data[key] = value
 	end
+	sequence = sequence + 1
 	return Medusa.Entities.Battery.new(data)
 end
 
-local function makeTrack(overrides)
-	local track = {
-		TrackId = "track-1",
-		TrackIdentification = "HOSTILE",
+local function makeHarm(id, x, z, partition)
+	return Medusa.Entities.Track.new({
+		TrackId = id,
+		NetworkId = "net-1",
+		PartitionKey = partition or "partition-a",
+		Position = { x = x or 10000, y = 1000, z = z or 0 },
+		Velocity = { x = -300, y = -10, z = 0 },
 		LifecycleState = LS.ACTIVE,
-		AssessedAircraftType = "HARM",
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	}
-	if overrides then
-		for k, v in pairs(overrides) do
-			track[k] = v
-		end
-	end
-	return track
+		TrackIdentification = "HOSTILE",
+		AssessedAircraftType = C.AssessedAircraftType.HARM,
+	})
 end
 
-local function makeMockGeoGrid(batteryStore)
-	return {
-		queryRadius = function(_, _, _, _)
-			local ids = {}
-			local all = batteryStore:getAll({})
-			for i = 1, #all do
-				ids[all[i].BatteryId] = true
-			end
-			return { BatteryIds = ids }
-		end,
-	}
-end
-
-local function makeStores(batteries, tracks)
+local function makeContext(batteries, tracks, doctrine)
 	local batteryStore = Medusa.Services.BatteryStore:new()
+	local trackStore = Medusa.Services.TrackStore:new()
+	local grid = GeoGrid(10000, { "Battery", "Track" })
 	for i = 1, #batteries do
 		batteryStore:add(batteries[i])
+		grid:add("Battery", batteries[i].BatteryId, batteries[i].Position)
 	end
-	local trackStore = Medusa.Services.TrackStore:new()
 	for i = 1, #tracks do
 		trackStore:add(tracks[i])
+		grid:add("Track", tracks[i].TrackId, tracks[i].Position)
 	end
-	local geoGrid = makeMockGeoGrid(batteryStore)
-	return batteryStore, trackStore, geoGrid
-end
-
-local function makeCtx(fields)
 	return {
-		trackStore = fields.trackStore,
-		batteryStore = fields.batteryStore,
-		geoGrid = fields.geoGrid,
-		doctrine = fields.doctrine or {},
-		now = fields.now or 100,
+		batteryStore = batteryStore,
+		trackStore = trackStore,
+		geoGrid = grid,
+		doctrine = doctrine,
+		now = 100,
 	}
 end
 
--- == TestIgnoreStrategy ==
+TestHarmResponseCapacity = {}
 
-TestIgnoreStrategy = {}
-
-function TestIgnoreStrategy:setUp()
+function TestHarmResponseCapacity:setUp()
 	setupMocks()
-	self.ulidCounter = 0
-	NewULID = function()
-		self.ulidCounter = self.ulidCounter + 1
-		return string.format("ULID-%d", self.ulidCounter)
+	self.originalInfo = env.info
+	self.originalLogLevel = Medusa.Logger:getLevel()
+	self.infoMessages = {}
+	env.info = function(message)
+		self.infoMessages[#self.infoMessages + 1] = message
 	end
+	Medusa.Logger:setLevel(C.LogLevel.INFO)
 end
 
-function TestIgnoreStrategy:test_ignoreReturnsZero()
-	local b = makeBattery()
-	local t = makeTrack()
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "IGNORE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 0)
-	lu.assertNil(b.HarmShutdownUntil)
+function TestHarmResponseCapacity:tearDown()
+	env.info = self.originalInfo
+	Medusa.Logger:setLevel(self.originalLogLevel)
 end
 
-function TestIgnoreStrategy:test_activeDefensePriorityWithoutPDShutsBatteryDown()
-	local b = makeBattery()
-	local t = makeTrack()
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "SHUTDOWN_UNLESS_PD" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 1)
+function TestHarmResponseCapacity:test_ignore_clears_prior_claim_without_commanding_battery()
+	local battery = makeBattery({ HarmDefenseCapacity = 4, HarmDefenseState = HDS.SELF_DEFENDING })
+	local ctx = makeContext({ battery }, { makeHarm("harm-1") }, { HARMResponse = C.HarmResponseStrategy.IGNORE })
+
+	lu.assertEquals(HRS.executeResponse(ctx), 0)
+	lu.assertNil(battery.HarmDefenseState)
+	lu.assertNil(battery.HarmShutdownUntil)
 end
 
-function TestIgnoreStrategy:test_activeDefensePriorityWithPDSkipsShutdown()
-	local pdBattery = makeBattery({
-		GroupId = 200,
-		GroupName = "PD-1",
-		IsPointDefense = true,
-		HarmCapableUnitCount = 4,
-		TotalAmmoStatus = 8,
+function TestHarmResponseCapacity:test_state_transitions_log_once_at_info()
+	local battery = makeBattery({ HarmDefenseCapacity = 4 })
+	local harm = makeHarm("harm-1")
+	local ctx = makeContext({ battery }, { harm }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
+
+	HRS.executeResponse(ctx)
+	HRS.executeResponse(ctx)
+	ctx.trackStore:remove(harm.TrackId)
+	HRS.executeResponse(ctx)
+
+	local transitions = {}
+	for i = 1, #self.infoMessages do
+		if string.find(self.infoMessages[i], "HARM defense state", 1, true) then
+			transitions[#transitions + 1] = self.infoMessages[i]
+		end
+	end
+	lu.assertEquals(#transitions, 2)
+	lu.assertStrContains(transitions[1], "battery battery-1 HARM defense state NONE -> INTERCEPTING")
+	lu.assertStrContains(transitions[2], "battery battery-1 HARM defense state INTERCEPTING -> NONE")
+end
+
+function TestHarmResponseCapacity:test_available_capacity_must_strictly_exceed_threats_before_attempt()
+	local battery = makeBattery({ HarmDefenseCapacity = 2 })
+	local first = makeHarm("harm-1", 10000, -200)
+	local second = makeHarm("harm-2", 10000, 200)
+	local readinessCalls = 0
+	ControllerSetROE = function()
+		readinessCalls = readinessCalls + 1
+		return true
+	end
+	local ctx = makeContext({ battery }, { first, second }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
+
+	lu.assertEquals(HRS.executeResponse(ctx), 1)
+	lu.assertEquals(battery.HarmDefenseAvailableCapacity, 2)
+	lu.assertEquals(battery.HarmDefenseCommittedCapacity, 0)
+	lu.assertEquals(battery.HarmDefenseThreats, 2)
+	lu.assertEquals(readinessCalls, 1)
+	lu.assertEquals(battery.HarmDefenseState, HDS.SUPPRESSED)
+end
+
+function TestHarmResponseCapacity:test_success_requires_committed_hot_assigned_capacity()
+	local battery = makeBattery({ HarmDefenseCapacity = 4 })
+	local harm = makeHarm("harm-1")
+	local ctx = makeContext({ battery }, { harm }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
+
+	lu.assertEquals(HRS.executeResponse(ctx), 0)
+	lu.assertEquals(battery.HarmDefenseAvailableCapacity, 4)
+	lu.assertEquals(battery.HarmDefenseCommittedCapacity, 4)
+	lu.assertEquals(battery.CurrentTargetTrackId, harm.TrackId)
+	lu.assertEquals(battery.ActivationState, AS.STATE_HOT)
+	lu.assertEquals(battery.HarmDefenseState, HDS.INTERCEPTING)
+end
+
+function TestHarmResponseCapacity:test_failed_hot_attempt_rolls_back_assignment_and_shuts_down()
+	local battery = makeBattery({ HarmDefenseCapacity = 4 })
+	local harm = makeHarm("harm-1")
+	local firstRoeCall = true
+	ControllerSetROE = function()
+		if firstRoeCall then
+			firstRoeCall = false
+			return false
+		end
+		return true
+	end
+	local ctx = makeContext({ battery }, { harm }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
+
+	lu.assertEquals(HRS.executeResponse(ctx), 1)
+	lu.assertEquals(battery.HarmDefenseAvailableCapacity, 4)
+	lu.assertEquals(battery.HarmDefenseCommittedCapacity, 0)
+	lu.assertNil(battery.CurrentTargetTrackId)
+	lu.assertFalse(harm.AssignedBatteryIds:contains(battery.BatteryId))
+	lu.assertEquals(battery.HarmDefenseState, HDS.SUPPRESSED)
+end
+
+function TestHarmResponseCapacity:test_partial_point_defense_commitment_below_threshold_shuts_site_down()
+	local protected = makeBattery({ BatteryId = "protected", GroupName = "protected", HarmDefenseCapacity = 0 })
+	local firstProvider = makeBattery({
+		BatteryId = "provider-a",
+		GroupName = "provider-a",
+		Role = BR.SR_SAM,
 		Position = { x = 100, y = 0, z = 0 },
+		HarmDefenseCapacity = 1.5,
 	})
-	local hvaBattery = makeBattery({ PointDefenseProviderId = pdBattery.BatteryId })
-	local t = makeTrack()
-	local batteryStore, trackStore, geoGrid = makeStores({ hvaBattery, pdBattery }, { t })
-	local doctrine = { HARMResponse = "SHUTDOWN_UNLESS_PD" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 0)
-	lu.assertNil(hvaBattery.HarmShutdownUntil)
+	local secondProvider = makeBattery({
+		BatteryId = "provider-b",
+		GroupName = "provider-b",
+		Role = BR.SR_SAM,
+		Position = { x = -100, y = 0, z = 0 },
+		HarmDefenseCapacity = 1.5,
+	})
+	local first = makeHarm("harm-1", 10000, -200)
+	local second = makeHarm("harm-2", 10000, 200)
+	ControllerSetROE = function(controller)
+		return controller.name ~= "provider-b"
+	end
+	local ctx = makeContext({ protected, firstProvider, secondProvider }, { first, second }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
+
+	lu.assertEquals(HRS.executeResponse(ctx), 1)
+	lu.assertEquals(protected.HarmDefenseAvailableCapacity, 3)
+	lu.assertEquals(protected.HarmDefenseCommittedCapacity, 1.5)
+	lu.assertNil(secondProvider.CurrentTargetTrackId)
+	lu.assertEquals(protected.HarmDefenseState, HDS.SUPPRESSED)
 end
 
-function TestIgnoreStrategy:test_pdProviderDestroyedFallsBackToShutdown()
-	local pdBattery = makeBattery({
-		GroupId = 200,
-		GroupName = "PD-1",
-		OperationalStatus = BOS.DESTROYED,
+function TestHarmResponseCapacity:test_viable_proximity_point_defense_can_keep_site_active()
+	local protected = makeBattery({ BatteryId = "protected", GroupName = "protected", HarmDefenseCapacity = 0 })
+	local provider = makeBattery({
+		BatteryId = "provider",
+		GroupName = "provider",
+		Role = BR.SR_SAM,
 		Position = { x = 100, y = 0, z = 0 },
+		HarmDefenseCapacity = 4,
 	})
-	local hvaBattery = makeBattery({ PointDefenseProviderId = pdBattery.BatteryId })
-	local t = makeTrack()
-	local batteryStore, trackStore, geoGrid = makeStores({ hvaBattery, pdBattery }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 1)
-	lu.assertNotNil(hvaBattery.HarmShutdownUntil)
+	local harm = makeHarm("harm-1")
+	local ctx = makeContext({ protected, provider }, { harm }, { HARMResponse = C.HarmResponseStrategy.SHUTDOWN_UNLESS_PD, HARMShutdownM = 5000 })
+
+	lu.assertEquals(HRS.executeResponse(ctx), 0)
+	lu.assertTrue(provider.IsPointDefense)
+	lu.assertEquals(provider.CurrentTargetTrackId, harm.TrackId)
+	lu.assertEquals(protected.HarmDefenseAvailableCapacity, 4)
+	lu.assertEquals(protected.HarmDefenseCommittedCapacity, 4)
+	lu.assertEquals(protected.HarmDefenseState, HDS.PD_PROTECTED)
 end
 
-function TestIgnoreStrategy:test_pdProviderAmmoDepletedFallsBackToShutdown()
-	local pdBattery = makeBattery({
-		GroupId = 200,
-		GroupName = "PD-1",
-		IsPointDefense = true,
-		HarmCapableUnitCount = 4,
-		TotalAmmoStatus = 0,
+function TestHarmResponseCapacity:test_unknown_ammo_and_cross_partition_capacity_are_excluded()
+	local protected = makeBattery({ BatteryId = "protected", HarmDefenseCapacity = 0 })
+	local unknown = makeBattery({
+		BatteryId = "unknown",
+		Role = BR.SR_SAM,
 		Position = { x = 100, y = 0, z = 0 },
+		HarmDefenseCapacity = 8,
+		AmmoKnown = false,
 	})
-	local hvaBattery = makeBattery({ PointDefenseProviderId = pdBattery.BatteryId })
-	local t = makeTrack()
-	local batteryStore, trackStore, geoGrid = makeStores({ hvaBattery, pdBattery }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 1)
-	lu.assertNotNil(hvaBattery.HarmShutdownUntil)
-end
-
--- == TestLocalizedShutdown ==
-
-TestLocalizedShutdown = {}
-
-function TestLocalizedShutdown:setUp()
-	setupMocks()
-	self.ulidCounter = 0
-	NewULID = function()
-		self.ulidCounter = self.ulidCounter + 1
-		return string.format("ULID-%d", self.ulidCounter)
-	end
-end
-
-function TestLocalizedShutdown:test_shutsDownClosestBatteryInPath()
-	local b = makeBattery({ Position = { x = 0, y = 0, z = 0 } })
-	local t = makeTrack({
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
+	local crossPartition = makeBattery({
+		BatteryId = "cross",
+		Role = BR.SR_SAM,
+		Position = { x = 200, y = 0, z = 0 },
+		HarmDefenseCapacity = 8,
+		PartitionKey = "partition-b",
 	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 1)
-	lu.assertEquals(b.ActivationState, AS.STATE_COLD)
-	lu.assertNotNil(b.HarmShutdownUntil)
+	local ctx = makeContext({ protected, unknown, crossPartition }, { makeHarm("harm-1") }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
+
+	lu.assertEquals(HRS.executeResponse(ctx), 1)
+	lu.assertEquals(protected.HarmDefenseAvailableCapacity, 0)
+	lu.assertEquals(protected.HarmDefenseCommittedCapacity, 0)
 end
 
-function TestLocalizedShutdown:test_skipsDestroyedBattery()
-	local b = makeBattery({ OperationalStatus = BOS.DESTROYED })
-	local t = makeTrack({
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 0)
-end
+function TestHarmResponseCapacity:test_inferred_launcher_is_not_counted_as_a_harm()
+	local battery = makeBattery({ HarmDefenseCapacity = 4 })
+	local launcher = makeHarm("launcher")
+	launcher.AssessedAircraftType = C.AssessedAircraftType.FIGHTER
+	launcher.IsSeadThreat = true
+	launcher.IsHarmLauncher = true
+	local ctx = makeContext({ battery }, { launcher }, { HARMResponse = C.HarmResponseStrategy.AUTO_DEFENSE, HARMShutdownM = 5000 })
 
-function TestLocalizedShutdown:test_skipsInoperativeBattery()
-	local b = makeBattery({ OperationalStatus = BOS.INOPERATIVE })
-	local t = makeTrack({
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 0)
-end
-
-function TestLocalizedShutdown:test_skipsBatteryAlreadyInShutdown()
-	local b = makeBattery({ Position = { x = 0, y = 0, z = 0 } })
-	b.HarmShutdownUntil = 200
-	local t = makeTrack({
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 0)
-end
-
-function TestLocalizedShutdown:test_skipsBatteryBehindArm()
-	local b = makeBattery({ Position = { x = 20000, y = 0, z = 0 } })
-	local t = makeTrack({
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 0)
-end
-
-function TestLocalizedShutdown:test_skipsBatteryOutsideThreatRadius()
-	local b = makeBattery({ Position = { x = 0, y = 0, z = 0 } })
-	local t = makeTrack({
-		Position = { x = 100000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE", HARMShutdownM = 5000 }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 0)
-end
-
-function TestLocalizedShutdown:test_picksSmallestCpaBatteryWhenTwoInPath()
-	-- HARM diving from (10000,5000,0) toward x=-inf: bOnTrack is directly in path (CPA~0),
-	-- bOffset is off to the side (larger CPA). CPA-based selection picks bOnTrack.
-	local bOffset = makeBattery({ Position = { x = 0, y = 0, z = 5000 }, GroupName = "SAM-1", GroupId = 101 })
-	local bOnTrack = makeBattery({ Position = { x = 5000, y = 0, z = 0 }, GroupName = "SAM-2", GroupId = 102 })
-	local t = makeTrack({
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ bOffset, bOnTrack }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 1)
-	lu.assertNotNil(bOnTrack.HarmShutdownUntil)
-	lu.assertNil(bOffset.HarmShutdownUntil)
-end
-
-function TestLocalizedShutdown:test_skipsNonHarmTrack()
-	local b = makeBattery({ Position = { x = 0, y = 0, z = 0 } })
-	local t = makeTrack({ AssessedAircraftType = "FIGHTER" })
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 0)
-end
-
-function TestLocalizedShutdown:test_skipsStaleTrack()
-	local b = makeBattery({ Position = { x = 0, y = 0, z = 0 } })
-	local t = makeTrack({ LifecycleState = LS.STALE })
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 0)
-end
-
-function TestLocalizedShutdown:test_alreadyColdBatterySetsFlag()
-	local b = makeBattery({
-		ActivationState = AS.STATE_COLD,
-		Position = { x = 0, y = 0, z = 0 },
-	})
-	local t = makeTrack({
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 1)
-	lu.assertEquals(b.ActivationState, AS.STATE_COLD)
-	lu.assertNotNil(b.HarmShutdownUntil)
-end
-
-function TestLocalizedShutdown:test_defaultStrategyIsLocalizedShutdown()
-	local b = makeBattery({ Position = { x = 0, y = 0, z = 0 } })
-	local t = makeTrack({
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = {}
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 1)
-end
-
-function TestLocalizedShutdown:test_noVelocityFallbackTTI()
-	local b = makeBattery({ Position = { x = 0, y = 0, z = 0 } })
-	local t = makeTrack({
-		Position = { x = 5000, y = 5000, z = 0 },
-		Velocity = nil,
-		SmoothedVelocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 1)
-end
-
-function TestLocalizedShutdown:test_skipsBatteryWithNoPosition()
-	local b = makeBattery({ Position = nil })
-	b.Position = nil
-	local t = makeTrack({
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 0)
-end
-
-function TestLocalizedShutdown:test_skips_independent_aaa()
-	local b = makeBattery({
-		Role = Medusa.Constants.BatteryRole.AAA,
-		Position = { x = 0, y = 0, z = 0 },
-	})
-	local t = makeTrack({
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local shutdowns = HRS.executeResponse(makeCtx({
-		trackStore = trackStore,
-		batteryStore = batteryStore,
-		doctrine = { HARMResponse = "ACTIVE_DEFENSE" },
-		geoGrid = geoGrid,
-	}))
-
-	lu.assertEquals(shutdowns, 0)
-	lu.assertNil(b.HarmShutdownUntil)
-end
-
--- == TestShutdownTiming ==
-
-TestShutdownTiming = {}
-
-function TestShutdownTiming:setUp()
-	setupMocks()
-	self.ulidCounter = 0
-	NewULID = function()
-		self.ulidCounter = self.ulidCounter + 1
-		return string.format("ULID-%d", self.ulidCounter)
-	end
-end
-
-function TestShutdownTiming:test_shutdownUntilIncludesSafetyMargin()
-	local b = makeBattery({ Position = { x = 0, y = 0, z = 0 } })
-	local t = makeTrack({
-		Position = { x = 3000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local now = 100
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	HRS.executeResponse(makeCtx({
-		trackStore = trackStore,
-		batteryStore = batteryStore,
-		doctrine = doctrine,
-		now = now,
-		geoGrid = geoGrid,
-	}))
-	lu.assertNotNil(b.HarmShutdownUntil)
-	lu.assertTrue(b.HarmShutdownUntil > now + C.HARM_SHUTDOWN_SAFETY_MARGIN_SEC)
-end
-
-function TestShutdownTiming:test_shutdownUntilUsesSmoothedVelocity()
-	local b = makeBattery({ Position = { x = 0, y = 0, z = 0 } })
-	local t = makeTrack({
-		Position = { x = 3000, y = 5000, z = 0 },
-		Velocity = { x = -100, y = -10, z = 0 },
-		SmoothedVelocity = { x = -600, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t })
-	local now = 100
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	HRS.executeResponse(makeCtx({
-		trackStore = trackStore,
-		batteryStore = batteryStore,
-		doctrine = doctrine,
-		now = now,
-		geoGrid = geoGrid,
-	}))
-	lu.assertNotNil(b.HarmShutdownUntil)
-	lu.assertTrue(b.HarmShutdownUntil < now + 30)
-end
-
--- == TestMultipleHarmTracks ==
-
-TestMultipleHarmTracks = {}
-
-function TestMultipleHarmTracks:setUp()
-	setupMocks()
-	self.ulidCounter = 0
-	NewULID = function()
-		self.ulidCounter = self.ulidCounter + 1
-		return string.format("ULID-%d", self.ulidCounter)
-	end
-end
-
-function TestMultipleHarmTracks:test_twoTracksShutDownTwoBatteries()
-	local b1 = makeBattery({ Position = { x = 0, y = 0, z = 0 }, GroupName = "SAM-1", GroupId = 101 })
-	local b2 = makeBattery({ Position = { x = 0, y = 0, z = 5000 }, GroupName = "SAM-2", GroupId = 102 })
-	local t1 = makeTrack({
-		TrackId = "track-1",
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local t2 = makeTrack({
-		TrackId = "track-2",
-		Position = { x = 10000, y = 5000, z = 5000 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b1, b2 }, { t1, t2 })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 2)
-end
-
-function TestMultipleHarmTracks:test_secondTrackSkipsAlreadyShutdownBattery()
-	local b = makeBattery({ Position = { x = 0, y = 0, z = 0 } })
-	local t1 = makeTrack({
-		TrackId = "track-1",
-		Position = { x = 10000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local t2 = makeTrack({
-		TrackId = "track-2",
-		Position = { x = 8000, y = 5000, z = 0 },
-		Velocity = { x = -300, y = -50, z = 0 },
-	})
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, { t1, t2 })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	local shutdowns = HRS.executeResponse(
-		makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-	)
-	lu.assertEquals(shutdowns, 1)
-end
-
--- == TestEmptyInputs ==
-
-TestEmptyInputs = {}
-
-function TestEmptyInputs:setUp()
-	setupMocks()
-	self.ulidCounter = 0
-	NewULID = function()
-		self.ulidCounter = self.ulidCounter + 1
-		return string.format("ULID-%d", self.ulidCounter)
-	end
-end
-
-function TestEmptyInputs:test_noTracksReturnsZero()
-	local b = makeBattery()
-	local batteryStore, trackStore, geoGrid = makeStores({ b }, {})
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	lu.assertEquals(
-		HRS.executeResponse(
-			makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-		),
-		0
-	)
-end
-
-function TestEmptyInputs:test_noBatteriesReturnsZero()
-	local t = makeTrack()
-	local batteryStore, trackStore, geoGrid = makeStores({}, { t })
-	local doctrine = { HARMResponse = "ACTIVE_DEFENSE" }
-	lu.assertEquals(
-		HRS.executeResponse(
-			makeCtx({ trackStore = trackStore, batteryStore = batteryStore, doctrine = doctrine, geoGrid = geoGrid })
-		),
-		0
-	)
+	lu.assertEquals(HRS.executeResponse(ctx), 0)
+	lu.assertEquals(battery.HarmDefenseThreats, 0)
+	lu.assertNil(battery.HarmDefenseState)
 end

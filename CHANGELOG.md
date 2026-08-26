@@ -9,13 +9,51 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Command-and-control partitions based on mission HQ placement, live command providers, and radar coverage.
+- INFO logs for AAA response-state, MANPAD sleep/wake-state, sensor EMCON, battery HARM-defense, and track-lifecycle transitions.
+
 ### Changed
+
+- HQ groups present when Medusa starts now define fixed hierarchy boundaries. Destroying their command providers can split or degrade the network.
+- Root HQ groups now provide the common command link between top-level branches. Losing every root HQ isolates those branches until a selected root HQ unit returns.
+- Batteries without radar coverage operate through their configured autonomous or self-defense doctrine instead of receiving coordinated control.
+- HARM assessment now samples tracks every two seconds, requires at least five observations.
+- HARM defense now considers viable defensive capacity before remaining active and reports committed defense only after defenders are HOT and assigned to an active HARM.
+- Point defenders now select protected sites and HARM targets by role, readiness, partition, and distance. One defender may protect more than one nearby site.
+- `SAMAsEWR = "WHEN_NO_EWR"` now selects eligible SAM radar providers separately inside each disconnected command partition.
 
 ### Fixed
 
+- Batteries no longer cycle rapidly between COLD and HOT when a HARM track becomes stale.
+- HARM assessment considers projected paths toward managed radar batteries, including batteries that have stopped emitting.
+- HQ groups tagged as EWR or GCI retain both their command and sensor roles.
+- A malformed network entry no longer prevents other configured networks from starting.
+- User callback and delayed initialization failures no longer stop Medusa's recurring scheduler.
+- Sustained DCS event bursts no longer cause unbounded event-queue growth.
+- SAM and MANPAD batteries no longer deactivate while a recently observed missile can still be in flight.
+- Reused DCS object identifiers no longer preserve stale track or event ownership.
+- Large track counts no longer cause unbounded recurring HARM-response work.
+- A failed point-defense activation now falls through to AUTO defense or shutdown for the same HARM.
+- Close point defenders can engage a HARM even when its path is inside the normal minimum range for aircraft engagements.
+- Confirmed HARM defense can replace an ordinary aircraft assignment instead of making the assigned battery unavailable.
+- Target assignment handoff no longer releases a confirmed-HARM assignment.
+- A track inferred to be a HARM launcher can no longer also be classified as a HARM.
+- Temporary sensor controller or position failures no longer permanently remove a live EWR, GCI, or AWACS from the network.
+- Malformed or unusually large DCS detection results no longer stop sensor polling or monopolize a network tick.
+- Missed death events are reconciled during normal unit refresh, including correct degradation when a battery loses its last search radar.
+- Delayed crew-suppression HIT events no longer affect a replacement unit that reused the same DCS identifier.
+- Events with a stable unit identifier remain usable when DCS omits the unit name or weapon type.
+- SHOT events with missing weapon details still update activity and shot counters, without decrementing ammunition.
+- `S_EVENT_UNIT_LOST`, `DEAD`, and `CRASH` now use the same unit-removal behavior.
+- Leading or trailing spaces in configured group names no longer prevent discovery.
+- Partition splits and rejoins no longer leave obsolete tracks consuming capacity or affecting the new partition.
+- Guilt-by-association, hostile-intent, and HARM-launcher inference no longer cross disconnected command partitions.
+- HQ loss and restoration remain recoverable when unrelated DCS death events arrive in a large burst.
+- A destroyed HQ provider no longer blocks a later managed unit that reuses its DCS unit identifier.
+
 ### Removed
 
-### Deprecated
+- The unused `DefendPk` doctrine option. Normal aircraft kill probability no longer prevents a HARM-defense attempt.
 
 
 ## [1.5.0] - 2026-08-21

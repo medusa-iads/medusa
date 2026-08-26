@@ -6,7 +6,7 @@ require("entities.Battery")
 require("services.AaaService")
 require("services.BatteryActivationService")
 require("services.ManpadService")
-require("services.MetricsService")
+require("observability.MetricsService")
 
 Medusa.Services.CrewSuppressionService = {}
 
@@ -16,7 +16,7 @@ do
 	local AaaService = Medusa.Services.AaaService
 	local BatteryActivationService = Medusa.Services.BatteryActivationService
 	local ManpadService = Medusa.Services.ManpadService
-	local MetricsService = Medusa.Services.MetricsService
+	local MetricsService = Medusa.Observability.MetricsService
 	local logger = Medusa.Logger:ns("CrewSuppressionService")
 	local batteryBuffer = {}
 	local recoverBattery
@@ -30,9 +30,7 @@ do
 	end
 
 	local function isSuppressibleBattery(battery)
-		return battery
-			and (battery.Role == C.BatteryRole.AAA or battery.Role == C.BatteryRole.MANPAD)
-			and battery.OperationalStatus ~= C.BatteryOperationalStatus.DESTROYED
+		return battery and (battery.Role == C.BatteryRole.AAA or battery.Role == C.BatteryRole.MANPAD) and battery.OperationalStatus ~= C.BatteryOperationalStatus.DESTROYED
 	end
 
 	local function isEnabled(ctx)
@@ -90,84 +88,79 @@ do
 
 	local function cancelRecovery(battery)
 		if not battery.CrewSuppressionTimerId then
-			logger:debug(
-				string.format(
-					"battery %s recovery cancellation skipped: no timer",
-					battery.GroupName or battery.BatteryId
-				)
-			)
+			logger:debug(string.format("battery %s recovery cancellation skipped: no timer", battery.GroupName or battery.BatteryId))
 			return false
 		end
 		local timerId = battery.CrewSuppressionTimerId
-		CancelSchedule(battery.CrewSuppressionTimerId)
 		battery.CrewSuppressionTimerId = nil
-		logger:debug(
-			string.format(
-				"battery %s recovery timer cancelled: timerId=%s",
-				battery.GroupName or battery.BatteryId,
-				tostring(timerId)
-			)
-		)
+		pcall(CancelSchedule, timerId)
+		logger:debug(string.format("battery %s recovery timer cancelled: timerId=%s", battery.GroupName or battery.BatteryId, tostring(timerId)))
 		return true
 	end
 
+	--- Registers one contained recovery callback and reports whether a timer handle was returned.
 	local function scheduleRecovery(ctx, battery, now)
 		local batteryId = battery.BatteryId
 		local delay = math.max(0, battery.CrewSuppressionUntil - now)
 		local timerId
-		timerId = ScheduleOnce(function()
-			local current = ctx.batteryRepository:get(batteryId)
-			if not current then
-				logger:debug(string.format("battery %s recovery callback ignored: battery unavailable", batteryId))
-				return
-			end
-			if current.CrewSuppressionTimerId ~= timerId then
-				logger:debug(
-					string.format(
-						"battery %s recovery callback ignored: stale timerId=%s",
-						current.GroupName or current.BatteryId,
-						tostring(timerId)
-					)
-				)
-				return
-			end
-			current.CrewSuppressionTimerId = nil
-			local callbackNow = GetTime()
-			if callbackNow < current.CrewSuppressionUntil then
-				logger:debug(
-					string.format(
-						"battery %s recovery callback early: remaining=%.3fs",
-						current.GroupName or current.BatteryId,
-						current.CrewSuppressionUntil - callbackNow
-					)
-				)
-				if scheduleRecovery(ctx, current, callbackNow) then
+		local registered, result = pcall(ScheduleOnce, function()
+			local current
+			local ok, err = pcall(function()
+				current = ctx.batteryRepository:get(batteryId)
+				if not current then
+					logger:debug(string.format("battery %s recovery callback ignored: battery unavailable", batteryId))
 					return
 				end
+				if current.CrewSuppressionTimerId ~= timerId then
+					logger:debug(string.format("battery %s recovery callback ignored: stale timerId=%s", current.GroupName or current.BatteryId, tostring(timerId)))
+					return
+				end
+				current.CrewSuppressionTimerId = nil
+				local callbackNow = GetTime()
+				if callbackNow < current.CrewSuppressionUntil then
+					logger:debug(
+						string.format("battery %s recovery callback early: remaining=%.3fs", current.GroupName or current.BatteryId, current.CrewSuppressionUntil - callbackNow)
+					)
+					if scheduleRecovery(ctx, current, callbackNow) then
+						return
+					end
+				end
+				recoverBattery(ctx, current, callbackNow)
+			end)
+			if not ok then
+				current = current or battery
+				if current.CrewSuppressionTimerId == timerId then
+					current.CrewSuppressionTimerId = nil
+				end
+				pcall(recordDrop, ctx, C.CrewSuppressionDropReason.RECOVERY_TIMER)
+				logger:error(string.format("battery %s recovery callback failed: %s", current.GroupName or current.BatteryId, tostring(err)))
+				if Battery.isCrewSuppressed(current) and current.CrewSuppressionTimerId == nil then
+					local recoveryNow = now + delay
+					local timeOk, observedNow = pcall(GetTime)
+					if timeOk then
+						recoveryNow = observedNow
+					end
+					local recovered = pcall(recoverBattery, ctx, current, recoveryNow)
+					if not recovered then
+						Battery.clearCrewSuppression(current)
+					end
+				end
 			end
-			recoverBattery(ctx, current, callbackNow)
 		end, nil, delay)
+		timerId = registered and result or nil
 		if not timerId then
 			recordDrop(ctx, C.CrewSuppressionDropReason.RECOVERY_TIMER)
-			logger:debug(string.format("battery %s recovery scheduling failed", battery.GroupName or battery.BatteryId))
+			logger:debug(string.format("battery %s recovery scheduling failed: %s", battery.GroupName or battery.BatteryId, tostring(result)))
 			return false
 		end
 		battery.CrewSuppressionTimerId = timerId
-		logger:debug(
-			string.format(
-				"battery %s recovery scheduled: timerId=%s delay=%.3fs",
-				battery.GroupName or battery.BatteryId,
-				tostring(timerId),
-				delay
-			)
-		)
+		logger:debug(string.format("battery %s recovery scheduled: timerId=%s delay=%.3fs", battery.GroupName or battery.BatteryId, tostring(timerId), delay))
 		return true
 	end
 
+	--- Clears Medusa response work before requesting suppressed readiness.
 	local function stopBatteryResponse(ctx, battery, now)
-		logger:debug(
-			string.format("battery %s stopping response for crew suppression", battery.GroupName or battery.BatteryId)
-		)
+		logger:debug(string.format("battery %s stopping response for crew suppression", battery.GroupName or battery.BatteryId))
 		Battery.clearLastChance(battery)
 		if battery.Role == C.BatteryRole.AAA then
 			AaaService.suppressBattery(ctx, battery)
@@ -176,23 +169,13 @@ do
 		end
 		if not BatteryActivationService.goCrewSuppressed(battery, now, ctx.trackStore) then
 			recordDrop(ctx, C.CrewSuppressionDropReason.CONTROLLER_UNAVAILABLE)
-			logger:debug(
-				string.format(
-					"battery %s controller unavailable during crew suppression",
-					battery.GroupName or battery.BatteryId
-				)
-			)
+			logger:debug(string.format("battery %s controller unavailable during crew suppression", battery.GroupName or battery.BatteryId))
 		end
 	end
 
 	recoverBattery = function(ctx, battery, now)
 		if not Battery.isCrewSuppressed(battery) then
-			logger:debug(
-				string.format(
-					"battery %s recovery ignored: suppression is clear",
-					battery.GroupName or battery.BatteryId
-				)
-			)
+			logger:debug(string.format("battery %s recovery ignored: suppression is clear", battery.GroupName or battery.BatteryId))
 			return false
 		end
 		local cause = battery.CrewSuppressionCause
@@ -200,18 +183,8 @@ do
 		if battery.Role == C.BatteryRole.MANPAD then
 			ManpadService.recoverFromCrewSuppression(battery, now)
 		end
-		MetricsService.inc(
-			"medusa_crew_suppression_recoveries_total",
-			nil,
-			labels(ctx, "cause", cause or C.CrewSuppressionCause.DAMAGE)
-		)
-		logger:info(
-			string.format(
-				"battery %s crew suppression recovered: cause=%s",
-				battery.GroupName or battery.BatteryId,
-				cause or C.CrewSuppressionCause.DAMAGE
-			)
-		)
+		MetricsService.inc("medusa_crew_suppression_recoveries_total", nil, labels(ctx, "cause", cause or C.CrewSuppressionCause.DAMAGE))
+		logger:info(string.format("battery %s crew suppression recovered: cause=%s", battery.GroupName or battery.BatteryId, cause or C.CrewSuppressionCause.DAMAGE))
 		return true
 	end
 
@@ -223,13 +196,7 @@ do
 		local eligibilityDropReason = getEligibilityDropReason(ctx, battery)
 		if eligibilityDropReason then
 			recordDrop(ctx, eligibilityDropReason)
-			logger:debug(
-				string.format(
-					"battery %s crew suppression rejected: reason=%s",
-					battery and (battery.GroupName or battery.BatteryId) or "unknown",
-					eligibilityDropReason
-				)
-			)
+			logger:debug(string.format("battery %s crew suppression rejected: reason=%s", battery and (battery.GroupName or battery.BatteryId) or "unknown", eligibilityDropReason))
 			return false
 		end
 		if
@@ -240,12 +207,7 @@ do
 			or durationSec == math.huge
 			or durationSec > C.CrewSuppression.MAX_DURATION_SEC
 		then
-			logger:debug(
-				string.format(
-					"battery %s crew suppression rejected: invalid cause or duration",
-					battery.GroupName or battery.BatteryId
-				)
-			)
+			logger:debug(string.format("battery %s crew suppression rejected: invalid cause or duration", battery.GroupName or battery.BatteryId))
 			return false
 		end
 		local now = ctx.now or GetTime()
@@ -256,32 +218,11 @@ do
 		local effectiveDuration = battery.CrewSuppressionUntil - now
 		local batteryName = battery.GroupName or battery.BatteryId
 		if not wasSuppressed then
-			logger:info(
-				string.format(
-					"battery %s crew suppressed: cause=%s, duration=%.0fs",
-					batteryName,
-					cause,
-					effectiveDuration
-				)
-			)
+			logger:info(string.format("battery %s crew suppressed: cause=%s, duration=%.0fs", batteryName, cause, effectiveDuration))
 		elseif previousDeadline and battery.CrewSuppressionUntil > previousDeadline then
-			logger:info(
-				string.format(
-					"battery %s crew suppression extended: cause=%s, duration=%.0fs",
-					batteryName,
-					cause,
-					effectiveDuration
-				)
-			)
+			logger:info(string.format("battery %s crew suppression extended: cause=%s, duration=%.0fs", batteryName, cause, effectiveDuration))
 		else
-			logger:info(
-				string.format(
-					"battery %s crew suppression reapplied: cause=%s, remaining=%.0fs",
-					batteryName,
-					cause,
-					effectiveDuration
-				)
-			)
+			logger:info(string.format("battery %s crew suppression reapplied: cause=%s, remaining=%.0fs", batteryName, cause, effectiveDuration))
 		end
 		stopBatteryResponse(ctx, battery, now)
 		local active = battery.CrewSuppressionTimerId ~= nil or scheduleRecovery(ctx, battery, now)
@@ -295,12 +236,7 @@ do
 	end
 
 	local function applyDamage(ctx, battery, unit)
-		return Medusa.Services.CrewSuppressionService.apply(
-			ctx,
-			battery,
-			C.CrewSuppressionCause.DAMAGE,
-			adjustedDuration(ctx, unit)
-		)
+		return Medusa.Services.CrewSuppressionService.apply(ctx, battery, C.CrewSuppressionCause.DAMAGE, adjustedDuration(ctx, unit))
 	end
 
 	function Medusa.Services.CrewSuppressionService.processMemberDestruction(ctx, battery, unit)
@@ -314,13 +250,7 @@ do
 			)
 			return false
 		end
-		logger:debug(
-			string.format(
-				"battery %s processing suppressible member destruction: unitId=%s",
-				battery.GroupName or battery.BatteryId,
-				tostring(unit.UnitId)
-			)
-		)
+		logger:debug(string.format("battery %s processing suppressible member destruction: unitId=%s", battery.GroupName or battery.BatteryId, tostring(unit.UnitId)))
 		return applyDamage(ctx, battery, unit)
 	end
 
@@ -339,35 +269,18 @@ do
 		if eligibilityDropReason then
 			recordDrop(ctx, eligibilityDropReason)
 			logger:debug(
-				string.format(
-					"battery %s damage evaluation rejected: unitId=%s reason=%s",
-					battery.GroupName or battery.BatteryId,
-					tostring(unitId),
-					eligibilityDropReason
-				)
+				string.format("battery %s damage evaluation rejected: unitId=%s reason=%s", battery.GroupName or battery.BatteryId, tostring(unitId), eligibilityDropReason)
 			)
 			return false
 		end
 		local health = GetUnitHealth(unit.UnitName)
 		if not health then
 			recordDrop(ctx, C.CrewSuppressionDropReason.INVALID_HEALTH)
-			logger:debug(
-				string.format(
-					"battery %s damage evaluation: unitId=%s health unavailable",
-					battery.GroupName or battery.BatteryId,
-					tostring(unitId)
-				)
-			)
+			logger:debug(string.format("battery %s damage evaluation: unitId=%s health unavailable", battery.GroupName or battery.BatteryId, tostring(unitId)))
 			return false
 		end
 		if not health.IsAlive then
-			logger:debug(
-				string.format(
-					"battery %s damage evaluation: unitId=%s is not alive",
-					battery.GroupName or battery.BatteryId,
-					tostring(unitId)
-				)
-			)
+			logger:debug(string.format("battery %s damage evaluation: unitId=%s is not alive", battery.GroupName or battery.BatteryId, tostring(unitId)))
 			return false
 		end
 
@@ -421,17 +334,10 @@ do
 			end
 		end
 		if not found then
-			logger:debug(
-				string.format(
-					"battery %s initial damage evaluation: no pending damage",
-					battery.GroupName or battery.BatteryId
-				)
-			)
+			logger:debug(string.format("battery %s initial damage evaluation: no pending damage", battery.GroupName or battery.BatteryId))
 			return false
 		end
-		logger:debug(
-			string.format("battery %s processing pending initial damage", battery.GroupName or battery.BatteryId)
-		)
+		logger:debug(string.format("battery %s processing pending initial damage", battery.GroupName or battery.BatteryId))
 		return Medusa.Services.CrewSuppressionService.apply(ctx, battery, C.CrewSuppressionCause.DAMAGE, duration)
 	end
 
@@ -463,23 +369,11 @@ do
 	end
 
 	function Medusa.Services.CrewSuppressionService.explosiveProbability(policy, radiusM, distanceM)
-		if
-			type(policy) ~= "table"
-			or type(radiusM) ~= "number"
-			or radiusM <= 0
-			or type(distanceM) ~= "number"
-			or distanceM < 0
-			or distanceM >= radiusM
-		then
+		if type(policy) ~= "table" or type(radiusM) ~= "number" or radiusM <= 0 or type(distanceM) ~= "number" or distanceM < 0 or distanceM >= radiusM then
 			return 0
 		end
 		local effectiveness = policy.ExplosiveEffectiveness
-		if
-			type(effectiveness) ~= "number"
-			or effectiveness ~= effectiveness
-			or effectiveness <= 0
-			or effectiveness == math.huge
-		then
+		if type(effectiveness) ~= "number" or effectiveness ~= effectiveness or effectiveness <= 0 or effectiveness == math.huge then
 			return 0
 		end
 		return distanceProbability(effectiveness, radiusM, distanceM)
@@ -503,8 +397,7 @@ do
 
 	local function terminalPolicy(policy, terminalEvent)
 		if terminalEvent.Kind == C.CrewSuppressionTerminalKind.EXPLOSIVE then
-			local radius =
-				Medusa.Services.CrewSuppressionService.explosiveRadius(policy, terminalEvent.EffectiveExplosiveMassKg)
+			local radius = Medusa.Services.CrewSuppressionService.explosiveRadius(policy, terminalEvent.EffectiveExplosiveMassKg)
 			return radius, policy.ExplosiveEffectiveness, C.CrewSuppressionCause.EXPLOSIVE
 		end
 		return policy.CannonRadiusM, policy.CannonEffectiveness, C.CrewSuppressionCause.CANNON
@@ -513,12 +406,7 @@ do
 	local function evaluateTerminalCandidate(ctx, work, unitId, random)
 		local terminalEvent = work.TerminalEvent
 		local battery, unit = ctx.batteryRepository:getByUnitId(unitId)
-		if
-			not unit
-			or unit.LastTerminalEventId == terminalEvent.TerminalEventId
-			or unit.OperationalStatus == C.UnitOperationalStatus.DESTROYED
-			or not isSuppressibleUnit(unit)
-		then
+		if not unit or unit.LastTerminalEventId == terminalEvent.TerminalEventId or unit.OperationalStatus == C.UnitOperationalStatus.DESTROYED or not isSuppressibleUnit(unit) then
 			return false, false
 		end
 		unit.LastTerminalEventId = terminalEvent.TerminalEventId
@@ -531,8 +419,7 @@ do
 		if not (probability > 0 and random() < probability) then
 			return true, false
 		end
-		local applied =
-			Medusa.Services.CrewSuppressionService.apply(ctx, battery, work.Cause, adjustedDuration(ctx, unit))
+		local applied = Medusa.Services.CrewSuppressionService.apply(ctx, battery, work.Cause, adjustedDuration(ctx, unit))
 		if not applied then
 			return true, false
 		end
@@ -597,9 +484,7 @@ do
 				candidates,
 				applications,
 				tostring(complete),
-				work.Cursor.NearestVisitedDistanceSquared
-						and string.format("%.1fm", math.sqrt(work.Cursor.NearestVisitedDistanceSquared))
-					or "unavailable"
+				work.Cursor.NearestVisitedDistanceSquared and string.format("%.1fm", math.sqrt(work.Cursor.NearestVisitedDistanceSquared)) or "unavailable"
 			)
 		)
 		return visited, complete, candidates, applications
@@ -622,11 +507,7 @@ do
 		for i = 1, #batteries do
 			local battery = batteries[i]
 			if Battery.isCrewSuppressed(battery) then
-				if
-					not isEnabled(ctx)
-					or battery.CrewSuppressionUntil <= now
-					or not scheduleRecovery(ctx, battery, now)
-				then
+				if not isEnabled(ctx) or battery.CrewSuppressionUntil <= now or not scheduleRecovery(ctx, battery, now) then
 					recoverBattery(ctx, battery, now)
 				end
 			end

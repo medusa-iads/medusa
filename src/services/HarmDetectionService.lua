@@ -1,5 +1,6 @@
 require("_header")
 require("services.Services")
+require("observability.MetricsService")
 require("services.SpatialQuery")
 require("core.Constants")
 require("core.Logger")
@@ -16,15 +17,13 @@ require("entities.Track")
 
     What this service does
     - Scores each track against an 8-feature kinematic model to detect anti-radiation missiles.
-    - Uses a sequential probability ratio test (SPRT) to classify tracks as HARM, suspect, or clear.
+    - Classifies tracks from a bounded accumulated likelihood score.
     - Computes closest-point-of-approach to nearby battery radars for threat assessment.
 
     How others use it
     - IadsNetwork calls evaluate each tick to update HARM likelihood scores on active tracks.
     - HarmResponseService reads those scores to decide shutdown or defense actions.
 
-    References
-    - https://en.wikipedia.org/wiki/Sequential_probability_ratio_test
 --]]
 
 Medusa.Services.HarmDetectionService = {}
@@ -42,19 +41,19 @@ local _trackBuffer = Medusa.Services.HarmDetectionService._trackBuffer
 Medusa.Services.HarmDetectionService._feat = { 0, 0, 0, 0, 0, 0, 0, 0 }
 local _feat = Medusa.Services.HarmDetectionService._feat
 
---- Feature vector indices for SPRT kinematic classifier.
+--- Feature vector indices for the kinematic likelihood classifier.
 --- Each maps to a slot in the _feat array extracted per scan.
-local F_SPEED = 1 -- ground speed (m/s)
+local F_SPEED = 1 -- 3D speed (m/s)
 local F_DIVE = 2 -- dive angle (rad, positive = diving)
-local F_HDGRATE = 3 -- heading rate of change (rad/s)
-local F_ACCEL = 4 -- longitudinal acceleration (m/s²)
-local F_CPA = 5 -- closest point of approach to nearest emitter (m)
+local F_HDGRATE = 3 -- horizontal heading rate of change (rad/s)
+local F_ACCEL = 4 -- three-dimensional speed change (m/s²)
+local F_CPA = 5 -- closest point of approach to candidate radar battery (m)
 local F_CPARATE = 6 -- rate of CPA change (m/s, negative = closing)
-local F_RNGRATE = 7 -- range rate to emitter (m/s, negative = closing)
+local F_RNGRATE = 7 -- range rate to candidate radar battery (m/s, negative = closing)
 local F_ALTRATE = 8 -- vertical velocity (m/s)
 local NUM_FEAT = 8
 
--- Pre-compute SPRT arrays from model (once at load).
+-- Pre-compute likelihood arrays from the model once at load.
 -- Each array is indexed [1..NUM_FEAT] and derived from HARM_SPRT_MODEL Gaussians.
 --- @type number[] 1/(2·σ²) for ARM distribution, used in log-likelihood exponent
 Medusa.Services.HarmDetectionService._inv2vArm = {}
@@ -86,7 +85,7 @@ end
 --- Compute the 3D closest point of approach (CPA) between a moving object and a
 --- stationary emitter. Returns the minimum distance the object will reach along
 --- its current linear velocity vector, plus the time until that point.
---- The SPRT classifier uses CPA to distinguish ARMs from transiting aircraft.
+--- The classifier uses CPA to distinguish ARMs from transiting aircraft.
 --- ARMs converge on the emitter (CPA near zero), while passing aircraft have
 --- a large CPA that stays roughly constant.
 --- @param px number Track position X (DCS world coords)
@@ -117,17 +116,7 @@ function Medusa.Services.HarmDetectionService.computeTrackCPA(track, targetPos)
 	if not vel then
 		return math.huge
 	end
-	return Medusa.Services.HarmDetectionService.computeCPA3D(
-		track.Position.x,
-		track.Position.y,
-		track.Position.z,
-		vel.x,
-		vel.y,
-		vel.z,
-		targetPos.x,
-		targetPos.y,
-		targetPos.z
-	)
+	return Medusa.Services.HarmDetectionService.computeCPA3D(track.Position.x, track.Position.y, track.Position.z, vel.x, vel.y, vel.z, targetPos.x, targetPos.y, targetPos.z)
 end
 
 --- @type fun(px:number,py:number,pz:number,vx:number,vy:number,vz:number,ex:number,ey:number,ez:number):number,number Local alias for CPA computation
@@ -176,34 +165,49 @@ local function computeBallisticCPA(px, py, pz, vx, vy, vz, ex, ey, ez, dt, maxT)
 	return bestDist
 end
 
---- Find the position of the nearest WARM or HOT battery to a track.
---- SPRT features (CPA, range rate, CPA rate) are measured relative to the closest
---- active emitter because an ARM homes on the strongest signal, which correlates
---- with proximity. Cold batteries are excluded because they are not radiating and
---- cannot be targeted by an ARM.
+--- Reports whether a managed battery currently owns a live radar target.
+local function isCurrentRadarTarget(battery)
+	return battery and battery.Position ~= nil and Medusa.Entities.Battery.hasSearchRadar(battery)
+end
+
+--- Reports exact nonnil partition equality for HARM inference.
+local function sharesPartition(left, right)
+	return left.PartitionKey ~= nil and left.PartitionKey == right.PartitionKey
+end
+
+--- Returns projected horizontal closest approach to one stationary battery.
+local function horizontalCpa(track, batteryPosition)
+	local velocity = track.SmoothedVelocity or track.Velocity
+	if not velocity then
+		return math.huge
+	end
+	local rx = track.Position.x - batteryPosition.x
+	local rz = track.Position.z - batteryPosition.z
+	local speedSq = velocity.x * velocity.x + velocity.z * velocity.z
+	if speedSq < 1e-6 then
+		return math.sqrt(rx * rx + rz * rz)
+	end
+	local time = math.max(0, -(rx * velocity.x + rz * velocity.z) / speedSq)
+	local closestX = rx + velocity.x * time
+	local closestZ = rz + velocity.z * time
+	return math.sqrt(closestX * closestX + closestZ * closestZ)
+end
+
+--- Finds the current radar battery nearest the track's projected horizontal path.
 --- @param track table Track entity with .Position
 --- @param geoGrid table GeoGrid spatial index for battery lookups
---- @param batteryStore table BatteryStore for filtering by activation state
---- @return table|nil emitterPos Position {x,y,z} of the closest active emitter, or nil if none in range
-local function findClosestEmitter(track, geoGrid, batteryStore)
-	local AS = Medusa.Constants.ActivationState
-	local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(
-		geoGrid,
-		batteryStore,
-		track.Position,
-		Medusa.Constants.HARM_MAX_RANGE_M
-	)
+--- @param batteryStore table BatteryStore for resolving spatial results
+--- @param threatRadiusM number Maximum projected horizontal miss distance
+--- @return table|nil battery Closest relevant radar battery, or nil
+local function findCandidateBattery(track, geoGrid, batteryStore, threatRadiusM)
+	local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(geoGrid, batteryStore, track.Position, Medusa.Constants.HARM_MAX_RANGE_M)
 	local best, bestDist = nil, math.huge
 	for i = 1, #batteries do
 		local b = batteries[i]
-		if
-			(b.ActivationState == AS.STATE_WARM or b.ActivationState == AS.STATE_HOT)
-			and not Medusa.Entities.Battery.isIndependentAaa(b)
-			and b.Position
-		then
-			local dist = Distance2D(track.Position, b.Position)
-			if dist < bestDist then
-				best = b.Position
+		if isCurrentRadarTarget(b) and sharesPartition(track, b) then
+			local dist = horizontalCpa(track, b.Position)
+			if dist < threatRadiusM and dist < bestDist then
+				best = b
 				bestDist = dist
 			end
 		end
@@ -211,23 +215,22 @@ local function findClosestEmitter(track, geoGrid, batteryStore)
 	return best
 end
 
---- Extract the 8-element kinematic feature vector from two consecutive position
+--- Extracts the 8-element kinematic feature vector from two consecutive position
 --- history entries. These features capture the flight signature of an ARM:
---- high speed, steep dive, minimal heading change (ARMs fly straight once locked),
---- slight deceleration (coasting after motor burnout), small and shrinking CPA to
---- the nearest emitter, negative range rate (closing), and negative altitude rate
---- (descending). Non-ARM aircraft differ on most features because they maneuver,
---- climb, and do not converge on a specific ground point.
---- Writes into the module-level _feat buffer to avoid per-call allocation.
+--- high speed, steep dive, minimal horizontal heading change, raw speed change,
+--- small and shrinking closest approach to the candidate radar battery, negative
+--- range rate, and negative altitude rate. Aircraft usually maneuver, climb, or
+--- pass the battery instead of maintaining this combined flight signature.
+--- Writes into the module-level _feat buffer to avoid per-observation allocation.
 --- @param curr table Current position history entry {position, velocity, timestamp}
 --- @param prev table Previous position history entry
 --- @param dt number Time delta between curr and prev (seconds)
---- @param emitterPos table {x,y,z} position of the nearest active emitter
---- @param sprtState table Per-track SPRT state (carries prevCpa/prevTime for rate computation)
+--- @param targetPos table {x,y,z} position of the retained candidate battery
+--- @param assessmentState table Per-track state with prior CPA evidence
 --- @param ballisticDt number|nil Ballistic sim time step (default 1.0s)
 --- @param ballisticMaxT number|nil Ballistic sim max steps (default 120)
 --- @return number[] feat 8-element feature vector (reused buffer, do not hold across calls)
-local function extractFeatures(curr, prev, dt, emitterPos, sprtState, ballisticDt, ballisticMaxT)
+local function extractFeatures(curr, prev, dt, targetPos, assessmentState, ballisticDt, ballisticMaxT)
 	ballisticDt = ballisticDt or 1.0
 	ballisticMaxT = ballisticMaxT or 120
 	local cv = curr.velocity
@@ -247,7 +250,6 @@ local function extractFeatures(curr, prev, dt, emitterPos, sprtState, ballisticD
 		local hdgCurr = math.atan2(cv.z, cv.x)
 		local hdgPrev = math.atan2(pv.z, pv.x)
 		local dHdg = hdgCurr - hdgPrev
-		-- Wrap heading difference to [-pi, pi]; Lua lacks a true modulo for negatives
 		dHdg = dHdg - 2 * math.pi * math.floor((dHdg + math.pi) / (2 * math.pi))
 		_feat[F_HDGRATE] = math.abs(dHdg) / dt
 	else
@@ -257,33 +259,21 @@ local function extractFeatures(curr, prev, dt, emitterPos, sprtState, ballisticD
 	local prevSpeed = math.sqrt(pvxSq + pvySq + pvzSq)
 	_feat[F_ACCEL] = (speed - prevSpeed) / dt
 
-	local linearCpa = computeCPA3D(cp.x, cp.y, cp.z, cv.x, cv.y, cv.z, emitterPos.x, emitterPos.y, emitterPos.z)
-	local ballisticCpa = computeBallisticCPA(
-		cp.x,
-		cp.y,
-		cp.z,
-		cv.x,
-		cv.y,
-		cv.z,
-		emitterPos.x,
-		emitterPos.y,
-		emitterPos.z,
-		ballisticDt,
-		ballisticMaxT
-	)
+	local linearCpa = computeCPA3D(cp.x, cp.y, cp.z, cv.x, cv.y, cv.z, targetPos.x, targetPos.y, targetPos.z)
+	local ballisticCpa = computeBallisticCPA(cp.x, cp.y, cp.z, cv.x, cv.y, cv.z, targetPos.x, targetPos.y, targetPos.z, ballisticDt, ballisticMaxT)
 	_feat[F_CPA] = math.min(linearCpa, ballisticCpa)
 
-	if sprtState.prevCpa and sprtState.prevTime then
-		local cpaDt = curr.timestamp - sprtState.prevTime
+	if assessmentState.prevCpa and assessmentState.prevTime then
+		local cpaDt = curr.timestamp - assessmentState.prevTime
 		local cpaDist = _feat[F_CPA]
-		_feat[F_CPARATE] = (cpaDt > 0.001) and ((cpaDist - sprtState.prevCpa) / cpaDt) or 0
+		_feat[F_CPARATE] = (cpaDt > 0.001) and ((cpaDist - assessmentState.prevCpa) / cpaDt) or 0
 	else
 		_feat[F_CPARATE] = 0
 	end
 
-	local rx = cp.x - emitterPos.x
-	local ry = cp.y - emitterPos.y
-	local rz = cp.z - emitterPos.z
+	local rx = cp.x - targetPos.x
+	local ry = cp.y - targetPos.y
+	local rz = cp.z - targetPos.z
 	local rng = math.sqrt(rx * rx + ry * ry + rz * rz)
 	_feat[F_RNGRATE] = (rng > 1.0) and ((rx * cv.x + ry * cv.y + rz * cv.z) / rng) or 0
 
@@ -294,57 +284,76 @@ end
 
 local _FEAT_NAMES = { "SPD", "DIV", "HDG", "ACC", "CPA", "CPR", "RNG", "ALT" }
 
---- Compute the per-scan log-likelihood ratio (LLR) across all 8 features.
---- For each feature, this computes how much more likely the observed value is
---- under the "ARM" distribution vs the "non-ARM" distribution, using the Gaussian
---- parameters from HARM_SPRT_MODEL. We work in log space because SPRT accumulates
---- evidence by summing across scans. Multiplying raw probabilities would quickly
---- underflow to zero, but adding logs is stable.
---- Per-feature contributions are clamped to ±HARM_SPRT_MAX_FEAT_LLR so one bad
---- reading (e.g. a position glitch spiking CPA) cannot dominate the total.
---- Positive LLR = looks like an ARM. Negative = looks like something else.
---- See: https://en.wikipedia.org/wiki/Likelihood-ratio_test
---- @param feat number[] 8-element feature vector from extractFeatures
---- @return number scanLlr Total clamped log-likelihood ratio for this scan
+--- Returns one feature's capped ARM versus non-ARM Gaussian log-likelihood contribution.
+local function featureLLR(index, value)
+	local featCap = Medusa.Constants.HARM_SPRT_MAX_FEAT_LLR
+	local dArm = value - _muArm[index]
+	local dNon = value - _muNon[index]
+	local raw = _lsigRatio[index] - dArm * dArm * _inv2vArm[index] + dNon * dNon * _inv2vNon[index]
+	return math.max(-featCap, math.min(featCap, raw))
+end
+
+--- Returns the summed log-likelihood contribution of one extracted feature vector.
 local function computeScanLLR(feat)
 	local llr = 0
-	local featCap = Medusa.Constants.HARM_SPRT_MAX_FEAT_LLR
 	for i = 1, NUM_FEAT do
-		local x = feat[i]
-		local dArm = x - _muArm[i]
-		local dNon = x - _muNon[i]
-		-- SPRT log-likelihood ratio: positive = more ARM-like, negative = more non-ARM
-		local contribution = _lsigRatio[i] - dArm * dArm * _inv2vArm[i] + dNon * dNon * _inv2vNon[i]
-		llr = llr + math.max(-featCap, math.min(featCap, contribution))
+		llr = llr + featureLLR(i, feat[i])
 	end
 	return llr
 end
 
+--- Returns the operator-facing feature values and likelihood contributions for one observation.
 local function formatFeatureLLRs(feat)
 	local parts = {}
-	local featCap = Medusa.Constants.HARM_SPRT_MAX_FEAT_LLR
 	for i = 1, NUM_FEAT do
 		local x = feat[i]
-		local dArm = x - _muArm[i]
-		local dNon = x - _muNon[i]
-		local raw = _lsigRatio[i] - dArm * dArm * _inv2vArm[i] + dNon * dNon * _inv2vNon[i]
-		local clamped = math.max(-featCap, math.min(featCap, raw))
-		parts[i] = string.format("%s=%.1f(%.2f)", _FEAT_NAMES[i], x, clamped)
+		parts[i] = string.format("%s=%.1f(%.2f)", _FEAT_NAMES[i], x, featureLLR(i, x))
 	end
 	return table.concat(parts, " ")
 end
 
+--- Selects one candidate radar battery and restarts evidence tied to it.
+local function setCandidateBattery(state, battery)
+	state.candidateBatteryId = battery.BatteryId
+	state.candidatePosition = { x = battery.Position.x, y = battery.Position.y, z = battery.Position.z }
+	state.prevCpa = nil
+	state.llr = 0
+	state.scanCount = 0
+	state.label = HAS.EVALUATING
+end
+
+--- Starts one track assessment without inheriting an unsupported HARM confirmation.
+local function createAssessment(track, candidate)
+	local wasClassifiedHarm = track.AssessedAircraftType == AAT.HARM
+	local state = {}
+	setCandidateBattery(state, candidate)
+	if wasClassifiedHarm then
+		track.AssessedAircraftType = AAT.UNKNOWN
+		track.IsSeadThreat = false
+	end
+	track.HarmAssessment = state
+	_logger:info(string.format("track %s entered ARM evaluation", Medusa.Entities.Track.displayId(track)))
+	return state
+end
+
+--- Adds one capped observation score to the bounded track evidence total.
+--- @param state table Assessment state that owns the accumulated score
+--- @param scanLlr number Current observation's raw log-likelihood score
+local function accumulateEvidence(state, scanLlr)
+	local contribution = math.max(-C.HARM_SPRT_MAX_SCAN_LLR, math.min(C.HARM_SPRT_MAX_SCAN_LLR, scanLlr))
+	local limit = C.HARM_SPRT_ACCUMULATED_LLR_LIMIT
+	state.llr = math.max(-limit, math.min(limit, state.llr + contribution))
+end
+
+--- Classifies accumulated evidence after the five-observation floor.
+--- @param state table Assessment state with a bounded score and observation count
+--- @return string label Current assessment label
 local function updateLabel(state)
 	if state.label == HAS.CONFIRMED then
-		if state.llr <= C.HARM_SPRT_THRESH_CLEAR then
-			state.label = HAS.CLEARED
-		end
 		return state.label
 	end
-	if state.label == HAS.CLEARED then
-		if state.llr >= C.HARM_SPRT_THRESH_CONFIRM then
-			state.label = HAS.CONFIRMED
-		end
+	if state.scanCount < C.HARM_SPRT_MIN_SCANS then
+		state.label = HAS.EVALUATING
 		return state.label
 	end
 	if state.llr >= C.HARM_SPRT_THRESH_CONFIRM then
@@ -361,76 +370,36 @@ local function updateLabel(state)
 	return state.label
 end
 
-local function createAssessment(track, emitterPos)
-	local confirmed = track.AssessedAircraftType == AAT.HARM
-	local state = {
-		llr = confirmed and C.HARM_SPRT_THRESH_CONFIRM or 0,
-		scanCount = 0,
-		label = confirmed and HAS.CONFIRMED or HAS.EVALUATING,
-		prevCpa = nil,
-		prevTime = nil,
-		emitterPosition = { x = emitterPos.x, y = emitterPos.y, z = emitterPos.z },
-	}
-	if confirmed then
-		state.previousAircraftType = AAT.UNKNOWN
-		state.previousIsSeadThreat = false
-	end
-	track.HarmAssessment = state
-	_logger:info(string.format("track %s entered ARM evaluation", Medusa.Entities.Track.displayId(track)))
-	return state
-end
-
-local function updateEmitterPosition(state, emitterPos)
-	local saved = state.emitterPosition
-	if not saved then
-		saved = {}
-		state.emitterPosition = saved
-	end
-	saved.x = emitterPos.x
-	saved.y = emitterPos.y
-	saved.z = emitterPos.z
-end
-
-local function accumulateEvidence(state, scanLlr)
-	state.llr = state.llr + math.max(-C.HARM_SPRT_MAX_SCAN_LLR, math.min(C.HARM_SPRT_MAX_SCAN_LLR, scanLlr))
-end
-
 local function logStateChange(track, previousLabel, state, feat)
 	if state.label == previousLabel then
 		return
 	end
 	local detail = feat and (" [" .. formatFeatureLLRs(feat) .. "]") or ""
 	_logger:info(
-		string.format(
-			"track %s ARM %s -> %s (LLR=%.2f, scans=%d)%s",
-			Medusa.Entities.Track.displayId(track),
-			previousLabel,
-			state.label,
-			state.llr,
-			state.scanCount,
-			detail
-		)
+		string.format("track %s ARM %s -> %s (LLR=%.2f, scans=%d)%s", Medusa.Entities.Track.displayId(track), previousLabel, state.label, state.llr, state.scanCount, detail)
 	)
 end
 
---- Run one SPRT evaluation cycle for a single track.
+--- Runs one likelihood evaluation cycle for a single track.
 --- This is the per-track workhorse called each tick. It manages the full
---- lifecycle: creating SPRT state on first sight, gating on minimum scans and
---- speed, extracting features, accumulating the LLR, and updating the label.
---- Decision evidence persists after confirmation or clearance. A decision changes
---- only after cumulative evidence crosses the opposite threshold.
+--- lifecycle: creating state, extracting evidence, accumulating a bounded score,
+--- and requiring at least five observations before confirmation.
 --- @param track table Track entity with PositionHistory, TrackId, FirstDetectionTime
 --- @param geoGrid table GeoGrid spatial index
---- @param batteryStore table BatteryStore for emitter lookup
+--- @param batteryStore table BatteryStore for radar-battery lookup
 --- @param ballisticDt number|nil Ballistic sim step size
 --- @param ballisticMaxT number|nil Ballistic sim max steps
---- @param effectiveMinScans number|nil Minimum scans before an SPRT decision (defaults to HARM_SPRT_MIN_SCANS)
---- @return string label Current SPRT label for this track
---- @return table|nil state The SPRT state table, or nil if track has insufficient data
-local function evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisticMaxT, effectiveMinScans)
+--- @param threatRadiusM number|nil Projected-path relevance radius
+--- @return string label Current HARM assessment label for this track
+--- @return table|nil state The assessment state, or nil if track has insufficient data
+local function evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisticMaxT, threatRadiusM)
+	threatRadiusM = threatRadiusM or C.HARM_DEFAULT_THREAT_RADIUS_M
+	local state = track.HarmAssessment
+	if state and state.label == HAS.CONFIRMED then
+		return state.label, state
+	end
 	local n = track.PositionHistory:size()
 	if n < 2 then
-		local state = track.HarmAssessment
 		return state and state.label or HAS.EVALUATING, state
 	end
 
@@ -438,51 +407,40 @@ local function evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisti
 	local prev = track.PositionHistory:get(n - 1)
 	local dt = curr.timestamp - prev.timestamp
 	if dt < C.HARM_SPRT_MIN_DT_SEC then
-		local state = track.HarmAssessment
 		return state and state.label or HAS.EVALUATING, state
 	end
 
-	local state = track.HarmAssessment
 	if state and state.prevTime and curr.timestamp <= state.prevTime then
 		return state.label, state
 	end
-	local cv = curr.velocity
-	local speedSq = cv.x * cv.x + cv.y * cv.y + cv.z * cv.z
-	if speedSq < C.HARM_SPRT_SPEED_GATE * C.HARM_SPRT_SPEED_GATE then
-		if not state then
-			return HAS.CLEARED, nil
-		end
-		state.prevTime = curr.timestamp
-		state.scanCount = state.scanCount + 1
-		local previousLabel = state.label
-		if state.label == HAS.EVALUATING or state.label == HAS.SUSPECT or state.label == HAS.PROBABLE then
-			state.llr = math.min(state.llr - C.HARM_SPRT_MAX_SCAN_LLR, C.HARM_SPRT_THRESH_CLEAR)
-		else
-			accumulateEvidence(state, -C.HARM_SPRT_MAX_SCAN_LLR)
-		end
-		updateLabel(state)
-		logStateChange(track, previousLabel, state)
-		return state.label, state
-	end
 
-	local emitterPos = findClosestEmitter(track, geoGrid, batteryStore)
-	if emitterPos then
-		if not state then
-			state = createAssessment(track, emitterPos)
-		else
-			updateEmitterPosition(state, emitterPos)
+	local candidate = state and state.candidateBatteryId and batteryStore:get(state.candidateBatteryId) or nil
+	if state and state.candidateBatteryId and not isCurrentRadarTarget(candidate) then
+		local replacement = findCandidateBattery(track, geoGrid, batteryStore, threatRadiusM)
+		if replacement then
+			setCandidateBattery(state, replacement)
+			candidate = replacement
 		end
-	elseif state then
-		emitterPos = state.emitterPosition
+	elseif not state then
+		candidate = findCandidateBattery(track, geoGrid, batteryStore, threatRadiusM)
+		if candidate then
+			state = createAssessment(track, candidate)
+		end
 	end
-	if not state or not emitterPos then
+	local targetPos = state and state.candidatePosition or nil
+	if not state or not targetPos then
 		return state and state.label or HAS.EVALUATING, state
+	end
+	if isCurrentRadarTarget(candidate) then
+		targetPos.x = candidate.Position.x
+		targetPos.y = candidate.Position.y
+		targetPos.z = candidate.Position.z
 	end
 
 	state.scanCount = state.scanCount + 1
 	local previousLabel = state.label
 
-	local feat = extractFeatures(curr, prev, dt, emitterPos, state, ballisticDt, ballisticMaxT)
+	local feat = extractFeatures(curr, prev, dt, targetPos, state, ballisticDt, ballisticMaxT)
 
 	state.prevCpa = feat[F_CPA]
 	state.prevTime = curr.timestamp
@@ -499,10 +457,9 @@ local function evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisti
 	lf[7] = feat[7]
 	lf[8] = feat[8]
 
-	local minScans = effectiveMinScans or C.HARM_SPRT_MIN_SCANS
 	local scanLlr = computeScanLLR(feat)
 	accumulateEvidence(state, scanLlr)
-	if state.scanCount < minScans then
+	if state.scanCount < C.HARM_SPRT_MIN_SCANS then
 		return state.label, state
 	end
 
@@ -512,94 +469,57 @@ local function evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisti
 	return state.label, state
 end
 
---- Returns the ballistic simulation parameters needed by assessSingleTrack.
+--- Returns HARM assessment parameters derived from doctrine.
 --- @param ctx table Pipeline context with doctrine
 --- @return number ballisticDt Ballistic sim time step
 --- @return number ballisticMaxT Ballistic sim max steps
+--- @return number threatRadiusM Projected-path relevance radius
 function Medusa.Services.HarmDetectionService.getAssessContext(ctx)
 	local doctrine = ctx.doctrine
 	local ballisticDt = doctrine and doctrine.BallisticSimStepSec or 1.0
 	local ballisticMaxT = doctrine and doctrine.BallisticSimMaxSec or 120
-	return ballisticDt, ballisticMaxT
+	local threatRadiusM = doctrine and doctrine.HARMShutdownM or C.HARM_DEFAULT_THREAT_RADIUS_M
+	return ballisticDt, ballisticMaxT, threatRadiusM
 end
 
---- Assesses a single track for HARM classification via SPRT.
+--- Assesses a single track for HARM classification.
 --- @param track table Track entity
 --- @param tracks table Array of all tracks (for launcher backtracking)
 --- @param geoGrid table GeoGrid spatial index
---- @param batteryStore table BatteryStore for emitter proximity lookups
+--- @param batteryStore table BatteryStore for radar-battery proximity lookups
 --- @param ballisticDt number Ballistic sim time step
 --- @param ballisticMaxT number Ballistic sim max steps
+--- @param threatRadiusM number|nil Projected-path relevance radius
 --- @return boolean reclassified True if this track was newly classified as HARM
-function Medusa.Services.HarmDetectionService.assessSingleTrack(
-	track,
-	tracks,
-	geoGrid,
-	batteryStore,
-	ballisticDt,
-	ballisticMaxT
-)
+function Medusa.Services.HarmDetectionService.assessSingleTrack(track, tracks, geoGrid, batteryStore, ballisticDt, ballisticMaxT, threatRadiusM)
 	local LS = Medusa.Constants.TrackLifecycleState
 	local vel = track.Velocity
-	local speedSq = vel and (vel.x * vel.x + vel.y * vel.y + vel.z * vel.z) or 0
-	local trackAge = track.FirstDetectionTime and (GetTime() - track.FirstDetectionTime) or 0
-	if
-		track.LifecycleState ~= LS.ACTIVE
-		or not vel
-		or (not track.HarmAssessment and speedSq < C.HARM_SPRT_SPEED_GATE * C.HARM_SPRT_SPEED_GATE)
-		or (not track.HarmAssessment and trackAge < C.HARM_SPRT_MIN_TRACK_AGE_SEC)
-	then
+	if track.LifecycleState ~= LS.ACTIVE or not vel or track.IsHarmLauncher then
 		return false
 	end
 
-	local previousLabel = track.HarmAssessment and track.HarmAssessment.label
-	local label, state = evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisticMaxT)
+	local label, state = evaluateTrack(track, geoGrid, batteryStore, ballisticDt, ballisticMaxT, threatRadiusM)
 
 	if state then
-		track.HarmLikelihoodScore = math.max(0, math.min(1, state.llr / math.max(0.001, C.HARM_SPRT_THRESH_CONFIRM)))
+		track.HarmLikelihoodScore = math.max(0, math.min(1, state.llr / C.HARM_SPRT_THRESH_CONFIRM))
 	end
 
-	if label == HAS.CONFIRMED and previousLabel ~= HAS.CONFIRMED then
-		if not state.previousAircraftType then
-			state.previousAircraftType = track.AssessedAircraftType
-			state.previousIsSeadThreat = track.IsSeadThreat == true
-		end
-		Medusa.Services.MetricsService.inc("medusa_harm_confirmed_total")
+	if label == HAS.CONFIRMED and track.AssessedAircraftType ~= AAT.HARM then
+		Medusa.Observability.MetricsService.inc("medusa_harm_confirmed_total")
 		track.AssessedAircraftType = AAT.HARM
 		track.IsSeadThreat = true
-		_logger:info(
-			string.format(
-				"track %s classified as HARM (ARM CONFIRMED, LLR=%.2f)",
-				Medusa.Entities.Track.displayId(track),
-				state.llr
-			)
-		)
+		_logger:info(string.format("track %s classified as HARM (ARM CONFIRMED, LLR=%.2f)", Medusa.Entities.Track.displayId(track), state.llr))
 		Medusa.Services.HarmDetectionService._backtrackLauncher(track, tracks)
 		return true
 	elseif label == HAS.CLEARED then
 		track.HarmLikelihoodScore = 0
-		if previousLabel == HAS.CONFIRMED then
-			local restoredType = state.previousAircraftType or AAT.UNKNOWN
-			local restoredSeadThreat = state.previousIsSeadThreat == true
-			track.AssessedAircraftType = restoredType
-			track.IsSeadThreat = restoredSeadThreat
-			state.previousAircraftType = nil
-			state.previousIsSeadThreat = nil
-			_logger:info(
-				string.format(
-					"track %s HARM classification cleared (LLR=%.2f)",
-					Medusa.Entities.Track.displayId(track),
-					state.llr
-				)
-			)
-		end
 	end
 	return false
 end
 
 --- Top-level entry point called by IadsNetwork each tick.
 --- Iterates all active tracks in the network. For each eligible track, runs
---- evaluateTrack to accumulate SPRT evidence and update the label.
+--- evaluateTrack to accumulate likelihood evidence and update the label.
 --- When a track reaches CONFIRMED, this function promotes it: sets
 --- AssessedAircraftType to HARM, flags IsSeadThreat, and increments the
 --- Prometheus counter. HarmResponseService reads these flags on its next
@@ -613,19 +533,10 @@ function Medusa.Services.HarmDetectionService.assessHarmThreats(ctx)
 	local tracks = trackStore:getAll(_trackBuffer)
 	local reclassified = 0
 
-	local ballisticDt, ballisticMaxT = Medusa.Services.HarmDetectionService.getAssessContext(ctx)
+	local ballisticDt, ballisticMaxT, threatRadiusM = Medusa.Services.HarmDetectionService.getAssessContext(ctx)
 
 	for i = 1, #tracks do
-		if
-			Medusa.Services.HarmDetectionService.assessSingleTrack(
-				tracks[i],
-				tracks,
-				geoGrid,
-				batteryStore,
-				ballisticDt,
-				ballisticMaxT
-			)
-		then
+		if Medusa.Services.HarmDetectionService.assessSingleTrack(tracks[i], tracks, geoGrid, batteryStore, ballisticDt, ballisticMaxT, threatRadiusM) then
 			reclassified = reclassified + 1
 		end
 	end
@@ -667,11 +578,7 @@ function Medusa.Services.HarmDetectionService._backtrackLauncher(harmTrack, allT
 
 	for i = 1, #allTracks do
 		local candidate = allTracks[i]
-		if
-			candidate.TrackId ~= harmTrack.TrackId
-			and candidate.AssessedAircraftType ~= AAT.HARM
-			and candidate.PositionHistory
-		then
+		if candidate.TrackId ~= harmTrack.TrackId and candidate.AssessedAircraftType ~= AAT.HARM and candidate.PositionHistory and sharesPartition(harmTrack, candidate) then
 			local cHistory = candidate.PositionHistory:toArray()
 			for ci = 1, #cHistory do
 				local entry = cHistory[ci]
@@ -692,6 +599,12 @@ function Medusa.Services.HarmDetectionService._backtrackLauncher(harmTrack, allT
 	if bestTrack then
 		bestTrack.HostileActionConfirmed = true
 		bestTrack.IsSeadThreat = true
+		bestTrack.IsHarmLauncher = true
+		bestTrack.HarmAssessment = nil
+		bestTrack.HarmLikelihoodScore = 0
+		if bestTrack.AssessedAircraftType == AAT.HARM then
+			bestTrack.AssessedAircraftType = AAT.UNKNOWN
+		end
 		_logger:info(
 			string.format(
 				"track %s flagged hostile action (launched HARM %s, dist=%.0fm)",

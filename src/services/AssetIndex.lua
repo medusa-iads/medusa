@@ -11,7 +11,7 @@ require("services.Services")
 
     What this service does
     - Bundles all entity stores and the GeoGrid into one object for convenient access.
-    - Provides typed accessors for batteries, sensors, tracks, C2 nodes, zones, airbases, and interceptors.
+    - Provides typed accessors for unit identity, batteries, sensors, tracks, C2 nodes, zones, airbases, and interceptors.
 
     How others use it
     - IadsNetwork creates one AssetIndex per network and passes it to services that need store access.
@@ -28,6 +28,10 @@ end
 
 function Medusa.Services.AssetIndex:sensors()
 	return self._stores.sensors
+end
+
+function Medusa.Services.AssetIndex:unitIndex()
+	return self._stores.unitIndex
 end
 
 function Medusa.Services.AssetIndex:batteries()

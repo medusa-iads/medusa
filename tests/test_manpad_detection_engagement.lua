@@ -211,10 +211,7 @@ function TestVisualConeGeometry:test_wideCone_45degOff_3000m_detected()
 		Manpad = { UnitHeadings = { makeHeadingVec(0) }, UnitHeadingCount = 1 },
 	})
 	local track = makeTrack({ Position = { x = 2828, y = 0, z = 2828 } }) -- dist≈4000, dot≈0.707
-	lu.assertTrue(
-		MS.canDetectVisually(bat, track, "NORMAL"),
-		"wide-cone target at 45° off-axis within 4000m must be detected"
-	)
+	lu.assertTrue(MS.canDetectVisually(bat, track, "NORMAL"), "wide-cone target at 45° off-axis within 4000m must be detected")
 end
 
 -- Wide cone 45° off at 6000m (beyond 4000m wide range) → NOT detected
@@ -246,10 +243,7 @@ function TestVisualConeGeometry:test_altitudeCeiling_aboveCeiling_notDetected()
 	local C = Medusa.Constants
 	local bat = makeManpadBattery({ Position = { x = 0, y = 100, z = 0 } })
 	local track = makeTrack({ Position = { x = 0, y = 100 + C.Manpad.REL_ALT_CEIL_M + 1, z = 0 } })
-	lu.assertFalse(
-		MS.canDetectVisually(bat, track, "NORMAL"),
-		string.format("altRel %d above ceiling must be rejected", C.Manpad.REL_ALT_CEIL_M + 1)
-	)
+	lu.assertFalse(MS.canDetectVisually(bat, track, "NORMAL"), string.format("altRel %d above ceiling must be rejected", C.Manpad.REL_ALT_CEIL_M + 1))
 end
 
 -- Look-down (target 1500m below, mountain placement) → detected
@@ -258,10 +252,7 @@ function TestVisualConeGeometry:test_lookDown_negativAltRel_detected()
 	-- Battery on mountain at y=2000, track in valley at y=500: altRel=-1500 (no ceiling block)
 	local bat = makeManpadBattery({ Position = { x = 0, y = 2000, z = 0 } })
 	local track = makeTrack({ Position = { x = 0, y = 500, z = 0 } }) -- coincident 2D
-	lu.assertTrue(
-		MS.canDetectVisually(bat, track, "NORMAL"),
-		"look-down (negative altRel) must not be blocked by altitude gate"
-	)
+	lu.assertTrue(MS.canDetectVisually(bat, track, "NORMAL"), "look-down (negative altRel) must not be blocked by altitude gate")
 end
 
 -- Coincident track (dist² < 1) → detected unconditionally
@@ -317,10 +308,7 @@ function TestStatePostureGates:test_asleep_hotWar_wideConeOnly_notDetected()
 		},
 	})
 	local track = makeTrack({ Position = { x = 1000, y = 0, z = 1732 } })
-	lu.assertFalse(
-		MS.canDetectVisually(bat, track, "HOT_WAR"),
-		"ASLEEP must disable wide cone — 60° off-axis must not be detected"
-	)
+	lu.assertFalse(MS.canDetectVisually(bat, track, "HOT_WAR"), "ASLEEP must disable wide cone — 60° off-axis must not be detected")
 end
 
 function TestStatePostureGates:test_previouslyAlerted_asleep_hotWar_usesFullDetection()
@@ -342,10 +330,7 @@ function TestStatePostureGates:test_asleep_coldWar_notDetected()
 	local MS = Medusa.Services.ManpadService
 	local bat = makeManpadBattery({ Manpad = { SleepWakeState = "ASLEEP" } })
 	local track = makeTrack({ Position = { x = 0, y = 0, z = 0 } }) -- coincident
-	lu.assertFalse(
-		MS.canDetectVisually(bat, track, "COLD_WAR"),
-		"ASLEEP in COLD_WAR must return false regardless of geometry"
-	)
+	lu.assertFalse(MS.canDetectVisually(bat, track, "COLD_WAR"), "ASLEEP in COLD_WAR must return false regardless of geometry")
 	lu.assertFalse(MS.canDetectVisually(bat, track, "NORMAL"), "ASLEEP in NORMAL posture must return false")
 end
 
@@ -416,11 +401,7 @@ function TestAudioHearing:test_frontHemisphere_withinRange_wakeScheduled()
 	local geoGrid = makeGeoGrid({ TrackIds = { [trackId] = true } })
 	evalPositional(store, trackStore, geoGrid, 0, "NORMAL")
 
-	lu.assertNotEquals(
-		bat.Manpad.SleepWakeState,
-		"ASLEEP",
-		"ASLEEP battery must NOT remain ASLEEP after hearing forward-hemisphere track at 2500m"
-	)
+	lu.assertNotEquals(bat.Manpad.SleepWakeState, "ASLEEP", "ASLEEP battery must NOT remain ASLEEP after hearing forward-hemisphere track at 2500m")
 	lu.assertEquals(bat.Manpad.WakeReason, "AUDIO")
 	lu.assertEquals(bat.Manpad.AlertCycleCount, 1)
 	lu.assertEquals(bat.Manpad.LastAlertedTime, 0)
@@ -598,8 +579,7 @@ function TestAutonomousAcquisition:test_hostileAircraftInVisualEnvelope_engagesW
 	})
 	local store = newManpadView()
 	store:add(bat)
-	local hostileAircraft =
-		makeWorldTarget(2, Unit.Category.AIRPLANE, true, { x = 4000, y = 0, z = 0 }, "hostile-aircraft")
+	local hostileAircraft = makeWorldTarget(2, Unit.Category.AIRPLANE, true, { x = 4000, y = 0, z = 0 }, "hostile-aircraft")
 	SearchWorldObjects = function(category, volume, handler)
 		lu.assertEquals(category, Object.Category.UNIT)
 		lu.assertEquals(volume.params.radius, Medusa.Constants.Manpad.GEOGRID_QUERY_RADIUS_M)
@@ -886,13 +866,7 @@ function TestEngagementGate:test_inferredAircraftTypes_areEligible()
 			Manpad = { SleepWakeState = "ALERT", AlertStartTime = 0 },
 		})
 		local track = makeTrack({ TrackId = "track-" .. i, AssessedAircraftType = aircraftTypes[i] })
-		evalPositional(
-			store,
-			makeTrackStore({ [track.TrackId] = track }),
-			makeGeoGrid({ TrackIds = { [track.TrackId] = true } }),
-			100,
-			"NORMAL"
-		)
+		evalPositional(store, makeTrackStore({ [track.TrackId] = track }), makeGeoGrid({ TrackIds = { [track.TrackId] = true } }), 100, "NORMAL")
 		lu.assertEquals(bat.Manpad.SleepWakeState, "HOT")
 	end
 end
@@ -908,13 +882,7 @@ function TestEngagementGate:test_aircraftTrackPreventsAlertTimeout()
 	})
 	local track = makeTrack({ TrackId = "track-nearby", Position = { x = 5000, y = 0, z = 0 } })
 
-	evalPositional(
-		store,
-		makeTrackStore({ [track.TrackId] = track }),
-		makeGeoGrid({ TrackIds = { [track.TrackId] = true } }),
-		901,
-		"NORMAL"
-	)
+	evalPositional(store, makeTrackStore({ [track.TrackId] = track }), makeGeoGrid({ TrackIds = { [track.TrackId] = true } }), 901, "NORMAL")
 
 	lu.assertEquals(bat.Manpad.SleepWakeState, "ALERT")
 end
@@ -1033,11 +1001,7 @@ function TestWakeTriggers:test_cueFromIADS_wakesAsleepManpadsInRange()
 
 	MS.cueFromIADS({ manpadStore = store, localGeoGrid = geoGrid }, { x = 0, y = 0, z = 0 })
 
-	lu.assertEquals(
-		asleep_bat.Manpad.SleepWakeState,
-		"ALERTING",
-		"cueFromIADS must schedule a wake for ASLEEP MANPAD in range"
-	)
+	lu.assertEquals(asleep_bat.Manpad.SleepWakeState, "ALERTING", "cueFromIADS must schedule a wake for ASLEEP MANPAD in range")
 end
 
 function TestWakeTriggers:test_onManpadGoHot_usesDoctrineRadioRangeAndSkipsIneligibleGroups()
@@ -1148,16 +1112,7 @@ function TestWakeTriggers:test_onManpadGoHot_zeroRadioRangeDisablesNeighborWake(
 		return true
 	end
 
-	evalPositional(
-		store,
-		makeTrackStore({ [trackId] = makeTrack({ TrackId = trackId, Position = { x = 1000, y = 0, z = 0 } }) }),
-		geoGrid,
-		100,
-		"NORMAL",
-		nil,
-		nil,
-		0
-	)
+	evalPositional(store, makeTrackStore({ [trackId] = makeTrack({ TrackId = trackId, Position = { x = 1000, y = 0, z = 0 } }) }), geoGrid, 100, "NORMAL", nil, nil, 0)
 
 	lu.assertEquals(manpadQueries, 0)
 	lu.assertEquals(neighbor.Manpad.SleepWakeState, "ASLEEP")

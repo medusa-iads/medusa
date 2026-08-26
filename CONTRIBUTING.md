@@ -41,7 +41,7 @@ Medusa uses [keep a changelog](https://keepachangelog.com/en/1.1.0/) format for 
 
 **Verify your setup:**
 ```bash
-task test          # 278 tests, 0 failures
+task test          # runs the Lua test suite
 task build         # produces dist/medusa.lua and dist/medusa-thin.lua
 task complexity:check  # reports Lua complexity warnings
 ```

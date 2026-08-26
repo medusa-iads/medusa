@@ -601,27 +601,19 @@ function M.adjust_err_msg_with_iter(err_msg, iter_msg)
 		err_msg = prettystr(err_msg)
 	end
 
-	if
-		(err_msg:find(M.SUCCESS_PREFIX) == 1) or err_msg:match("(" .. RE_FILE_LINE .. ")" .. M.SUCCESS_PREFIX .. ".*")
-	then
+	if (err_msg:find(M.SUCCESS_PREFIX) == 1) or err_msg:match("(" .. RE_FILE_LINE .. ")" .. M.SUCCESS_PREFIX .. ".*") then
 		-- test finished early with success()
 		return nil, M.NodeStatus.SUCCESS
 	end
 
-	if
-		(err_msg:find(M.SKIP_PREFIX) == 1)
-		or (err_msg:match("(" .. RE_FILE_LINE .. ")" .. M.SKIP_PREFIX .. ".*") ~= nil)
-	then
+	if (err_msg:find(M.SKIP_PREFIX) == 1) or (err_msg:match("(" .. RE_FILE_LINE .. ")" .. M.SKIP_PREFIX .. ".*") ~= nil) then
 		-- substitute prefix by iteration message
 		err_msg = err_msg:gsub(".*" .. M.SKIP_PREFIX, iter_msg, 1)
 		-- print("failure detected")
 		return err_msg, M.NodeStatus.SKIP
 	end
 
-	if
-		(err_msg:find(M.FAILURE_PREFIX) == 1)
-		or (err_msg:match("(" .. RE_FILE_LINE .. ")" .. M.FAILURE_PREFIX .. ".*") ~= nil)
-	then
+	if (err_msg:find(M.FAILURE_PREFIX) == 1) or (err_msg:match("(" .. RE_FILE_LINE .. ")" .. M.FAILURE_PREFIX .. ".*") ~= nil) then
 		-- substitute prefix by iteration message
 		err_msg = err_msg:gsub(M.FAILURE_PREFIX, iter_msg, 1)
 		-- print("failure detected")
@@ -853,8 +845,7 @@ local function mismatchFormattingPureList(table_a, table_b, margin)
 
 	local len_a, len_b, refa, refb = #table_a, #table_b, "", ""
 	if M.PRINT_TABLE_REF_IN_ERROR_MSG then
-		refa, refb =
-			string.format("<%s> ", M.private.table_ref(table_a)), string.format("<%s> ", M.private.table_ref(table_b))
+		refa, refb = string.format("<%s> ", M.private.table_ref(table_a)), string.format("<%s> ", M.private.table_ref(table_b))
 	end
 	local longest, shortest = math.max(len_a, len_b), math.min(len_a, len_b)
 	local deltalv = longest - shortest
@@ -880,27 +871,13 @@ local function mismatchFormattingPureList(table_a, table_b, margin)
 		-- TODO: handle expected/actual naming
 		extendWithStrFmt(result, "* lists %sA (%s) and %sB (%s) have the same size", refa, descrTa, refb, descrTb)
 	else
-		extendWithStrFmt(
-			result,
-			"* list sizes differ: list %sA (%s) has %d items, list %sB (%s) has %d items",
-			refa,
-			descrTa,
-			len_a,
-			refb,
-			descrTb,
-			len_b
-		)
+		extendWithStrFmt(result, "* list sizes differ: list %sA (%s) has %d items, list %sB (%s) has %d items", refa, descrTa, len_a, refb, descrTb, len_b)
 	end
 
 	extendWithStrFmt(result, "* lists A and B start differing at index %d", commonUntil + 1)
 	if commonBackTo >= 0 then
 		if deltalv > 0 then
-			extendWithStrFmt(
-				result,
-				"* lists A and B are equal again from index %d for A, %d for B",
-				len_a - commonBackTo,
-				len_b - commonBackTo
-			)
+			extendWithStrFmt(result, "* lists A and B are equal again from index %d for A, %d for B", len_a - commonBackTo, len_b - commonBackTo)
 		else
 			extendWithStrFmt(result, "* lists A and B are equal again from index %d", len_a - commonBackTo)
 		end
@@ -1435,13 +1412,7 @@ end
 
 function M.almostEquals(actual, expected, margin)
 	if type(actual) ~= "number" or type(expected) ~= "number" or type(margin) ~= "number" then
-		error_fmt(
-			3,
-			"almostEquals: must supply only number arguments.\nArguments supplied: %s, %s, %s",
-			prettystr(actual),
-			prettystr(expected),
-			prettystr(margin)
-		)
+		error_fmt(3, "almostEquals: must supply only number arguments.\nArguments supplied: %s, %s, %s", prettystr(actual), prettystr(expected), prettystr(margin))
 	end
 	if margin < 0 then
 		error_fmt(3, "almostEquals: margin must not be negative, current value is " .. margin)
@@ -1467,24 +1438,10 @@ function M.assertAlmostEquals(actual, expected, margin, extra_msg_or_nil)
 				expected, actual = actual, expected
 			end
 			local delta = math.abs(actual - expected)
-			fail_fmt(
-				2,
-				extra_msg_or_nil,
-				"Values are not almost equal\n" .. "Actual: %s, expected: %s, delta %s above margin of %s",
-				actual,
-				expected,
-				delta,
-				margin
-			)
+			fail_fmt(2, extra_msg_or_nil, "Values are not almost equal\n" .. "Actual: %s, expected: %s, delta %s above margin of %s", actual, expected, delta, margin)
 		end
 	else
-		error_fmt(
-			3,
-			"almostEquals: must supply only number or table arguments.\nArguments supplied: %s, %s, %s",
-			prettystr(actual),
-			prettystr(expected),
-			prettystr(margin)
-		)
+		error_fmt(3, "almostEquals: must supply only number or table arguments.\nArguments supplied: %s, %s, %s", prettystr(actual), prettystr(expected), prettystr(margin))
 	end
 end
 
@@ -1511,15 +1468,7 @@ function M.assertNotAlmostEquals(actual, expected, margin, extra_msg_or_nil)
 			expected, actual = actual, expected
 		end
 		local delta = math.abs(actual - expected)
-		fail_fmt(
-			2,
-			extra_msg_or_nil,
-			"Values are almost equal\nActual: %s, expected: %s" .. ", delta %s below margin of %s",
-			actual,
-			expected,
-			delta,
-			margin
-		)
+		fail_fmt(2, extra_msg_or_nil, "Values are almost equal\nActual: %s, expected: %s" .. ", delta %s below margin of %s", actual, expected, delta, margin)
 	end
 end
 
@@ -1529,13 +1478,7 @@ function M.assertItemsEquals(actual, expected, extra_msg_or_nil)
 	-- is at least O(n^2)
 	if not _is_table_items_equals(actual, expected) then
 		expected, actual = prettystrPairs(expected, actual)
-		fail_fmt(
-			2,
-			extra_msg_or_nil,
-			"Content of the tables are not identical:\nExpected: %s\nActual: %s",
-			expected,
-			actual
-		)
+		fail_fmt(2, extra_msg_or_nil, "Content of the tables are not identical:\nExpected: %s\nActual: %s", expected, actual)
 	end
 end
 
@@ -1550,14 +1493,7 @@ function M.assertStrContains(str, sub, isPattern, extra_msg_or_nil)
 	-- assert( type(sub) == 'string', 'Argument 2 of assertStrContains() should be a string.' ) )
 	if not string.find(str, sub, 1, not isPattern) then
 		sub, str = prettystrPairs(sub, str, "\n")
-		fail_fmt(
-			2,
-			extra_msg_or_nil,
-			"Could not find %s %s in string %s",
-			isPattern and "pattern" or "substring",
-			sub,
-			str
-		)
+		fail_fmt(2, extra_msg_or_nil, "Could not find %s %s in string %s", isPattern and "pattern" or "substring", sub, str)
 	end
 end
 
@@ -1575,14 +1511,7 @@ function M.assertNotStrContains(str, sub, isPattern, extra_msg_or_nil)
 	-- a string always contains the empty string
 	if string.find(str, sub, 1, not isPattern) then
 		sub, str = prettystrPairs(sub, str, "\n")
-		fail_fmt(
-			2,
-			extra_msg_or_nil,
-			"Found the not expected %s %s in string %s",
-			isPattern and "pattern" or "substring",
-			sub,
-			str
-		)
+		fail_fmt(2, extra_msg_or_nil, "Found the not expected %s %s in string %s", isPattern and "pattern" or "substring", sub, str)
 	end
 end
 
@@ -1657,11 +1586,7 @@ function M.assertErrorMsgContains(partialMsg, func, ...)
 	-- example: assertError( f, 1, 2 ) => f(1,2) should generate an error
 	local no_error, error_msg = pcall(func, ...)
 	if no_error then
-		failure(
-			"No error generated when calling function but expected error containing: " .. prettystr(partialMsg),
-			nil,
-			2
-		)
+		failure("No error generated when calling function but expected error containing: " .. prettystr(partialMsg), nil, 2)
 	end
 	if type(error_msg) ~= "string" then
 		error_msg = tostring(error_msg)
@@ -1684,13 +1609,7 @@ function M.assertErrorMsgMatches(expectedMsg, func, ...)
 	end
 	if not strMatch(error_msg, expectedMsg) then
 		expectedMsg, error_msg = prettystrPairs(expectedMsg, error_msg)
-		fail_fmt(
-			2,
-			nil,
-			"Error message does not match pattern: %s\nError message received: %s\n",
-			expectedMsg,
-			error_msg
-		)
+		fail_fmt(2, nil, "Error message does not match pattern: %s\nError message received: %s\n", expectedMsg, error_msg)
 	end
 end
 
@@ -1764,29 +1683,14 @@ for _, funcName in ipairs({
 }) do
 	local typeExpected = funcName:match("^assertIs([A-Z]%a*)$")
 	-- Lua type() always returns lowercase, also make sure the match() succeeded
-	typeExpected = typeExpected and typeExpected:lower()
-		or error("bad function name '" .. funcName .. "' for type assertion")
+	typeExpected = typeExpected and typeExpected:lower() or error("bad function name '" .. funcName .. "' for type assertion")
 
 	M[funcName] = function(value, extra_msg_or_nil)
 		if type(value) ~= typeExpected then
 			if type(value) == "nil" then
-				fail_fmt(
-					2,
-					extra_msg_or_nil,
-					"expected: a %s value, actual: nil",
-					typeExpected,
-					type(value),
-					prettystrPairs(value)
-				)
+				fail_fmt(2, extra_msg_or_nil, "expected: a %s value, actual: nil", typeExpected, type(value), prettystrPairs(value))
 			else
-				fail_fmt(
-					2,
-					extra_msg_or_nil,
-					"expected: a %s value, actual: type %s, value %s",
-					typeExpected,
-					type(value),
-					prettystrPairs(value)
-				)
+				fail_fmt(2, extra_msg_or_nil, "expected: a %s value, actual: type %s, value %s", typeExpected, type(value), prettystrPairs(value))
 			end
 		end
 	end
@@ -1823,18 +1727,11 @@ for _, funcName in ipairs({
 }) do
 	local typeUnexpected = funcName:match("^assertNotIs([A-Z]%a*)$")
 	-- Lua type() always returns lowercase, also make sure the match() succeeded
-	typeUnexpected = typeUnexpected and typeUnexpected:lower()
-		or error("bad function name '" .. funcName .. "' for type assertion")
+	typeUnexpected = typeUnexpected and typeUnexpected:lower() or error("bad function name '" .. funcName .. "' for type assertion")
 
 	M[funcName] = function(value, extra_msg_or_nil)
 		if type(value) == typeUnexpected then
-			fail_fmt(
-				2,
-				extra_msg_or_nil,
-				"expected: not a %s type, actual: value %s",
-				typeUnexpected,
-				prettystrPairs(value)
-			)
+			fail_fmt(2, extra_msg_or_nil, "expected: not a %s type, actual: value %s", typeUnexpected, prettystrPairs(value))
 		end
 	end
 end
@@ -1848,13 +1745,7 @@ function M.assertIs(actual, expected, extra_msg_or_nil)
 		M.PRINT_TABLE_REF_IN_ERROR_MSG = true
 		expected, actual = prettystrPairs(expected, actual, "\n", "")
 		M.PRINT_TABLE_REF_IN_ERROR_MSG = old_print_table_ref_in_error_msg
-		fail_fmt(
-			2,
-			extra_msg_or_nil,
-			"expected and actual object should not be different\nExpected: %s\nReceived: %s",
-			expected,
-			actual
-		)
+		fail_fmt(2, extra_msg_or_nil, "expected and actual object should not be different\nExpected: %s\nReceived: %s", expected, actual)
 	end
 end
 
@@ -1982,14 +1873,7 @@ function M.assertNotTableContains(t, expected, extra_msg_or_nil)
 	local k = table_findkeyof(t, expected)
 	if k ~= nil then
 		t, expected = prettystrPairs(t, expected)
-		fail_fmt(
-			2,
-			extra_msg_or_nil,
-			"Table %s DOES contain the unwanted element %s (at key %s)",
-			t,
-			expected,
-			prettystr(k)
-		)
+		fail_fmt(2, extra_msg_or_nil, "Table %s DOES contain the unwanted element %s (at key %s)", t, expected, prettystr(k))
 	end
 end
 
@@ -2351,14 +2235,7 @@ function JUnitOutput:endSuite()
 	self.fd:write("        </properties>\n")
 
 	for i, node in ipairs(self.result.allTests) do
-		self.fd:write(
-			string.format(
-				'        <testcase classname="%s" name="%s" time="%0.3f">\n',
-				node.className,
-				node.testName,
-				node.duration
-			)
-		)
+		self.fd:write(string.format('        <testcase classname="%s" name="%s" time="%0.3f">\n', node.className, node.testName, node.duration))
 		if node:isNotSuccess() then
 			self.fd:write(node:statusXML())
 		end
@@ -3257,23 +3134,13 @@ function M.LuaUnit.expandClasses(listOfNameAndInst)
 			table.insert(result, { name, instance })
 		else
 			if type(instance) ~= "table" then
-				error(
-					"Instance must be a table or a function, not a "
-						.. type(instance)
-						.. " with value "
-						.. prettystr(instance)
-				)
+				error("Instance must be a table or a function, not a " .. type(instance) .. " with value " .. prettystr(instance))
 			end
 			local className, methodName = M.LuaUnit.splitClassMethod(name)
 			if className then
 				local methodInstance = instance[methodName]
 				if methodInstance == nil then
-					error(
-						"Could not find method in class "
-							.. tostring(className)
-							.. " for method "
-							.. tostring(methodName)
-					)
+					error("Could not find method in class " .. tostring(className) .. " for method " .. tostring(methodName))
 				end
 				table.insert(result, { name, instance })
 			else
@@ -3416,9 +3283,7 @@ function M.LuaUnit:internalRunSuiteByNames(listOfName)
 			local methodInstance = instance[methodName]
 			if methodInstance == nil then
 				self:unregisterSuite()
-				error(
-					"Could not find method in class " .. tostring(className) .. " for method " .. tostring(methodName)
-				)
+				error("Could not find method in class " .. tostring(className) .. " for method " .. tostring(methodName))
 			end
 		else
 			-- for functions and classes

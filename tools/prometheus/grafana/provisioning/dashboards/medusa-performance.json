@@ -105,9 +105,39 @@
       ]
     },
     {
-      "title": "Lua Heap Size",
+      "title": "World Event Queue Depth",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 42 },
+      "targets": [{
+        "expr": "medusa_world_event_queue_depth{network=~\"$network\"}",
+        "legendFormat": "{{network}} {{event}}"
+      }]
+    },
+    {
+      "title": "World Event Drops",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 50 },
+      "targets": [{
+        "expr": "increase(medusa_world_events_dropped_total{network=~\"$network\"}[$__rate_interval])",
+        "legendFormat": "{{network}} {{event}}"
+      }]
+    },
+    {
+      "title": "Deferred Work Queue Depth",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 50 },
+      "targets": [
+        { "expr": "medusa_ammo_reconciliation_queue_depth{network=~\"$network\"}", "legendFormat": "{{network}} Ammo Reconciliation" },
+        { "expr": "medusa_crew_suppression_event_queue_depth{network=~\"$network\"}", "legendFormat": "{{network}} Suppression HIT" },
+        { "expr": "medusa_crew_suppression_impact_queue_depth{network=~\"$network\"}", "legendFormat": "{{network}} Suppression Impact" },
+        { "expr": "medusa_manpad_autonomous_scan_queue_depth{network=~\"$network\"}", "legendFormat": "{{network}} MANPAD Scan Rotation" },
+        { "expr": "medusa_aaa_local_search_queue_depth{network=~\"$network\"}", "legendFormat": "{{network}} AAA Search Rotation" }
+      ]
+    },
+    {
+      "title": "Lua Heap Size",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 58 },
       "targets": [{
         "expr": "medusa_lua_memory_kb",
         "legendFormat": "Heap (KB)"
@@ -117,7 +147,7 @@
     {
       "title": "Heap Growth Between Snapshots",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 50 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 58 },
       "targets": [{
         "expr": "medusa_lua_memory_delta_kb",
         "legendFormat": "Delta (KB)"
@@ -141,7 +171,7 @@
     {
       "title": "Per-Tick Memory Allocation",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 58 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 66 },
       "targets": [{
         "expr": "medusa_tick_memory_after_kb - medusa_tick_memory_before_kb",
         "legendFormat": "Tick Alloc (KB)"
@@ -165,7 +195,7 @@
     {
       "title": "Tick Memory Snapshot",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 58 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 66 },
       "targets": [
         { "expr": "medusa_tick_memory_before_kb", "legendFormat": "Before Tick (KB)" },
         { "expr": "medusa_tick_memory_after_kb", "legendFormat": "After Tick (KB)" }
@@ -175,7 +205,7 @@
     {
       "title": "Tick Failures (consecutive)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 66 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 74 },
       "targets": [
         { "expr": "medusa_tick_failures_consecutive", "legendFormat": "{{network}}" }
       ]
@@ -183,10 +213,65 @@
     {
       "title": "Phase Failures (consecutive)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 66 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 74 },
       "targets": [
         { "expr": "medusa_phase_failures_consecutive", "legendFormat": "{{network}} {{phase}}" }
       ]
+    },
+    {
+      "title": "RingBuffer Entries",
+      "type": "gauge",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 82 },
+      "targets": [{
+        "expr": "medusa_ringbuffer_items{network=~\"$network|__mission__\"}",
+        "legendFormat": "{{network}} {{buffer}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        }
+      },
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
+      }
+    },
+    {
+      "title": "RingBuffer Utilization",
+      "type": "gauge",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 94 },
+      "targets": [{
+        "expr": "medusa_ringbuffer_items{network=~\"$network|__mission__\"} / clamp_min(medusa_ringbuffer_capacity_items{network=~\"$network|__mission__\"}, 1)",
+        "legendFormat": "{{network}} {{buffer}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.6 },
+              { "color": "red", "value": 0.85 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      }
     }
   ],
   "refresh": "10s",

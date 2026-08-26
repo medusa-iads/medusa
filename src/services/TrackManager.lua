@@ -1,7 +1,9 @@
 require("_header")
 require("services.Services")
+require("observability.MetricsService")
 require("services.stores.TrackStore")
 require("services.TrackDisplayIdAllocator")
+require("entities.Battery")
 require("entities.Track")
 require("core.Constants")
 require("core.Config")
@@ -27,18 +29,67 @@ require("core.Logger")
 
 Medusa.Services.TrackManager = {}
 
+local function isFinite(value)
+	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+end
+
+local function isFiniteVec3(value)
+	return type(value) == "table" and isFinite(value.x) and isFinite(value.y) and isFinite(value.z)
+end
+
+--- Returns the source identity composed from DCS network ID and partition incarnation.
+local function reportKey(report)
+	if report.PartitionKey == nil then
+		return report.NetworkId
+	end
+	return tostring(report.NetworkId) .. "\001" .. tostring(report.PartitionKey)
+end
+
+--- Releases track assignments from batteryRepository at mission time now and starts each battery hold-down.
+local function releaseAssignedBatteries(track, batteryRepository, now)
+	local batteryIds = track.AssignedBatteryIds:toArray()
+	for i = 1, #batteryIds do
+		local battery = batteryRepository and batteryRepository:get(batteryIds[i]) or nil
+		if battery and battery.CurrentTargetTrackId == track.TrackId then
+			if Medusa.Entities.Battery.releaseTrack(battery, nil, track) then
+				battery.LastAssignmentChangeTime = now
+			end
+		else
+			track.AssignedBatteryIds:remove(batteryIds[i])
+		end
+	end
+end
+
+--- Moves valid assignments from absorbed to survivor through the Battery invariant owner.
+local function transferAssignedBatteries(absorbed, survivor, batteryRepository, now)
+	local batteryIds = absorbed.AssignedBatteryIds:toArray()
+	for i = 1, #batteryIds do
+		local batteryId = batteryIds[i]
+		local battery = batteryRepository and batteryRepository:get(batteryId) or nil
+		if battery and battery.CurrentTargetTrackId == absorbed.TrackId then
+			Medusa.Entities.Battery.releaseTrack(battery, nil, absorbed)
+			Medusa.Entities.Battery.assignTrack(battery, survivor, now, nil)
+		else
+			absorbed.AssignedBatteryIds:remove(batteryId)
+		end
+	end
+end
+
+--- Creates the track lifecycle owner with source-key, dormant, spatial, and assignment dependencies.
 function Medusa.Services.TrackManager:new(opts)
 	local o = {
 		_store = (opts and opts.store) or Medusa.Services.TrackStore:new(),
 		_eventBus = (opts and opts.eventBus) or EventBus(),
 		_geoGrid = (opts and opts.geoGrid) or nil,
-		_byNetworkId = {},
+		_trackIdBySourceKey = {},
 		_dormant = {},
 		_logger = Medusa.Logger:ns("TrackManager"),
 		_pruneBuffer = {},
+		_partitionRetirementBuffer = {},
 		_staleBuffer = {},
 		_expiredBuffer = {},
 		_displayIdAllocator = (opts and opts.displayIdAllocator) or Medusa.Services.TrackDisplayIdAllocator:new(),
+		_batteryRepository = opts and opts.batteryRepository or nil,
 		_trackMemoryDurationSec = Medusa.Config:getTrackMemoryDurationSec(),
 		_smoothedVelocityWindowSec = Medusa.Config:getSmoothedVelocityWindowSec(),
 	}
@@ -56,27 +107,29 @@ function Medusa.Services.TrackManager:_releaseDisplayIds(track)
 	end
 end
 
+--- Creates, updates, or reassociates the track identified by a partition-local sensor report.
 function Medusa.Services.TrackManager:processReport(report, now)
 	if
 		not report
 		or not report.NetworkId
 		or not Medusa.Constants.TrackSourcePrefix[report.SourceType]
-		or not report.Position
-		or not report.Velocity
+		or not isFiniteVec3(report.Position)
+		or not isFiniteVec3(report.Velocity)
 	then
 		self._logger:error("processReport: invalid report (missing required fields)")
 		return nil
 	end
 
 	now = now or GetTime()
-	local existingTrackId = self._byNetworkId[report.NetworkId]
+	local sourceKey = reportKey(report)
+	local existingTrackId = self._trackIdBySourceKey[sourceKey]
 
 	if existingTrackId then
 		return self:_updateExistingTrack(existingTrackId, report, now)
 	end
 
 	-- Check dormant cache for re-association
-	local dormant = self._dormant[report.NetworkId]
+	local dormant = self._dormant[sourceKey]
 	if dormant and dormant.Position then
 		local dx = report.Position.x - dormant.Position.x
 		local dy = report.Position.y - dormant.Position.y
@@ -91,7 +144,7 @@ function Medusa.Services.TrackManager:processReport(report, now)
 		dz = report.Position.z - predictedZ
 		local predictedPositionError = math.sqrt(dx * dx + dy * dy + dz * dz)
 		if math.min(lastPositionError, predictedPositionError) < Medusa.Constants.TRACK_REASSOC_MAX_DIST_M then
-			self._dormant[report.NetworkId] = nil
+			self._dormant[sourceKey] = nil
 			return self:_reassociateTrack(report, dormant, now)
 		end
 		self:_releaseDisplayIds(dormant)
@@ -104,58 +157,81 @@ function Medusa.Services.TrackManager:processReport(report, now)
 				Medusa.Constants.TRACK_REASSOC_MAX_DIST_M
 			)
 		)
-		self._dormant[report.NetworkId] = nil
+		self._dormant[sourceKey] = nil
 	end
 
 	return self:_createNewTrack(report, now)
 end
 
-function Medusa.Services.TrackManager:_registerTrack(track, networkId, now)
-	self._store:add(track)
-	if self._geoGrid and track.Position then
-		self._geoGrid:add("Track", track.TrackId, track.Position)
+--- Publishes one track to every owned index and reports whether capacity allowed admission.
+function Medusa.Services.TrackManager:_registerTrack(track, sourceKey, now)
+	if not self._store:add(track) then
+		return false, "CAPACITY"
 	end
-	self._byNetworkId[networkId] = track.TrackId
+	if self._geoGrid and track.Position and self._geoGrid:add("Track", track.TrackId, track.Position) ~= true then
+		self._store:remove(track.TrackId)
+		return false, "SPATIAL_INDEX"
+	end
+	self._trackIdBySourceKey[sourceKey] = track.TrackId
 	self._eventBus:publish({ id = "TrackCreated", TrackId = track.TrackId, timestamp = now })
+	return true, nil
 end
 
+--- Creates a new active track from report and returns its stored entity.
 function Medusa.Services.TrackManager:_createNewTrack(report, now)
 	local displayTrackId = self._displayIdAllocator:allocate(report.SourceType)
 	local track = Medusa.Entities.Track.new({
 		NetworkId = report.NetworkId,
+		PartitionKey = report.PartitionKey,
 		DisplayTrackId = displayTrackId,
 		OriginSourceType = report.SourceType,
 		Position = report.Position,
 		Velocity = report.Velocity,
 	})
-	self:_registerTrack(track, report.NetworkId, now)
-	Medusa.Services.MetricsService.inc("medusa_tracks_created_total")
-	self._logger:debug(
-		string.format(
-			"created track %s for network %s",
-			Medusa.Entities.Track.displayId(track),
-			tostring(report.NetworkId)
-		)
-	)
+	local registered, failure = self:_registerTrack(track, reportKey(report), now)
+	if not registered then
+		self._displayIdAllocator:release(displayTrackId)
+		if failure == "CAPACITY" then
+			self._logger:error(string.format("track capacity exceeded: %d", Medusa.Constants.TRACK_CAPACITY))
+		else
+			self._logger:error("track spatial admission failed; track ownership rolled back")
+		end
+		return nil
+	end
+	Medusa.Observability.MetricsService.inc("medusa_tracks_created_total")
+	self._logger:debug(string.format("created track %s for network %s", Medusa.Entities.Track.displayId(track), tostring(report.NetworkId)))
 	return track
 end
 
+--- Restores retained classification and display identity onto a new active track incarnation.
 function Medusa.Services.TrackManager:_reassociateTrack(report, dormant, now)
+	local restoredAircraftType = dormant.AssessedAircraftType
+	if restoredAircraftType == Medusa.Constants.AssessedAircraftType.HARM then
+		restoredAircraftType = Medusa.Constants.AssessedAircraftType.UNKNOWN
+	end
 	local track = Medusa.Entities.Track.new({
 		NetworkId = report.NetworkId,
+		PartitionKey = report.PartitionKey,
 		DisplayTrackId = dormant.DisplayTrackId,
 		DisplayTrackIdAliases = dormant.DisplayTrackIdAliases,
 		OriginSourceType = dormant.OriginSourceType,
 		Position = report.Position,
 		Velocity = report.Velocity,
 		TrackIdentification = dormant.TrackIdentification,
-		AssessedAircraftType = dormant.AssessedAircraftType,
+		AssessedAircraftType = restoredAircraftType,
 		LastIdentificationTime = dormant.LastIdentificationTime,
-		HarmAssessment = dormant.HarmAssessment,
-		HarmLikelihoodScore = dormant.HarmLikelihoodScore,
-		IsSeadThreat = dormant.IsSeadThreat,
 	})
-	self:_registerTrack(track, report.NetworkId, now)
+	local sourceKey = reportKey(report)
+	local registered, failure = self:_registerTrack(track, sourceKey, now)
+	if not registered then
+		self._dormant[sourceKey] = dormant
+		if failure == "CAPACITY" then
+			self._logger:error(string.format("track capacity exceeded: %d", Medusa.Constants.TRACK_CAPACITY))
+		else
+			self._logger:error("track spatial admission failed; dormant ownership restored")
+		end
+		return nil
+	end
 	self._logger:info(
 		string.format(
 			"re-associated track %s for network %s (was %s/%s)",
@@ -168,10 +244,11 @@ function Medusa.Services.TrackManager:_reassociateTrack(report, dormant, now)
 	return track
 end
 
+--- Updates one live track and republishes its derived motion state.
 function Medusa.Services.TrackManager:_updateExistingTrack(trackId, report, now)
 	local track = self._store:get(trackId)
 	if not track then
-		self._byNetworkId[report.NetworkId] = nil
+		self._trackIdBySourceKey[reportKey(report)] = nil
 		return self:_createNewTrack(report, now)
 	end
 
@@ -196,14 +273,54 @@ function Medusa.Services.TrackManager:_updateExistingTrack(trackId, report, now)
 	return track
 end
 
-function Medusa.Services.TrackManager:_remapNetworkIdMappings(fromTrackId, toTrackId)
-	for networkId, mappedTrackId in pairs(self._byNetworkId) do
+--- Removes one track from runtime indexes and records its terminal lifecycle reason after successful store removal.
+function Medusa.Services.TrackManager:_removeStoredTrack(track, now, reason)
+	if not track then
+		return false
+	end
+	local removed = self._store:remove(track.TrackId)
+	if not removed then
+		return false
+	end
+	Medusa.Entities.Track.transitionLifecycle(track, Medusa.Constants.TrackLifecycleState.EXPIRED, reason)
+	if self._geoGrid then
+		self._geoGrid:remove(track.TrackId)
+	end
+	self:_remapSourceKeyMappings(track.TrackId, nil)
+	self._eventBus:publish({ id = "TrackRemoved", TrackId = track.TrackId, timestamp = now })
+	return true
+end
+
+--- Retires tracks owned by partition incarnations absent from the committed snapshot.
+--- @param currentPartitionKeys table<string, boolean> Current partition-key membership set
+--- @param now number Current mission time in seconds
+--- @return number retiredCount Number of obsolete tracks removed
+function Medusa.Services.TrackManager:retirePartitionIncarnations(currentPartitionKeys, now)
+	local tracks = self._store:getAll(self._partitionRetirementBuffer)
+	local retiredCount = 0
+	for i = 1, #tracks do
+		local track = tracks[i]
+		if track.PartitionKey ~= nil and not currentPartitionKeys[track.PartitionKey] then
+			releaseAssignedBatteries(track, self._batteryRepository, now)
+			if self:_removeStoredTrack(track, now, "partition retired") then
+				self:_releaseDisplayIds(track)
+				retiredCount = retiredCount + 1
+			end
+		end
+	end
+	return retiredCount
+end
+
+--- Repoints every source key from one track ID to its survivor or nil.
+function Medusa.Services.TrackManager:_remapSourceKeyMappings(fromTrackId, toTrackId)
+	for sourceKey, mappedTrackId in pairs(self._trackIdBySourceKey) do
 		if mappedTrackId == fromTrackId then
-			self._byNetworkId[networkId] = toTrackId
+			self._trackIdBySourceKey[sourceKey] = toTrackId
 		end
 	end
 end
 
+--- Marks old tracks stale, expires older tracks, and cleans assignments and dormant history.
 function Medusa.Services.TrackManager:pruneStale(now)
 	local thresholdSec = self._trackMemoryDurationSec
 	local cutoff = now - thresholdSec
@@ -233,7 +350,7 @@ function Medusa.Services.TrackManager:pruneStale(now)
 	for i = 1, #staleIds do
 		local track = self._store:get(staleIds[i])
 		if track then
-			track.LifecycleState = LS.STALE
+			Medusa.Entities.Track.transitionLifecycle(track, LS.STALE, "memory timeout")
 			self._eventBus:publish({ id = "TrackBecameStale", TrackId = staleIds[i], timestamp = now })
 		end
 	end
@@ -241,13 +358,15 @@ function Medusa.Services.TrackManager:pruneStale(now)
 	for i = 1, #expiredIds do
 		local track = self._store:get(expiredIds[i])
 		if track then
+			releaseAssignedBatteries(track, self._batteryRepository, now)
 			local age = now - track.FirstDetectionTime
-			Medusa.Services.MetricsService.observe("medusa_track_age_at_expiry_seconds", age)
-			Medusa.Services.MetricsService.observe("medusa_track_updates_at_expiry", track.UpdateCount or 0)
-			Medusa.Services.MetricsService.inc("medusa_tracks_expired_total")
+			Medusa.Observability.MetricsService.observe("medusa_track_age_at_expiry_seconds", age)
+			Medusa.Observability.MetricsService.observe("medusa_track_updates_at_expiry", track.UpdateCount or 0)
+			Medusa.Observability.MetricsService.inc("medusa_tracks_expired_total")
 			-- Save classification state for re-association
 			if track.NetworkId then
-				self._dormant[track.NetworkId] = {
+				local sourceKey = reportKey(track)
+				self._dormant[sourceKey] = {
 					Position = track.Position,
 					Velocity = track.Velocity,
 					LastDetectionTime = track.LastDetectionTime,
@@ -257,23 +376,13 @@ function Medusa.Services.TrackManager:pruneStale(now)
 					TrackIdentification = track.TrackIdentification,
 					AssessedAircraftType = track.AssessedAircraftType,
 					LastIdentificationTime = track.LastIdentificationTime,
-					HarmAssessment = track.HarmAssessment,
-					HarmLikelihoodScore = track.HarmLikelihoodScore,
-					IsSeadThreat = track.IsSeadThreat,
 					expiredAt = now,
 				}
 			else
 				self:_releaseDisplayIds(track)
 			end
 		end
-		local removed = self._store:remove(expiredIds[i])
-		if removed then
-			if self._geoGrid then
-				self._geoGrid:remove(expiredIds[i])
-			end
-			self:_remapNetworkIdMappings(removed.TrackId, nil)
-			self._eventBus:publish({ id = "TrackRemoved", TrackId = expiredIds[i], timestamp = now })
-		end
+		self:_removeStoredTrack(track, now, "memory expired")
 	end
 
 	-- Evict stale dormant entries
@@ -285,6 +394,7 @@ function Medusa.Services.TrackManager:pruneStale(now)
 	end
 end
 
+--- Merges same-partition tracks while preserving display aliases and bidirectional assignments.
 function Medusa.Services.TrackManager:mergeTracks(survivingTrackId, absorbedTrackId, now)
 	if survivingTrackId == absorbedTrackId then
 		error("cannot merge a track into itself")
@@ -294,13 +404,17 @@ function Medusa.Services.TrackManager:mergeTracks(survivingTrackId, absorbedTrac
 	if not survivor or not absorbed then
 		error("merge requires two existing tracks")
 	end
+	if survivor.PartitionKey ~= absorbed.PartitionKey then
+		error("cannot merge tracks from different partition incarnations")
+	end
 	local absorbedDisplayId = Medusa.Entities.Track.displayId(absorbed)
 
 	Medusa.Entities.Track.addDisplayIdAlias(survivor, absorbed.DisplayTrackId)
 	for i = 1, #absorbed.DisplayTrackIdAliases do
 		Medusa.Entities.Track.addDisplayIdAlias(survivor, absorbed.DisplayTrackIdAliases[i])
 	end
-	self:_remapNetworkIdMappings(absorbedTrackId, survivingTrackId)
+	transferAssignedBatteries(absorbed, survivor, self._batteryRepository, now or GetTime())
+	self:_remapSourceKeyMappings(absorbedTrackId, survivingTrackId)
 	self._store:remove(absorbedTrackId)
 	if self._geoGrid then
 		self._geoGrid:remove(absorbedTrackId)
@@ -311,23 +425,17 @@ function Medusa.Services.TrackManager:mergeTracks(survivingTrackId, absorbedTrac
 		MergedTrackId = absorbedTrackId,
 		timestamp = now or GetTime(),
 	})
-	self._logger:info(
-		string.format(
-			"merged track %s into track %s; retained %s as an alias",
-			absorbedDisplayId,
-			Medusa.Entities.Track.displayId(survivor),
-			absorbedDisplayId
-		)
-	)
+	self._logger:info(string.format("merged track %s into track %s; retained %s as an alias", absorbedDisplayId, Medusa.Entities.Track.displayId(survivor), absorbedDisplayId))
 	return survivor
 end
 
+--- Creates the new source track for a split while retaining continuingTrackId unchanged.
 function Medusa.Services.TrackManager:splitTrack(continuingTrackId, report, now)
 	if not self._store:get(continuingTrackId) then
 		error("split requires an existing continuing track")
 	end
-	if report and self._byNetworkId[report.NetworkId] then
-		error("split report requires a new network ID")
+	if report and self._trackIdBySourceKey[reportKey(report)] then
+		error("split report requires a new source-partition identity")
 	end
 	return self:processReport(report, now)
 end

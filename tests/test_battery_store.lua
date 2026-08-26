@@ -56,6 +56,18 @@ function TestBatteryStore:test_add_and_get()
 	lu.assertIs(self.store:get("bat-1"), battery)
 end
 
+function TestBatteryStore:test_capacity_rejects_additional_battery_without_growth()
+	for i = 1, Medusa.Constants.C2.MAX_BATTERIES do
+		self.store:add(makeBattery("bat-" .. i, i))
+	end
+
+	lu.assertError(function()
+		self.store:add(makeBattery("overflow", 1000))
+	end)
+	lu.assertEquals(self.store:count(), Medusa.Constants.C2.MAX_BATTERIES)
+	lu.assertNil(self.store:get("overflow"))
+end
+
 function TestBatteryStore:test_add_duplicate_errors()
 	self.store:add(makeBattery("bat-1", 100))
 
@@ -172,7 +184,8 @@ end
 
 function TestBatteryStore:test_unit_index_tracks_add_unit_removal_and_battery_removal()
 	local manpad = makeManpad("manpad-1", 200, 300)
-	manpad.Units[2] = { UnitId = 301 }
+	manpad.Units[1].UnitName = "manpad-1-1"
+	manpad.Units[2] = { UnitId = 301, UnitName = "manpad-1-2" }
 	self.store:add(manpad)
 
 	local indexedBattery, indexedUnit = self.store:getByUnitId(301)
@@ -183,10 +196,53 @@ function TestBatteryStore:test_unit_index_tracks_add_unit_removal_and_battery_re
 	lu.assertIs(removedBattery, manpad)
 	lu.assertEquals(removedUnit.UnitId, 300)
 	lu.assertIsNil(self.store:getByUnitId(300))
+	lu.assertIsNil(self.store:resolveUnit(nil, "manpad-1-1"))
 	lu.assertEquals(#manpad.Units, 1)
 
 	self.store:remove("manpad-1")
 	lu.assertIsNil(self.store:getByUnitId(301))
+	lu.assertIsNil(self.store:resolveUnit(nil, "manpad-1-2"))
+end
+
+function TestBatteryStore:test_resolveUnit_uses_exact_name_when_event_id_is_not_indexed()
+	local battery = makeManpad("scenario-one-sa10", 11, 100072)
+	battery.Units[1].UnitName = "pvo.4d.606zrp.1bn-10"
+	self.store:add(battery)
+
+	local resolvedBattery, resolvedUnit, source = self.store:resolveUnit(72, "pvo.4d.606zrp.1bn-10")
+
+	lu.assertIs(resolvedBattery, battery)
+	lu.assertIs(resolvedUnit, battery.Units[1])
+	lu.assertEquals(source, "unit-name")
+	lu.assertIs(self.store:getByUnitId(72), battery)
+end
+
+function TestBatteryStore:test_resolveUnit_replaces_the_bounded_event_id_alias()
+	local battery = makeManpad("scenario-one-sa10", 11, 100072)
+	battery.Units[1].UnitName = "pvo.4d.606zrp.1bn-10"
+	self.store:add(battery)
+
+	self.store:resolveUnit(72, "pvo.4d.606zrp.1bn-10")
+	self.store:resolveUnit(73, "pvo.4d.606zrp.1bn-10")
+
+	lu.assertNil(self.store:getByUnitId(72))
+	lu.assertIs(self.store:getByUnitId(73), battery)
+	lu.assertIs(self.store:getByUnitId(100072), battery)
+end
+
+function TestBatteryStore:test_resolveUnit_rejects_conflicting_id_and_name_owners()
+	local byId = makeManpad("by-id", 201, 72)
+	byId.Units[1].UnitName = "other-launcher"
+	local byName = makeManpad("by-name", 202, 100072)
+	byName.Units[1].UnitName = "pvo.4d.606zrp.1bn-10"
+	self.store:add(byId)
+	self.store:add(byName)
+
+	local battery, unit, source = self.store:resolveUnit(72, "pvo.4d.606zrp.1bn-10")
+
+	lu.assertNil(battery)
+	lu.assertNil(unit)
+	lu.assertEquals(source, "identity-conflict")
 end
 
 function TestBatteryStore:test_position_refresh_cursor_rotates_live_units()
@@ -207,7 +263,9 @@ function TestBatteryStore:test_position_refresh_cursor_rotates_live_units()
 end
 
 function TestBatteryStore:test_rejects_duplicate_group_and_unit_identifiers_without_partial_add()
-	self.store:add(makeManpad("manpad-1", 200, 300))
+	local existing = makeManpad("manpad-1", 200, 300)
+	existing.Units[1].UnitName = "managed-unit"
+	self.store:add(existing)
 
 	lu.assertErrorMsgContains("duplicate GroupId: 200", function()
 		self.store:add(makeManpad("manpad-2", 200, 301))
@@ -215,10 +273,16 @@ function TestBatteryStore:test_rejects_duplicate_group_and_unit_identifiers_with
 	lu.assertErrorMsgContains("duplicate UnitId: 300", function()
 		self.store:add(makeManpad("manpad-3", 201, 300))
 	end)
+	local duplicateName = makeManpad("manpad-4", 203, 303)
+	duplicateName.Units[1].UnitName = "managed-unit"
+	lu.assertErrorMsgContains("duplicate UnitName: managed-unit", function()
+		self.store:add(duplicateName)
+	end)
 
 	lu.assertEquals(self.store:count(), 1)
 	lu.assertIsNil(self.store:get("manpad-2"))
 	lu.assertIsNil(self.store:get("manpad-3"))
+	lu.assertIsNil(self.store:get("manpad-4"))
 end
 
 function TestBatteryStore:test_manpad_role_and_state_must_match()

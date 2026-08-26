@@ -158,11 +158,7 @@ local function nextBatteryAfter(batteries, batteryId)
 		if not first or battery.BatteryId < first.BatteryId then
 			first = battery
 		end
-		if
-			batteryId
-			and battery.BatteryId > batteryId
-			and (not nextBattery or battery.BatteryId < nextBattery.BatteryId)
-		then
+		if batteryId and battery.BatteryId > batteryId and (not nextBattery or battery.BatteryId < nextBattery.BatteryId) then
 			nextBattery = battery
 		end
 	end
@@ -202,6 +198,7 @@ function Medusa.Services.CrewPerceptionService.refreshOne(ctx)
 	return cursorBatteryId, true
 end
 
+--- Visits at most ctx.budget observer units and returns position-refresh counts by owner type.
 function Medusa.Services.CrewPerceptionService.refreshUnitPositions(ctx)
 	local visited = 0
 	local refreshed = 0
@@ -215,21 +212,26 @@ function Medusa.Services.CrewPerceptionService.refreshUnitPositions(ctx)
 		visited = visited + 1
 		local lastRefresh = unit.LastPositionRefreshTime
 		if unit.UnitName and (not lastRefresh or ctx.now - lastRefresh >= D.POSITION_REFRESH_MIN_INTERVAL_SEC) then
-			local position = GetUnitPosition(unit.UnitName)
-			unit.LastPositionRefreshTime = ctx.now
-			if position then
-				unit.Position = position
-				local headingRefreshed = refreshUnitHeading(battery, unit)
-				ctx.spatialIndex:syncSuppressibleUnit(unit)
-				if battery.PositionAnchorUnitId == unit.UnitId then
-					battery.Position = position
-					ctx.spatialIndex:syncBattery(battery)
-				end
-				refreshed = refreshed + 1
-				if headingRefreshed and battery.Role == Medusa.Constants.BatteryRole.AAA then
-					aaaRefreshed = aaaRefreshed + 1
-				elseif headingRefreshed and battery.Role == Medusa.Constants.BatteryRole.MANPAD then
-					manpadRefreshed = manpadRefreshed + 1
+			local health = GetUnitHealth(unit.UnitName)
+			if health and health.IsAlive == false then
+				ctx.onUnitConfirmedDead(battery, unit)
+			else
+				local position = GetUnitPosition(unit.UnitName)
+				unit.LastPositionRefreshTime = ctx.now
+				if position then
+					unit.Position = position
+					local headingRefreshed = refreshUnitHeading(battery, unit)
+					ctx.spatialIndex:syncSuppressibleUnit(unit)
+					if battery.PositionAnchorUnitId == unit.UnitId then
+						battery.Position = position
+						ctx.spatialIndex:syncBattery(battery)
+					end
+					refreshed = refreshed + 1
+					if headingRefreshed and battery.Role == Medusa.Constants.BatteryRole.AAA then
+						aaaRefreshed = aaaRefreshed + 1
+					elseif headingRefreshed and battery.Role == Medusa.Constants.BatteryRole.MANPAD then
+						manpadRefreshed = manpadRefreshed + 1
+					end
 				end
 			end
 		end

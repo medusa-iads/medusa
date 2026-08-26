@@ -73,11 +73,7 @@ function Medusa.Entities.Battery.validateManpadState(role, manpad)
 	if manpad.LastAlertedTime ~= nil and type(manpad.LastAlertedTime) ~= "number" then
 		error("MANPAD LastAlertedTime must be a number")
 	end
-	if
-		type(manpad.AudioCueRangeM) ~= "number"
-		or manpad.AudioCueRangeM < MC.AUDIO_RANGE_MIN_M
-		or manpad.AudioCueRangeM > MC.AUDIO_RANGE_MAX_M
-	then
+	if type(manpad.AudioCueRangeM) ~= "number" or manpad.AudioCueRangeM < MC.AUDIO_RANGE_MIN_M or manpad.AudioCueRangeM > MC.AUDIO_RANGE_MAX_M then
 		error("MANPAD AudioCueRangeM must be within the supported range")
 	end
 	if type(manpad.UnitHeadings) ~= "table" then
@@ -107,15 +103,16 @@ function Medusa.Entities.Battery.prepareManpadState(role, manpad)
 	Medusa.Entities.Battery.validateManpadState(role, manpad)
 end
 
+--- Returns the validated initial AAA response state.
 function Medusa.Entities.Battery.newAaaState()
 	return {
 		ResponseState = Medusa.Constants.Aaa.ResponseState.IDLE,
 		UnitHeadings = {},
 		UnitHeadingCount = 0,
-		FireTaskActive = false,
 	}
 end
 
+--- Rejects malformed AAA response state.
 function Medusa.Entities.Battery.validateAaaState(role, aaa)
 	if role ~= BR.AAA then
 		if aaa ~= nil then
@@ -134,6 +131,7 @@ function Medusa.Entities.Battery.validateAaaState(role, aaa)
 	end
 end
 
+--- Creates the battery aggregate whose data owns units, readiness, assignments, and local-defense state.
 function Medusa.Entities.Battery.new(data)
 	if not data then
 		error("data table is required")
@@ -173,6 +171,7 @@ function Medusa.Entities.Battery.new(data)
 		EngagementAltitudeMax = data.EngagementAltitudeMax,
 		EngagementAltitudeMin = data.EngagementAltitudeMin,
 		TotalAmmoStatus = data.TotalAmmoStatus or 0,
+		AmmoKnown = data.AmmoKnown ~= false,
 		Position = data.Position,
 		PositionAnchorUnitId = data.PositionAnchorUnitId,
 		LastStateChangeTime = nil,
@@ -183,13 +182,11 @@ function Medusa.Entities.Battery.new(data)
 		EffectiveReactionDelaySec = nil,
 		AmmoDepletedBehavior = data.AmmoDepletedBehavior,
 		IsPointDefense = data.IsPointDefense or false,
-		PointDefenseTargetId = data.PointDefenseTargetId,
-		PointDefenseProviderId = data.PointDefenseProviderId,
-		HarmCapableUnitCount = data.HarmCapableUnitCount or 0,
+		HarmDefenseCapacity = data.HarmDefenseCapacity or 0,
 		HarmDefenseState = nil,
-		HarmDefenseDefenders = 0,
+		HarmDefenseAvailableCapacity = 0,
+		HarmDefenseCommittedCapacity = 0,
 		HarmDefenseThreats = 0,
-		HarmDefenseRatio = 0,
 		GroupDiameterM = data.GroupDiameterM,
 		CrewSuppressionState = Medusa.Constants.CrewSuppressionState.CLEAR,
 		CrewSuppressionCause = nil,
@@ -205,6 +202,10 @@ function Medusa.Entities.Battery.new(data)
 		Manpad = data.Manpad,
 		Aaa = aaa,
 		RearmCheckTime = nil,
+		ErectPending = data.ErectPending,
+		ErectRetryAt = data.ErectRetryAt,
+		PartitionKey = data.PartitionKey,
+		CoordinationState = data.CoordinationState or Medusa.Constants.CoordinationState.DEGRADED,
 	}
 
 	return o
@@ -262,6 +263,21 @@ function Medusa.Entities.Battery.newUnit(data)
 	}
 end
 
+--- Enforces same-partition, suppression, coordination, and degraded doctrine policy for battery and track.
+function Medusa.Entities.Battery.canAcceptTrack(battery, track, doctrine)
+	if not battery or not track or not battery.PartitionKey or battery.PartitionKey ~= track.PartitionKey or Medusa.Entities.Battery.isCrewSuppressed(battery) then
+		return false
+	end
+	if battery.CoordinationState == Medusa.Constants.CoordinationState.COORDINATED then
+		return true
+	end
+	if doctrine and doctrine.DegradedMode == Medusa.Constants.NetworkDegradationPolicy.REVERT_TO_AUTONOMOUS then
+		return true
+	end
+	local defensive = track.AssessedAircraftType == Medusa.Constants.AssessedAircraftType.HARM or track.IsSeadThreat == true
+	return defensive and doctrine and doctrine.DegradedMode == Medusa.Constants.NetworkDegradationPolicy.REVERT_TO_SELF_DEFENSE
+end
+
 function Medusa.Entities.Battery.isCrewSuppressed(battery)
 	return battery and battery.CrewSuppressionState == Medusa.Constants.CrewSuppressionState.SUPPRESSED
 end
@@ -315,34 +331,53 @@ function Medusa.Entities.Battery.canDeactivate(battery, now)
 	return true
 end
 
+--- Reports whether recent assignment or firing activity keeps battery HOT through holdDownSec at now.
+function Medusa.Entities.Battery.isWithinDeactivationHoldDown(battery, now, holdDownSec)
+	local lastActivity = math.max(battery.LastAssignmentChangeTime or 0, battery.LastShotTime or 0)
+	return lastActivity > 0 and (now - lastActivity) < (holdDownSec or 0)
+end
+
 function Medusa.Entities.Battery.transitionTo(battery, newState, now)
 	battery.ActivationState = newState
 	battery.LastStateChangeTime = now
 	return true
 end
 
---- Sets the battery's target and registers it in the track's AssignedBatteryIds.
-function Medusa.Entities.Battery.assignTrack(battery, track, now)
-	battery.CurrentTargetTrackId = track.TrackId
-	battery.LastAssignmentChangeTime = now
-	if track.AssignedBatteryIds then
-		track.AssignedBatteryIds:add(battery.BatteryId)
-	end
-end
-
---- Clears the battery's target and removes it from the track's AssignedBatteryIds.
-function Medusa.Entities.Battery.releaseTrack(battery, trackStore)
-	local trackId = battery.CurrentTargetTrackId
+--- Removes battery's current assignment from both battery and track ownership and reports whether one existed.
+function Medusa.Entities.Battery.releaseTrack(battery, trackStore, knownTrack)
+	local trackId = battery and battery.CurrentTargetTrackId or nil
 	if not trackId then
-		return
+		return false
+	end
+	if knownTrack and knownTrack.TrackId ~= trackId then
+		return false
+	end
+	local track = knownTrack
+	if not track and trackStore then
+		track = trackStore:get(trackId)
 	end
 	battery.CurrentTargetTrackId = nil
-	if trackStore then
-		local track = trackStore:get(trackId)
-		if track then
-			track.AssignedBatteryIds:remove(battery.BatteryId)
-		end
+	if track and track.TrackId == trackId and track.AssignedBatteryIds then
+		track.AssignedBatteryIds:remove(battery.BatteryId)
 	end
+	return true
+end
+
+--- Assigns track to battery at now while preserving both assignment sides through any prior track in trackStore.
+function Medusa.Entities.Battery.assignTrack(battery, track, now, trackStore)
+	if not battery or not track or not track.TrackId or not track.AssignedBatteryIds then
+		return false
+	end
+	if battery.CurrentTargetTrackId and battery.CurrentTargetTrackId ~= track.TrackId then
+		if not trackStore then
+			return false
+		end
+		Medusa.Entities.Battery.releaseTrack(battery, trackStore)
+	end
+	battery.CurrentTargetTrackId = track.TrackId
+	battery.LastAssignmentChangeTime = now
+	track.AssignedBatteryIds:add(battery.BatteryId)
+	return true
 end
 
 --- Sets up last-chance salvo state after a handoff.
@@ -409,6 +444,11 @@ function Medusa.Entities.Battery.isAmmoBearingUnit(battery, unit)
 	return false
 end
 
+--- Returns whether battery has a confirmed positive ammunition total for a new engagement.
+function Medusa.Entities.Battery.hasKnownAmmo(battery)
+	return battery.AmmoKnown ~= false and (battery.TotalAmmoStatus or 0) > 0
+end
+
 function Medusa.Entities.Battery.updateAmmoEnvelope(at, env)
 	if at.RangeMax and (not env.maxWeaponRange or at.RangeMax > env.maxWeaponRange) then
 		env.maxWeaponRange = at.RangeMax
@@ -448,12 +488,7 @@ function Medusa.Entities.Battery.recomputeEnvelope(battery)
 
 	for i = 1, #battery.Units do
 		local unit = battery.Units[i]
-		if
-			Medusa.Entities.Battery.isAmmoBearingUnit(battery, unit)
-			and unit.AmmoCount
-			and unit.AmmoCount > 0
-			and unit.AmmoTypes
-		then
+		if Medusa.Entities.Battery.isAmmoBearingUnit(battery, unit) and unit.AmmoCount and unit.AmmoCount > 0 and unit.AmmoTypes then
 			totalAmmo = totalAmmo + Medusa.Entities.Battery.accumulateLauncherAmmo(unit, env)
 		end
 	end
@@ -530,21 +565,23 @@ function Medusa.Entities.Battery.classifyDegradation(battery)
 	return "SEARCH_LOST_CP_DEAD"
 end
 
---- Executes the appropriate degraded behavior based on degradation type and doctrine.
---- Returns "autonomous", "weapons_free", or nil (no action).
+--- Applies degradation policy and returns its wrapper-backed control outcome or nil on failure.
 function Medusa.Entities.Battery.applyDegradedBehavior(battery, degradation, context)
 	if not degradation then
 		return nil
 	end
 	local BAS = Medusa.Services.BatteryActivationService
 	if degradation == "SEARCH_LOST_CP_DEAD" then
-		BAS.goAutonomous(battery, context.batteryRepository, context.geoGrid, context.trackStore)
-		return "autonomous"
+		if BAS.goAutonomous(battery, context.batteryRepository, context.geoGrid, context.trackStore) then
+			return "autonomous"
+		end
+		return nil
 	end
 	if degradation == "SEARCH_LOST_CP_ALIVE" then
-		BAS.erectGroup(battery.GroupName)
-		Medusa.Entities.Battery.releaseTrack(battery, context.trackStore)
-		return "weapons_free"
+		if BAS.erectGroup(battery.GroupName) then
+			Medusa.Entities.Battery.releaseTrack(battery, context.trackStore)
+			return "weapons_free"
+		end
 	end
 	return nil
 end
@@ -631,8 +668,7 @@ function Medusa.Entities.Battery.computeEffectiveRanges(battery)
 	local searchDown = not Medusa.Entities.Battery.hasRoleAlive(battery, SEARCH_ROLES)
 
 	if searchDown and battery.RadarDependencyPolicy == RDP.OPTIONAL_DEGRADED then
-		battery.EffectiveDetectionRangeMax =
-			math.floor((battery.DetectionRangeMax or 0) * DEGRADED_DETECTION_RANGE_PERCENT / 100)
+		battery.EffectiveDetectionRangeMax = math.floor((battery.DetectionRangeMax or 0) * DEGRADED_DETECTION_RANGE_PERCENT / 100)
 		battery.EffectiveReactionDelaySec = math.ceil(battery.ReactionDelaySec * REACTION_DELAY_MULTIPLIER_ON_DEGRADE)
 	elseif searchDown and battery.RadarDependencyPolicy == RDP.REQUIRED then
 		battery.EffectiveDetectionRangeMax = 0

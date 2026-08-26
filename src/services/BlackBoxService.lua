@@ -2,7 +2,7 @@ require("_header")
 require("services.Services")
 require("core.Constants")
 require("core.Logger")
-require("services.MetricsService")
+require("observability.MetricsService")
 require("services.stores.BlackBoxWeaponStore")
 
 --[[
@@ -19,16 +19,20 @@ require("services.stores.BlackBoxWeaponStore")
     - Publishes narrow explosive and cannon terminal-event records for crew-suppression evaluation.
 
     How others use it
-    - IadsNetwork caches metadata on world events so MetricsSnapshotService can label metrics with unit names.
+    - IadsNetwork caches metadata on world events so MetricsSnapshot can label metrics with unit names.
     - The entrypoint starts one mission-shared observer and distributes terminal events to each IADS.
 --]]
 
 Medusa.Services.BlackBoxService = {}
 Medusa.Services.BlackBoxService._cache = {}
+Medusa.Services.BlackBoxService._cacheOrder = RingBuffer(Medusa.Constants.BlackBox.METADATA_CACHE_CAPACITY, true)
+
+--- Caches current object metadata and evicts the oldest distinct identifier at the fixed mission limit.
 function Medusa.Services.BlackBoxService.cacheFromObject(networkId, obj)
-	if not networkId or Medusa.Services.BlackBoxService._cache[networkId] then
+	if not networkId then
 		return
 	end
+	local service = Medusa.Services.BlackBoxService
 	local entry = {}
 	local ok, val = pcall(obj.getTypeName, obj)
 	if ok then
@@ -42,21 +46,29 @@ function Medusa.Services.BlackBoxService.cacheFromObject(networkId, obj)
 	if ok then
 		entry.CoalitionId = val
 	end
-	Medusa.Services.BlackBoxService._cache[networkId] = entry
+	if not service._cache[networkId] then
+		local _, evicted = service._cacheOrder:push(networkId)
+		if evicted then
+			service._cache[evicted] = nil
+		end
+	end
+	service._cache[networkId] = entry
 end
 
 function Medusa.Services.BlackBoxService.get(networkId)
 	return Medusa.Services.BlackBoxService._cache[networkId]
 end
 
+--- Clears all mission-shared metadata and eviction order state.
 function Medusa.Services.BlackBoxService.clear()
 	Medusa.Services.BlackBoxService._cache = {}
+	Medusa.Services.BlackBoxService._cacheOrder = RingBuffer(Medusa.Constants.BlackBox.METADATA_CACHE_CAPACITY, true)
 end
 
 do
 	local Service = Medusa.Services.BlackBoxService
 	local C = Medusa.Constants
-	local MetricsService = Medusa.Services.MetricsService
+	local MetricsService = Medusa.Observability.MetricsService
 	local logger = Medusa.Logger:ns("BlackBoxService")
 	local sqrt = math.sqrt
 	local min = math.min
@@ -137,8 +149,7 @@ do
 			logger:error(string.format("explosive terminal-event publication failed: %s", tostring(err)))
 			return
 		end
-		local outcome = source == C.CrewSuppressionTerminalSource.HIT and C.CrewSuppressionWeaponOutcome.IMPACT_HIT
-			or C.CrewSuppressionWeaponOutcome.IMPACT_TERRAIN
+		local outcome = source == C.CrewSuppressionTerminalSource.HIT and C.CrewSuppressionWeaponOutcome.IMPACT_HIT or C.CrewSuppressionWeaponOutcome.IMPACT_TERRAIN
 		recordOutcome(outcome)
 		logger:debug(
 			string.format(
@@ -164,13 +175,7 @@ do
 			return
 		end
 		recordCannonOutcome(C.CrewSuppressionCannonOutcome.ESTIMATED_FORWARD)
-		logger:debug(
-			string.format(
-				"cannon terminal event published: id=%s source=%s",
-				tostring(terminalEvent.TerminalEventId),
-				terminalEvent.Source
-			)
-		)
+		logger:debug(string.format("cannon terminal event published: id=%s source=%s", tostring(terminalEvent.TerminalEventId), terminalEvent.Source))
 	end
 
 	function Service.onShot(store, event, observedAt)
@@ -236,8 +241,20 @@ do
 
 	local function unsubscribe(bus, subscriptionId)
 		if bus and subscriptionId and type(bus.unsub) == "function" then
-			bus:unsub(subscriptionId)
+			pcall(bus.unsub, bus, subscriptionId)
 		end
+	end
+
+	--- Registers one world-event sink and returns its subscription identifier or nil.
+	local function subscribe(bus, topic, sink)
+		-- Harness 1.0.1 exposes this ID as the only way to roll back a partial registration.
+		local expectedId = type(bus._nextSubId) == "number" and bus._nextSubId or nil
+		local ok, subscriptionId = pcall(bus.sub, bus, topic, sink)
+		if not ok or not subscriptionId then
+			unsubscribe(bus, expectedId)
+			return nil
+		end
+		return subscriptionId
 	end
 
 	function Service.start(store, bus)
@@ -259,24 +276,25 @@ do
 		function shootingStartSink:enqueue(event)
 			return Service.onShootingStart(store, event, GetTime())
 		end
-		local shotId = bus:sub(world.event.S_EVENT_SHOT, shotSink)
-		local hitId = bus:sub(world.event.S_EVENT_HIT, hitSink)
-		local shootingStartId = bus:sub(world.event.S_EVENT_SHOOTING_START, shootingStartSink)
-		if not shotId or not hitId or not shootingStartId then
-			unsubscribe(bus, shotId)
-			unsubscribe(bus, hitId)
-			unsubscribe(bus, shootingStartId)
-			return false
+		local subscriptions = {
+			{ world.event.S_EVENT_SHOT, shotSink },
+			{ world.event.S_EVENT_HIT, hitSink },
+			{ world.event.S_EVENT_SHOOTING_START, shootingStartSink },
+		}
+		local subscriptionIds = {}
+		for i = 1, #subscriptions do
+			local entry = subscriptions[i]
+			subscriptionIds[i] = subscribe(bus, entry[1], entry[2])
+			if not subscriptionIds[i] then
+				for j = i - 1, 1, -1 do
+					unsubscribe(bus, subscriptionIds[j])
+				end
+				return false
+			end
 		end
+		local shotId, hitId, shootingStartId = subscriptionIds[1], subscriptionIds[2], subscriptionIds[3]
 		store:setSubscriptions(bus, shotId, hitId, shootingStartId)
-		logger:debug(
-			string.format(
-				"weapon observation subscriptions active: SHOT=%s HIT=%s SHOOTING_START=%s",
-				tostring(shotId),
-				tostring(hitId),
-				tostring(shootingStartId)
-			)
-		)
+		logger:debug(string.format("weapon observation subscriptions active: SHOT=%s HIT=%s SHOOTING_START=%s", tostring(shotId), tostring(hitId), tostring(shootingStartId)))
 		return true
 	end
 
@@ -335,14 +353,7 @@ do
 			end
 		end
 		if record.HitPosition then
-			publishExplosiveTerminal(
-				store,
-				record,
-				record.HitPosition,
-				record.HitObservedAt or now,
-				C.CrewSuppressionTerminalSource.HIT,
-				sink
-			)
+			publishExplosiveTerminal(store, record, record.HitPosition, record.HitObservedAt or now, C.CrewSuppressionTerminalSource.HIT, sink)
 			return false
 		end
 		local exists = IsWeaponExist(record.Weapon)
@@ -384,15 +395,17 @@ do
 				break
 			end
 			processed = processed + 1
-			if sample(store, record, now, terminalSink) then
-				store:requeue(record)
-			else
+			local sampled, keep = pcall(sample, store, record, now, terminalSink)
+			if not (sampled and keep and store:requeue(record)) then
 				store:discard(record)
+				if not sampled then
+					logger:error(string.format("weapon sample failed and was discarded: %s", tostring(keep)))
+				end
 			end
 		end
 		MetricsService.set("medusa_crew_suppression_weapons_tracked", store:size())
 		if processed > 0 then
-			logger:debug(string.format("weapon tracker update: sampled=%d tracked=%d", processed, store:size()))
+			logger:trace(string.format("weapon tracker update: sampled=%d tracked=%d", processed, store:size()))
 		end
 		return processed
 	end
@@ -481,11 +494,7 @@ do
 		if now - record.ObservedAt > C.CrewSuppression.CANNON_CANDIDATE_MAX_AGE_SEC then
 			recordCannonOutcome(C.CrewSuppressionCannonOutcome.EXPIRED)
 			logger:debug(
-				string.format(
-					"cannon estimate rejected: candidate expired age=%.3fs maxAge=%.3fs",
-					now - record.ObservedAt,
-					C.CrewSuppression.CANNON_CANDIDATE_MAX_AGE_SEC
-				)
+				string.format("cannon estimate rejected: candidate expired age=%.3fs maxAge=%.3fs", now - record.ObservedAt, C.CrewSuppression.CANNON_CANDIDATE_MAX_AGE_SEC)
 			)
 			return
 		end
@@ -515,14 +524,7 @@ do
 			return
 		end
 		logger:debug(
-			string.format(
-				"cannon ballistic projection accepted: source=%s position=(%.1f,%.1f,%.1f) segments=%d",
-				CANNON_SOURCE,
-				position.x,
-				position.y,
-				position.z,
-				segments
-			)
+			string.format("cannon ballistic projection accepted: source=%s position=(%.1f,%.1f,%.1f) segments=%d", CANNON_SOURCE, position.x, position.y, position.z, segments)
 		)
 		publishCannonTerminal(store, position, record.ObservedAt, sink)
 	end
@@ -545,9 +547,7 @@ do
 		end
 		MetricsService.set("medusa_crew_suppression_cannon_queue_depth", store:cannonSize())
 		if processed > 0 then
-			logger:debug(
-				string.format("cannon estimator update: processed=%d queued=%d", processed, store:cannonSize())
-			)
+			logger:trace(string.format("cannon estimator update: processed=%d queued=%d", processed, store:cannonSize()))
 		end
 		return processed
 	end
@@ -556,9 +556,33 @@ do
 		if not store:beginUpdate(now, C.CrewSuppression.WEAPON_UPDATE_INTERVAL_SEC) then
 			return 0
 		end
+		local weaponBefore = store:size()
+		local cannonBefore = store:cannonSize()
 		local weaponCount = Service.update(store, now, terminalSink, C.CrewSuppression.WEAPON_SAMPLES_PER_UPDATE)
-		local cannonCount =
-			Service.updateCannons(store, now, terminalSink, C.CrewSuppression.CANNON_ESTIMATES_PER_UPDATE)
+		local cannonCount = Service.updateCannons(store, now, terminalSink, C.CrewSuppression.CANNON_ESTIMATES_PER_UPDATE)
+		store:recordUpdateWork(weaponCount, weaponBefore, cannonCount, cannonBefore)
+		local summaryIntervalSec = C.Diagnostics.WORK_SUMMARY_INTERVAL_SEC
+		local summary = store:takeWorkSummary(now, summaryIntervalSec)
+		if summary then
+			logger:debug(
+				string.format(
+					"shared recurring work (%ds)\n%-18s %9s %7s %10s\n%-18s %9d %7d %10d\n%-18s %9d %7d %10d",
+					summaryIntervalSec,
+					"owner",
+					"processed",
+					"queued",
+					"high-water",
+					"weapon_tracker",
+					summary.Weapon.Processed,
+					summary.Weapon.Queued,
+					summary.Weapon.HighWater,
+					"cannon_estimator",
+					summary.Cannon.Processed,
+					summary.Cannon.Queued,
+					summary.Cannon.HighWater
+				)
+			)
+		end
 		return weaponCount + cannonCount
 	end
 end

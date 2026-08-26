@@ -17,8 +17,25 @@ assert.equal(window.MTD.manpadMarkerColor("ALERT", "IADS", false), "#ffbf47");
 assert.equal(window.MTD.manpadMarkerColor("ASLEEP", "NONE", false), "#8a7f65");
 
 assert.equal(
-    window.MTD.manpadTooltip('<team & "one">', "HOT", "VISUAL", true, "red's network"),
-    "&lt;team &amp; &quot;one&quot;&gt;<br>HOT<br>Wake: VISUAL<br>Can fire: YES<br>red&#39;s network"
+    window.MTD.manpadTooltip('<team & "one">', "HOT", "VISUAL", true, "red's network", 2),
+    "&lt;team &amp; &quot;one&quot;&gt;<br>HOT<br>Control: INDEPENDENT<br>Partition: P2<br>Wake: VISUAL<br>Can fire: YES<br>red&#39;s network"
+);
+
+assert.equal(window.MTD.partitionLabel(1), "P1");
+assert.equal(window.MTD.partitionLabel(0), "UNASSIGNED");
+assert.equal(window.MTD.partitionLabel(undefined), "UNASSIGNED");
+assert.equal(window.MTD.partitionColor(1), "hsl(162, 80%, 65%)");
+assert.equal(window.MTD.partitionColor(2), "hsl(299, 80%, 65%)");
+assert.equal(
+    window.MTD.batteryTooltip('<battery & "one">', {
+        system: "SA-10",
+        status: "ACTIVE",
+        target: "AW0001",
+        control: "AUTONOMOUS",
+        coordination: "DEGRADED",
+        network: "red's network"
+    }, 2, { mode: "RADAR_DIRECTED", state: "IDLE" }),
+    "&lt;battery &amp; &quot;one&quot;&gt;<br>SA-10<br>Control: AUTONOMOUS<br>Coordination: DEGRADED<br>Partition: P2<br>AAA Mode: RADAR DIRECTED<br>AAA Response: IDLE<br>Target: AW0001<br>red&#39;s network"
 );
 
 assert.equal(window.MTD.isValidManpadGeometry(90, 8000, 30), true);

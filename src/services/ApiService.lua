@@ -1,5 +1,6 @@
 require("_header")
 require("services.Services")
+require("observability.MetricsService")
 require("core.Constants")
 require("core.Logger")
 
@@ -45,7 +46,7 @@ function Medusa.Services.ApiService.setROE(networkName, roeValue)
 	local prev = iads:getDoctrine().ROE
 	iads:getDoctrine().ROE = roeValue
 	_logger:info(string.format("network %s ROE changed: %s -> %s", networkName, prev, roeValue))
-	Medusa.Services.MetricsService.inc("medusa_roe_changes_total")
+	Medusa.Observability.MetricsService.inc("medusa_roe_changes_total")
 	return true
 end
 
@@ -149,7 +150,7 @@ function Medusa.Services.ApiService.setEMCON(networkName, policyValue, role)
 	end
 	local label = role or "all"
 	_logger:info(string.format("network %s EMCON[%s] set to %s", networkName, label, policyValue))
-	Medusa.Services.MetricsService.inc("medusa_emcon_changes_total")
+	Medusa.Observability.MetricsService.inc("medusa_emcon_changes_total")
 	return true
 end
 
@@ -188,17 +189,8 @@ function Medusa.Services.ApiService.setScanTiming(networkName, scanSec, quietSec
 	local prevQuiet = doctrine.QuietPeriodSec or Medusa.Constants.EMCON_DEFAULT_QUIET_PERIOD_SEC
 	doctrine.ScanSec = scanSec
 	doctrine.QuietPeriodSec = quietSec
-	_logger:info(
-		string.format(
-			"network %s ScanTiming changed: scan %s->%s quiet %s->%s",
-			networkName,
-			prevScan,
-			scanSec,
-			prevQuiet,
-			quietSec
-		)
-	)
-	Medusa.Services.MetricsService.inc("medusa_emcon_changes_total")
+	_logger:info(string.format("network %s ScanTiming changed: scan %s->%s quiet %s->%s", networkName, prevScan, scanSec, prevQuiet, quietSec))
+	Medusa.Observability.MetricsService.inc("medusa_emcon_changes_total")
 	return true
 end
 
@@ -233,7 +225,7 @@ function Medusa.Services.ApiService.setRotationGroups(networkName, count)
 	local prev = doctrine.EmconRotateGroups or Medusa.Constants.EMCON_DEFAULT_ROTATION_GROUPS
 	doctrine.EmconRotateGroups = count
 	_logger:info(string.format("network %s RotationGroups changed: %s -> %s", networkName, prev, count))
-	Medusa.Services.MetricsService.inc("medusa_emcon_changes_total")
+	Medusa.Observability.MetricsService.inc("medusa_emcon_changes_total")
 	return true
 end
 

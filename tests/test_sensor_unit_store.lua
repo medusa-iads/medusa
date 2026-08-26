@@ -3,6 +3,7 @@ local lu = require("luaunit")
 require("mocks.mock_dcs")
 require("_header")
 require("core.Logger")
+require("core.Constants")
 require("services.Services")
 require("services.stores.SensorUnitStore")
 
@@ -40,6 +41,16 @@ function TestSensorUnitStore:test_add_and_get()
 
 	lu.assertEquals(self.store:count(), 1)
 	lu.assertIs(self.store:get("s-1"), sensor)
+end
+
+function TestSensorUnitStore:test_capacity_rejects_additional_sensor_without_growth()
+	for i = 1, Medusa.Constants.C2.MAX_SENSORS do
+		lu.assertTrue(self.store:add(makeSensor({ SensorUnitId = "s-" .. i, UnitId = i })))
+	end
+
+	lu.assertFalse(self.store:add(makeSensor({ SensorUnitId = "overflow", UnitId = 1000 })))
+	lu.assertEquals(self.store:count(), Medusa.Constants.C2.MAX_SENSORS)
+	lu.assertNil(self.store:get("overflow"))
 end
 
 function TestSensorUnitStore:test_get_by_unit_id()

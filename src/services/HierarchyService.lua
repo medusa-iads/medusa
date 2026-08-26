@@ -18,7 +18,7 @@ require("dependencies.harness")
 
     How others use it
     - IadsNetwork feeds discovery results into upsertGroup to build the command tree at startup.
-    - MetricsSnapshotService reads the tree to report hierarchy size in Prometheus gauges.
+    - MetricsSnapshot reads the tree to report hierarchy size in Prometheus gauges.
 ]]
 
 ---@class Medusa.Services.HierarchyService
@@ -32,14 +32,33 @@ require("dependencies.harness")
 ---@field getTree fun(self: Medusa.Services.HierarchyService): table
 Medusa.Services.HierarchyService = {}
 
+--- Creates the authoritative group-to-hierarchy index with no frozen C2 boundaries.
 function Medusa.Services.HierarchyService:new()
 	local o = {
 		_hierarchyIndex = Trie(),
 		_nodesByKey = {},
 		_byGroupId = {},
+		_c2Topology = nil,
 	}
 	setmetatable(o, { __index = self })
 	return o
+end
+
+--- Reports whether ancestor is the same hierarchy path as path or contains it.
+local function pathContains(ancestor, path)
+	return ancestor == "" or path == ancestor or string.sub(path, 1, #ancestor + 1) == ancestor .. "."
+end
+
+--- Returns the most-specific command boundary that contains path.
+local function parentBoundary(path, boundaries)
+	local parent = ""
+	for i = 1, #boundaries do
+		local candidate = boundaries[i]
+		if candidate ~= path and #candidate > #parent and pathContains(candidate, path) then
+			parent = candidate
+		end
+	end
+	return parent
 end
 
 ---@param pathSegments string[]
@@ -65,6 +84,10 @@ function Medusa.Services.HierarchyService:upsertGroup(dto)
 	end
 	local path = dto.parsed.echelonPath or {}
 	local key = self:_keyFromPath(path)
+	local existing = self._byGroupId[dto.groupId]
+	if existing and existing.key ~= key then
+		self:removeGroup(dto.groupId)
+	end
 	local node = self:_getNodeByKey(key)
 	if not node then
 		node = { key = key, groupsSet = Set(), groupInfo = {} }
@@ -80,6 +103,72 @@ function Medusa.Services.HierarchyService:upsertGroup(dto)
 	}
 	self._byGroupId[dto.groupId] = { key = key }
 	return true
+end
+
+--- Freezes mission-initial HQ paths as partition clusters and command-center edges.
+function Medusa.Services.HierarchyService:freezeC2Topology()
+	if self._c2Topology then
+		return self._c2Topology
+	end
+	local boundaryGroups = {}
+	local boundaries = { "" }
+	local seen = { [""] = true }
+	for path, node in pairs(self._nodesByKey) do
+		for groupId, info in pairs(node.groupInfo or {}) do
+			if info.isHQ == true then
+				boundaryGroups[path] = boundaryGroups[path] or {}
+				boundaryGroups[path][#boundaryGroups[path] + 1] = groupId
+				if path ~= "" and not seen[path] then
+					seen[path] = true
+					boundaries[#boundaries + 1] = path
+				end
+			end
+		end
+	end
+	table.sort(boundaries)
+	local rootCommandCenterGroupIds = boundaryGroups[""] or {}
+	table.sort(rootCommandCenterGroupIds)
+	local edges = {}
+	for i = 1, #boundaries do
+		local path = boundaries[i]
+		if path ~= "" then
+			table.sort(boundaryGroups[path])
+			edges[#edges + 1] = {
+				ParentKey = parentBoundary(path, boundaries),
+				ChildKey = path,
+				CommandCenterGroupIds = boundaryGroups[path],
+			}
+		end
+	end
+	self._c2Topology = {
+		ClusterKeys = boundaries,
+		Edges = edges,
+		RootCommandCenterGroupIds = rootCommandCenterGroupIds,
+	}
+	return self._c2Topology
+end
+
+--- Returns the explicitly frozen C2 topology, or nil before the network freezes it.
+function Medusa.Services.HierarchyService:getC2Topology()
+	return self._c2Topology
+end
+
+--- Returns the most-specific frozen cluster boundary that contains groupId.
+function Medusa.Services.HierarchyService:clusterKeyForGroup(groupId)
+	local ref = self._byGroupId[groupId]
+	local path = ref and ref.key or ""
+	local topology = self:getC2Topology()
+	if not topology then
+		error("C2 topology has not been frozen")
+	end
+	local clusterKey = ""
+	for i = 1, #topology.ClusterKeys do
+		local candidate = topology.ClusterKeys[i]
+		if #candidate > #clusterKey and pathContains(candidate, path) then
+			clusterKey = candidate
+		end
+	end
+	return clusterKey
 end
 
 ---@param groupId number
@@ -180,8 +269,7 @@ local function walkTree(node, prefix, lines)
 		local name = ks[idx]
 		local child = node.children[name]
 		local connector = "|__ "
-		lines[#lines + 1] =
-			string.format("%s%s%s(%s)", prefix, connector, tostring(child.name), tostring(child.size or 0))
+		lines[#lines + 1] = string.format("%s%s%s(%s)", prefix, connector, tostring(child.name), tostring(child.size or 0))
 		local nextPrefix = prefix .. ((idx == #ks) and "    " or "|   ")
 		walkTree(child, nextPrefix, lines)
 	end

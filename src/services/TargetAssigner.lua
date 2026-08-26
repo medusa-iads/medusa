@@ -1,5 +1,6 @@
 require("_header")
 require("services.Services")
+require("observability.MetricsService")
 require("services.PkModel")
 require("services.SpatialQuery")
 require("entities.Battery")
@@ -94,7 +95,7 @@ local function isBatteryEligible(battery)
 		and battery.EngagementRangeMax > 0
 		and not battery.CurrentTargetTrackId
 		and not battery.HarmShutdownUntil
-		and battery.TotalAmmoStatus > 0
+		and Medusa.Entities.Battery.hasKnownAmmo(battery)
 		and not battery.IsPointDefense
 end
 
@@ -165,6 +166,9 @@ end
 --- Evaluates a single battery-track pair and adds it to the candidate buffer if viable.
 local function tryAddPair(battery, track, threatValue, n, ctx)
 	if not isBatteryEligible(battery) then
+		return n
+	end
+	if not Medusa.Entities.Battery.canAcceptTrack(battery, track, ctx.doctrine) then
 		return n
 	end
 	local lookaheadSec = ctx.doctrine.LookaheadSec or Medusa.Constants.LOOKAHEAD_DEFAULT_SEC
@@ -256,10 +260,7 @@ local function trackAcceptsBattery(track, batteryRole, ctx)
 		if batteryRole == BR.SR_SAM then
 			return true
 		end
-		return roleCount(track.TrackId, BR.LR_SAM)
-				+ roleCount(track.TrackId, BR.MR_SAM)
-				+ roleCount(track.TrackId, BR.GENERIC_SAM)
-			< 2
+		return roleCount(track.TrackId, BR.LR_SAM) + roleCount(track.TrackId, BR.MR_SAM) + roleCount(track.TrackId, BR.GENERIC_SAM) < 2
 	end
 	return false
 end
@@ -278,12 +279,7 @@ local function buildCandidatePairs(tracks, ctx, minId)
 			-- HARMs are handled by HarmResponseService + PointDefenseService, not WTA
 		elseif track.LifecycleState == LS.ACTIVE and meetsMinIdentification(track.TrackIdentification, minId) then
 			local threatValue = computeThreatValue(track, ctx)
-			local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(
-				ctx.geoGrid,
-				ctx.batteryStore,
-				track.Position,
-				ctx.maxRange
-			)
+			local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(ctx.geoGrid, ctx.batteryStore, track.Position, ctx.maxRange)
 			for j = 1, #batteries do
 				if trackAcceptsBattery(track, batteries[j].Role, ctx) then
 					n = tryAddPair(batteries[j], track, threatValue, n, ctx)
@@ -348,6 +344,7 @@ local function findBestTrackForBattery(battery, ctx)
 		local track = ctx.trackStore:get(id)
 		if
 			track
+			and Medusa.Entities.Battery.canAcceptTrack(battery, track, ctx.doctrine)
 			and track.LifecycleState == LS.ACTIVE
 			and track.AssessedAircraftType ~= Medusa.Constants.AssessedAircraftType.HARM
 			and meetsMinIdentification(track.TrackIdentification, TI.BANDIT)
@@ -379,26 +376,16 @@ function Medusa.Services.TargetAssigner.emconSelfAssign(ctx)
 
 	for i = 1, #batteries do
 		local battery = batteries[i]
-		local isEmconAutonomous = roe == ROE.FREE
-			and emcon
-			and battery.ActivationState == AS.STATE_WARM
-			and isBatteryEligible(battery)
-			and emcon[battery.Role] == ECP.ALWAYS_ON
+		local isEmconAutonomous = roe == ROE.FREE and emcon and battery.ActivationState == AS.STATE_WARM and isBatteryEligible(battery) and emcon[battery.Role] == ECP.ALWAYS_ON
 		if isEmconAutonomous then
 			local trackId = findBestTrackForBattery(battery, ctx)
 			if trackId then
 				local trackObj = ctx.trackStore:get(trackId)
 				if trackObj then
-					Medusa.Entities.Battery.assignTrack(battery, trackObj, ctx.now)
+					Medusa.Entities.Battery.assignTrack(battery, trackObj, ctx.now, ctx.trackStore)
 				end
 				assignments[#assignments + 1] = { batteryId = battery.BatteryId, trackId = trackId }
-				_logger:info(
-					string.format(
-						"EMCON self-assign: battery %s engaging track %s",
-						battery.GroupName,
-						Medusa.Entities.Track.displayId(trackObj)
-					)
-				)
+				_logger:info(string.format("EMCON self-assign: battery %s engaging track %s", battery.GroupName, Medusa.Entities.Track.displayId(trackObj)))
 			end
 		end
 	end
@@ -422,10 +409,10 @@ local function _initGreedyState()
 	clearTable(_assigned)
 end
 
+--- Commits both assignment sides and appends the assignment result used by activation orchestration.
 local function commitAssignment(battery, track, pk, now, assignments, affectsSurvival)
-	Medusa.Entities.Battery.assignTrack(battery, track, now)
+	Medusa.Entities.Battery.assignTrack(battery, track, now, nil)
 	recordRoleAssignment(track.TrackId, battery.Role)
-	track.AssignmentTime = now
 	_assigned[battery.BatteryId] = true
 	if affectsSurvival then
 		local survival = _survive[track.TrackId] or 1.0
@@ -448,18 +435,14 @@ local function _assignSeadPriority(tracks, ctx, minId, assignments)
 			and meetsMinIdentification(track.TrackIdentification, minId)
 			and standardMissileSlotCount(track.TrackId) == 0
 		then
-			local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(
-				ctx.geoGrid,
-				ctx.batteryStore,
-				track.Position,
-				ctx.maxRange
-			)
+			local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(ctx.geoGrid, ctx.batteryStore, track.Position, ctx.maxRange)
 			local bestPk, bestBat = 0, nil
 			for j = 1, #nearby do
 				if
 					isBatteryEligible(nearby[j])
+					and Medusa.Entities.Battery.canAcceptTrack(nearby[j], track, ctx.doctrine)
 					and not _assigned[nearby[j].BatteryId]
-					and (track.AssessedAircraftType ~= AAT.HARM or nearby[j].HarmCapableUnitCount > 0)
+					and (track.AssessedAircraftType ~= AAT.HARM or nearby[j].HarmDefenseCapacity > 0)
 				then
 					local projPos = projectTrackPosition(track, lookaheadSec)
 					if projPos then
@@ -476,14 +459,7 @@ local function _assignSeadPriority(tracks, ctx, minId, assignments)
 			end
 			if bestBat and bestPk >= pkFloor then
 				commitAssignment(bestBat, track, bestPk, ctx.now, assignments, bestBat.Role ~= BR.AAA)
-				_logger:info(
-					string.format(
-						"SEAD priority: battery %s to track %s (pk=%.2f)",
-						bestBat.GroupName,
-						Medusa.Entities.Track.displayId(track),
-						bestPk
-					)
-				)
+				_logger:info(string.format("SEAD priority: battery %s to track %s (pk=%.2f)", bestBat.GroupName, Medusa.Entities.Track.displayId(track), bestPk))
 			end
 		end
 	end
@@ -510,17 +486,10 @@ local function _greedyAssign(pairCount, ctx, assignments)
 			break
 		end
 		local best = _pairBuffer[bestIdx]
-		local affectsSurvival = best.battery.Role ~= BR.AAA
-			and (tactics ~= CET.SHOOT_SHOOT_FLOOD or best.battery.Role ~= BR.SR_SAM)
+		local affectsSurvival = best.battery.Role ~= BR.AAA and (tactics ~= CET.SHOOT_SHOOT_FLOOD or best.battery.Role ~= BR.SR_SAM)
 		commitAssignment(best.battery, best.track, best.pk, ctx.now, assignments, affectsSurvival)
 		_logger:info(
-			string.format(
-				"assigned battery %s to track %s (pk=%.2f, threat=%d)",
-				best.battery.GroupName,
-				Medusa.Entities.Track.displayId(best.track),
-				best.pk,
-				best.threatValue
-			)
+			string.format("assigned battery %s to track %s (pk=%.2f, threat=%d)", best.battery.GroupName, Medusa.Entities.Track.displayId(best.track), best.pk, best.threatValue)
 		)
 	end
 end
@@ -539,7 +508,7 @@ function Medusa.Services.TargetAssigner.assignTargets(ctx)
 	local tracks = ctx.trackStore:getAll(_trackBuffer)
 	local pairCount = buildCandidatePairs(tracks, ctx, minId)
 	applySaturationPenalty(pairCount)
-	Medusa.Services.MetricsService.inc("medusa_assignment_pairs_evaluated", pairCount)
+	Medusa.Observability.MetricsService.inc("medusa_assignment_pairs_evaluated", pairCount)
 	if pairCount == 0 then
 		return {}
 	end
@@ -562,10 +531,7 @@ local function isHandoffEligible(battery, now)
 	if not battery.CurrentTargetTrackId or not battery.Position then
 		return false
 	end
-	if
-		battery.LastAssignmentChangeTime
-		and (now - battery.LastAssignmentChangeTime) < Medusa.Constants.HANDOFF_DWELL_SEC
-	then
+	if battery.LastAssignmentChangeTime and (now - battery.LastAssignmentChangeTime) < Medusa.Constants.HANDOFF_DWELL_SEC then
 		return false
 	end
 	return true
@@ -582,12 +548,11 @@ end
 
 --- Searches for an alternative battery with higher Pk than the current holder.
 local function findBetterBattery(track, projPos, currentPk, currentBatteryId, ctx)
-	local batteries =
-		Medusa.Services.SpatialQuery.batteriesInRadius(ctx.geoGrid, ctx.batteryStore, track.Position, ctx.maxRange)
+	local batteries = Medusa.Services.SpatialQuery.batteriesInRadius(ctx.geoGrid, ctx.batteryStore, track.Position, ctx.maxRange)
 	local bestId, bestPk = nil, currentPk
 	for i = 1, #batteries do
 		local alt = batteries[i]
-		if alt.BatteryId ~= currentBatteryId and isBatteryEligible(alt) then
+		if alt.BatteryId ~= currentBatteryId and isBatteryEligible(alt) and Medusa.Entities.Battery.canAcceptTrack(alt, track, ctx.doctrine) then
 			local projDist = nearestClusterDist(alt, projPos)
 			if projDist and projDist <= cappedRange(alt, ctx) then
 				local altPk = computePk(alt, track, projDist)
@@ -614,6 +579,9 @@ function Medusa.Services.TargetAssigner.evaluateSingleHandoff(battery, ctx)
 	if not track or track.LifecycleState ~= LS.ACTIVE then
 		return nil
 	end
+	if track.AssessedAircraftType == Medusa.Constants.AssessedAircraftType.HARM then
+		return nil
+	end
 
 	local C = Medusa.Constants
 	local doctrine = ctx.doctrine
@@ -631,14 +599,7 @@ function Medusa.Services.TargetAssigner.evaluateSingleHandoff(battery, ctx)
 	local pk = computePk(battery, track, projDist)
 
 	if pkBelowStickyFloor(pk, pkFloor, stickyFactor) then
-		_logger:info(
-			string.format(
-				"handoff: battery %s pk=%.2f below floor for track %s",
-				battery.GroupName,
-				pk,
-				Medusa.Entities.Track.displayId(track)
-			)
-		)
+		_logger:info(string.format("handoff: battery %s pk=%.2f below floor for track %s", battery.GroupName, pk, Medusa.Entities.Track.displayId(track)))
 		return { batteryId = battery.BatteryId, trackId = battery.CurrentTargetTrackId }
 	end
 
@@ -742,9 +703,8 @@ function Medusa.Services.TargetAssigner.checkSingleDeactivation(battery, ctx)
 				return { battery = battery, reason = "last-chance expired" }
 			end
 		else
-			local lastActivity = math.max(battery.LastAssignmentChangeTime or 0, battery.LastShotTime or 0)
-			local recentRelease = lastActivity > 0 and (ctx.now - lastActivity) < holdDownSec
-			if not missileInFlight and not recentRelease then
+			local withinHoldDown = Medusa.Entities.Battery.isWithinDeactivationHoldDown(battery, ctx.now, holdDownSec)
+			if not missileInFlight and not withinHoldDown then
 				return { battery = battery, reason = "idle hold-down expired" }
 			end
 		end
@@ -760,7 +720,7 @@ function Medusa.Services.TargetAssigner.checkSingleDeactivation(battery, ctx)
 		return { battery = battery, reason = "track expired" }
 	end
 	if track.LifecycleState == LS.STALE then
-		local protected = track.AssignmentTime and (ctx.now - track.AssignmentTime) < holdDownSec
+		local protected = Medusa.Entities.Battery.isWithinDeactivationHoldDown(battery, ctx.now, holdDownSec)
 		if not protected then
 			return { battery = battery, reason = "track stale" }
 		end

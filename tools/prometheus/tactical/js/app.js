@@ -98,7 +98,9 @@ async function refresh() {
             MTD.query(MTD.netExpr("medusa_aaa_heading_degrees")).catch(function () { return []; }),            // 37
             MTD.query("medusa_aaa_visual_detection_range_meters").catch(function () { return []; }),          // 38
             MTD.query("medusa_aaa_visual_detection_half_angle_degrees").catch(function () { return []; }),     // 39
-            MTD.query(MTD.netExpr("medusa_aaa_audio_range_meters")).catch(function () { return []; })          // 40
+            MTD.query(MTD.netExpr("medusa_aaa_audio_range_meters")).catch(function () { return []; }),         // 40
+            MTD.query(MTD.netExpr("medusa_battery_partition")).catch(function () { return []; }),              // 41
+            MTD.query(MTD.netExpr("medusa_manpad_partition")).catch(function () { return []; })                // 42
         ]);
 
         var batLat          = results[0];
@@ -142,6 +144,8 @@ async function refresh() {
         var aaaVisualRangeResult = results[38];
         var aaaVisualAngleResult = results[39];
         var aaaAudioRangeResult = results[40];
+        var batPartitionResult = results[41];
+        var manpadPartitionResult = results[42];
 
         /* Liveness check */
         var isLive = false;
@@ -206,6 +210,7 @@ async function refresh() {
         var trkAltMap   = MTD.buildLabelMap(trackAltResult, "track");
         var batWeaponRangeMap = MTD.buildLabelMap(batWeaponRange, "battery");
         var batAmmoMap       = MTD.buildLabelMap(batAmmoResult, "battery");
+        var batPartitionMap  = MTD.buildLabelMap(batPartitionResult, "battery");
         var sensorLatMap     = MTD.buildLabelMap(sensorLatResult, "sensor");
         var sensorLonMap     = MTD.buildLabelMap(sensorLonResult, "sensor");
         var sensorInfoMap    = MTD.buildInfoMap(sensorInfoResult, "sensor");
@@ -213,6 +218,7 @@ async function refresh() {
         var manpadLatMap     = MTD.buildScopedLabelMap(manpadLatResult, "manpad");
         var manpadLonMap     = MTD.buildScopedLabelMap(manpadLonResult, "manpad");
         var manpadInfoMap    = MTD.buildScopedInfoMap(manpadInfoResult, "manpad");
+        var manpadPartitionMap = MTD.buildScopedLabelMap(manpadPartitionResult, "manpad");
         var manpadHeadingMap = MTD.buildScopedIndexedValues(manpadHeadingResult, "manpad", "heading_index");
         var manpadGeometry = {
             narrowRangeMeters: MTD.firstMetricValue(manpadNarrowRangeResult),
@@ -295,6 +301,7 @@ async function refresh() {
             trkAltMap: trkAltMap,
             batWeaponRangeMap: batWeaponRangeMap,
             batAmmoMap: batAmmoMap,
+            batPartitionMap: batPartitionMap,
             zoneResult: zoneResult,
             postureResult: postureResult,
             sensorLatMap: sensorLatMap,
@@ -305,6 +312,7 @@ async function refresh() {
             manpadLatMap: manpadLatMap,
             manpadLonMap: manpadLonMap,
             manpadInfoMap: manpadInfoMap,
+            manpadPartitionMap: manpadPartitionMap,
             manpadHeadingMap: manpadHeadingMap,
             manpadGeometry: manpadGeometry,
             aaaInfoMap: aaaInfoMap,

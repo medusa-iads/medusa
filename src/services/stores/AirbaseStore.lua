@@ -42,9 +42,7 @@ function Medusa.Services.AirbaseStore:add(airbase)
 	self._byName[airbase.AirbaseName] = airbase.AirbaseId
 	self._count = self._count + 1
 
-	self._logger:debug(
-		string.format("added airbase %s (name=%s, count=%d)", airbase.AirbaseId, airbase.AirbaseName, self._count)
-	)
+	self._logger:debug(string.format("added airbase %s (name=%s, count=%d)", airbase.AirbaseId, airbase.AirbaseName, self._count))
 end
 
 function Medusa.Services.AirbaseStore:get(airbaseId)

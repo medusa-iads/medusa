@@ -1,10 +1,23 @@
 require("_header")
 require("services.Services")
 require("core.Constants")
-require("services.MetricsService")
+require("observability.MetricsService")
 
 --[[
-    LOCAL SEARCH SERVICE
+██╗      ██████╗  ██████╗ █████╗ ██╗
+██║     ██╔═══██╗██╔════╝██╔══██╗██║
+██║     ██║   ██║██║     ███████║██║
+██║     ██║   ██║██║     ██╔══██║██║
+███████╗╚██████╔╝╚██████╗██║  ██║███████╗
+╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝
+
+███████╗███████╗ █████╗ ██████╗  ██████╗██╗  ██╗    ███████╗███████╗██████╗ ██╗   ██╗██╗ ██████╗███████╗
+██╔════╝██╔════╝██╔══██╗██╔══██╗██╔════╝██║  ██║    ██╔════╝██╔════╝██╔══██╗██║   ██║██║██╔════╝██╔════╝
+███████╗█████╗  ███████║██████╔╝██║     ███████║    ███████╗█████╗  ██████╔╝██║   ██║██║██║     █████╗
+╚════██║██╔══╝  ██╔══██║██╔══██╗██║     ██╔══██║    ╚════██║██╔══╝  ██╔══██╗╚██╗ ██╔╝██║██║     ██╔══╝
+███████║███████╗██║  ██║██║  ██║╚██████╗██║  ██║    ███████║███████╗██║  ██║ ╚████╔╝ ██║╚██████╗███████╗
+╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝    ╚══════╝╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚═╝ ╚═════╝╚══════╝
+
 
     What this service does
     - Searches DCS for hostile aircraft near eligible ground groups.
@@ -139,10 +152,10 @@ function Medusa.Services.LocalSearchService:_scan(battery, now)
 		return not targets:isFull()
 	end)
 	if self.metrics and self.metrics.scansTotal then
-		Medusa.Services.MetricsService.inc(self.metrics.scansTotal)
+		Medusa.Observability.MetricsService.inc(self.metrics.scansTotal)
 	end
 	if self.metrics and self.metrics.scanDuration then
-		Medusa.Services.MetricsService.observe(self.metrics.scanDuration, Medusa.hpTimer() - startedAt)
+		Medusa.Observability.MetricsService.observe(self.metrics.scanDuration, Medusa.hpTimer() - startedAt)
 	end
 	return true
 end
@@ -151,8 +164,7 @@ function Medusa.Services.LocalSearchService:_replenish(now)
 	if self.tokenTime == nil or now < self.tokenTime then
 		self.tokens = self.quotaPerSec
 	else
-		self.tokens =
-			math.min(self.quotaPerSec, (self.tokens or self.quotaPerSec) + (now - self.tokenTime) * self.quotaPerSec)
+		self.tokens = math.min(self.quotaPerSec, (self.tokens or self.quotaPerSec) + (now - self.tokenTime) * self.quotaPerSec)
 	end
 	self.tokenTime = now
 end
@@ -160,7 +172,7 @@ end
 function Medusa.Services.LocalSearchService:refresh(batteries, now, shouldScan)
 	self:_syncQueue(batteries)
 	if self.metrics and self.metrics.queueDepth then
-		Medusa.Services.MetricsService.set(self.metrics.queueDepth, self.queue:size())
+		Medusa.Observability.MetricsService.set(self.metrics.queueDepth, self.queue:size())
 	end
 	if self.coalitionId == nil or self.queue:isEmpty() then
 		return
@@ -177,12 +189,7 @@ function Medusa.Services.LocalSearchService:refresh(batteries, now, shouldScan)
 		if battery then
 			self.queue:push(batteryId)
 			local cache = self.cacheByBatteryId[batteryId]
-			if
-				battery.Position
-				and shouldScan(battery)
-				and (not cache or now >= cache.ExpiresAt)
-				and self:_scan(battery, now)
-			then
+			if battery.Position and shouldScan(battery) and (not cache or now >= cache.ExpiresAt) and self:_scan(battery, now) then
 				self.tokens = self.tokens - 1
 				remaining = remaining - 1
 				if remaining == 0 then
@@ -199,7 +206,7 @@ function Medusa.Services.LocalSearchService:getTargets(batteryId, now)
 		return nil
 	end
 	if cache.Processed and self.metrics and self.metrics.cacheReuses then
-		Medusa.Services.MetricsService.inc(self.metrics.cacheReuses)
+		Medusa.Observability.MetricsService.inc(self.metrics.cacheReuses)
 	else
 		cache.Processed = true
 	end

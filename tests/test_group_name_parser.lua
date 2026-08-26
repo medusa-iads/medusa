@@ -25,6 +25,18 @@ function TestGroupNameParser:test_when_prefix_matches_should_be_managed()
 	lu.assertEquals(table.concat(r.echelonPath, ","), "1div,1bde,1bn")
 end
 
+function TestGroupNameParser:test_outer_whitespace_is_ignored_without_changing_the_dcs_name()
+	local groupName = " \t iads.east.ewr.local \r\n"
+	local r = Medusa.Services.GroupNameParser:parse(groupName, "iads")
+
+	lu.assertTrue(r.isManaged)
+	lu.assertEquals(r.originalName, groupName)
+	lu.assertEquals(r.nameWithoutPrefix, "east.ewr.local")
+	lu.assertEquals(r.unitLabel, "local")
+	lu.assertEquals(r.sensorType, Medusa.Constants.Role.EWR)
+	lu.assertEquals(table.concat(r.echelonPath, ","), "east")
+end
+
 function TestGroupNameParser:test_when_role_gci_should_set_sensor_type_and_anchor()
 	-- Echelons before role, label after role
 	local r = Medusa.Services.GroupNameParser:parse("iads.1bde.1bn.gci.cairo", "iads")

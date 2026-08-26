@@ -3,6 +3,7 @@ require("services.Services")
 require("core.Constants")
 require("core.Logger")
 require("entities.Battery")
+require("services.stores.UnitIndex")
 
 --[[
             ██████╗  █████╗ ████████╗████████╗███████╗██████╗ ██╗   ██╗    ███████╗████████╗ ██████╗ ██████╗ ███████╗
@@ -13,7 +14,7 @@ require("entities.Battery")
             ╚═════╝ ╚═╝  ╚═╝   ╚═╝      ╚═╝   ╚══════╝╚═╝  ╚═╝   ╚═╝       ╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
 
     What this store does
-    - Stores all Battery entities and owns BatteryId, GroupId, and UnitId indexes.
+    - Stores all Battery entities and owns BatteryId and group indexes.
     - Exposes structurally isolated views for standard batteries and MANPAD groups.
 
     How others use it
@@ -24,6 +25,7 @@ require("entities.Battery")
 Medusa.Services.BatteryStore = {}
 
 local BR = Medusa.Constants.BatteryRole
+local OwnerKind = Medusa.Constants.UnitOwnerKind
 
 local StoreView = {}
 
@@ -60,6 +62,15 @@ function StoreView:getByGroupId(groupId)
 	return nil
 end
 
+--- Returns the battery of this view type with groupName, or nil.
+function StoreView:getByGroupName(groupName)
+	local battery = self._repository:getByGroupName(groupName)
+	if battery and isManpad(battery) == self._isManpad then
+		return battery
+	end
+	return nil
+end
+
 function StoreView:remove(batteryId)
 	if not self:get(batteryId) then
 		return nil
@@ -86,11 +97,12 @@ function StoreView:count()
 	return self._repository._batteryCount
 end
 
-function Medusa.Services.BatteryStore:new()
+--- Creates the shared battery repository and its networked and MANPAD views.
+function Medusa.Services.BatteryStore:new(unitIndex)
 	local o = {
 		_byId = {},
 		_byGroupId = {},
-		_byUnitId = {},
+		_byGroupName = {},
 		_unitOrder = {},
 		_positionRefreshCursor = 0,
 		_batteryIds = {},
@@ -99,6 +111,7 @@ function Medusa.Services.BatteryStore:new()
 		_batteryCount = 0,
 		_manpadCount = 0,
 		_logger = Medusa.Logger:ns("BatteryStore"),
+		_unitIndex = unitIndex or Medusa.Services.UnitIndex:new(),
 	}
 	setmetatable(o, { __index = self })
 	o._batteryView = setmetatable({ _repository = o, _isManpad = false }, { __index = StoreView })
@@ -114,25 +127,63 @@ function Medusa.Services.BatteryStore:manpads()
 	return self._manpadView
 end
 
+--- Publishes one validated battery into every identity and member index.
 function Medusa.Services.BatteryStore:add(battery)
 	Medusa.Entities.Battery.validateManpadState(battery.Role, battery.Manpad)
 	Medusa.Entities.Battery.validateAaaState(battery.Role, battery.Aaa)
+	if self._count >= Medusa.Constants.C2.MAX_BATTERIES then
+		error(string.format("battery capacity exceeded: %d", Medusa.Constants.C2.MAX_BATTERIES))
+	end
 	if self._byId[battery.BatteryId] then
 		error(string.format("duplicate BatteryId: %s", battery.BatteryId))
 	end
 	if battery.GroupId and self._byGroupId[battery.GroupId] then
 		error(string.format("duplicate GroupId: %s", tostring(battery.GroupId)))
 	end
+	if battery.GroupName and self._byGroupName[battery.GroupName] then
+		error(string.format("duplicate GroupName: %s", tostring(battery.GroupName)))
+	end
 
 	local units = battery.Units or {}
 	local newUnitIds = {}
+	local newUnitNames = {}
+	local pendingUnitIndexes = {}
 	for i = 1, #units do
 		local unitId = units[i].UnitId
+		local unitName = units[i].UnitName
 		if unitId then
-			if newUnitIds[unitId] or self._byUnitId[unitId] then
+			local currentIdentity = self._unitIndex:resolve(unitId)
+			local currentBatteryOwner = self._unitIndex:getOwner(currentIdentity, OwnerKind.BATTERY_UNIT)
+			if newUnitIds[unitId] or currentBatteryOwner then
 				error(string.format("duplicate UnitId: %s", tostring(unitId)))
 			end
 			newUnitIds[unitId] = true
+		end
+		if unitName then
+			local currentIdentity = self._unitIndex:resolve(nil, unitName)
+			local currentBatteryOwner = self._unitIndex:getOwner(currentIdentity, OwnerKind.BATTERY_UNIT)
+			if newUnitNames[unitName] or currentBatteryOwner then
+				error(string.format("duplicate UnitName: %s", tostring(unitName)))
+			end
+			newUnitNames[unitName] = true
+		end
+		if unitId then
+			local indexed = {
+				Battery = battery,
+				Unit = units[i],
+			}
+			local valid, reason = self._unitIndex:validateRegistration({
+				UnitId = unitId,
+				UnitName = unitName,
+				GroupId = battery.GroupId,
+				GroupName = battery.GroupName,
+				OwnerKind = OwnerKind.BATTERY_UNIT,
+				Owner = indexed,
+			})
+			if not valid then
+				error(string.format("managed battery unit identity rejected: %s", reason))
+			end
+			pendingUnitIndexes[i] = indexed
 		end
 	end
 
@@ -140,16 +191,24 @@ function Medusa.Services.BatteryStore:add(battery)
 	if battery.GroupId then
 		self._byGroupId[battery.GroupId] = battery.BatteryId
 	end
+	if battery.GroupName then
+		self._byGroupName[battery.GroupName] = battery.BatteryId
+	end
 	for i = 1, #units do
 		local unit = units[i]
 		if unit.UnitId then
 			local refreshIndex = #self._unitOrder + 1
-			self._unitOrder[refreshIndex] = unit.UnitId
-			self._byUnitId[unit.UnitId] = {
-				Battery = battery,
-				Unit = unit,
-				RefreshIndex = refreshIndex,
-			}
+			local indexed = pendingUnitIndexes[i]
+			indexed.RefreshIndex = refreshIndex
+			self._unitOrder[refreshIndex] = indexed
+			self._unitIndex:register({
+				UnitId = unit.UnitId,
+				UnitName = unit.UnitName,
+				GroupId = battery.GroupId,
+				GroupName = battery.GroupName,
+				OwnerKind = OwnerKind.BATTERY_UNIT,
+				Owner = indexed,
+			})
 		end
 	end
 
@@ -162,14 +221,7 @@ function Medusa.Services.BatteryStore:add(battery)
 	end
 	self._count = self._count + 1
 
-	self._logger:debug(
-		string.format(
-			"added battery %s (groupId=%s, count=%d)",
-			battery.BatteryId,
-			tostring(battery.GroupId),
-			self._count
-		)
-	)
+	self._logger:debug(string.format("added battery %s (groupId=%s, count=%d)", battery.BatteryId, tostring(battery.GroupId), self._count))
 end
 
 function Medusa.Services.BatteryStore:get(batteryId)
@@ -184,29 +236,48 @@ function Medusa.Services.BatteryStore:getByGroupId(groupId)
 	return self._byId[batteryId]
 end
 
+--- Returns the active battery incarnation for groupName, or nil.
+function Medusa.Services.BatteryStore:getByGroupName(groupName)
+	local batteryId = self._byGroupName[groupName]
+	if not batteryId then
+		return nil
+	end
+	return self._byId[batteryId]
+end
+
 function Medusa.Services.BatteryStore:getByUnitId(unitId)
-	local indexed = self._byUnitId[unitId]
+	local identity = self._unitIndex:resolve(unitId)
+	local indexed = self._unitIndex:getOwner(identity, OwnerKind.BATTERY_UNIT)
 	if not indexed then
 		return nil
 	end
 	return indexed.Battery, indexed.Unit
 end
 
-local function removeUnitIndex(repository, unitId)
-	local indexed = repository._byUnitId[unitId]
+--- Resolves one DCS event identity and retains its latest numeric ID alias for the matched battery member.
+function Medusa.Services.BatteryStore:resolveUnit(unitId, unitName)
+	local identity, source = self._unitIndex:resolve(unitId, unitName)
+	local indexed = self._unitIndex:getOwner(identity, OwnerKind.BATTERY_UNIT)
+	if not indexed then
+		return nil, nil, source
+	end
+	return indexed.Battery, indexed.Unit, source
+end
+
+local function removeUnitIndex(repository, indexed)
 	if not indexed then
 		return nil
 	end
 	local order = repository._unitOrder
 	local index = indexed.RefreshIndex
 	local lastIndex = #order
-	local movedUnitId = order[lastIndex]
-	order[index] = movedUnitId
+	local moved = order[lastIndex]
+	order[index] = moved
 	order[lastIndex] = nil
-	if movedUnitId and movedUnitId ~= unitId then
-		repository._byUnitId[movedUnitId].RefreshIndex = index
+	if moved and moved ~= indexed then
+		moved.RefreshIndex = index
 	end
-	repository._byUnitId[unitId] = nil
+	repository._unitIndex:unregister(OwnerKind.BATTERY_UNIT, indexed)
 	if repository._positionRefreshCursor > #order then
 		repository._positionRefreshCursor = 0
 	end
@@ -220,7 +291,7 @@ function Medusa.Services.BatteryStore:nextUnitForPositionRefresh()
 		return nil
 	end
 	self._positionRefreshCursor = (self._positionRefreshCursor % count) + 1
-	local indexed = self._byUnitId[self._unitOrder[self._positionRefreshCursor]]
+	local indexed = self._unitOrder[self._positionRefreshCursor]
 	if not indexed then
 		return nil
 	end
@@ -228,7 +299,8 @@ function Medusa.Services.BatteryStore:nextUnitForPositionRefresh()
 end
 
 function Medusa.Services.BatteryStore:removeUnit(unitId)
-	local indexed = self._byUnitId[unitId]
+	local identity = self._unitIndex:resolve(unitId)
+	local indexed = self._unitIndex:getOwner(identity, OwnerKind.BATTERY_UNIT)
 	if not indexed then
 		return nil
 	end
@@ -240,10 +312,11 @@ function Medusa.Services.BatteryStore:removeUnit(unitId)
 			break
 		end
 	end
-	removeUnitIndex(self, unitId)
+	removeUnitIndex(self, indexed)
 	return indexed.Battery, indexed.Unit
 end
 
+--- Removes one battery and all of its identity and member indexes.
 function Medusa.Services.BatteryStore:remove(batteryId)
 	local battery = self._byId[batteryId]
 	if not battery then
@@ -254,10 +327,14 @@ function Medusa.Services.BatteryStore:remove(batteryId)
 	if battery.GroupId then
 		self._byGroupId[battery.GroupId] = nil
 	end
+	if battery.GroupName then
+		self._byGroupName[battery.GroupName] = nil
+	end
 	local units = battery.Units or {}
 	for i = 1, #units do
 		if units[i].UnitId then
-			removeUnitIndex(self, units[i].UnitId)
+			local identity = self._unitIndex:resolve(units[i].UnitId)
+			removeUnitIndex(self, self._unitIndex:getOwner(identity, OwnerKind.BATTERY_UNIT))
 		end
 	end
 

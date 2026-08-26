@@ -48,14 +48,7 @@ function Medusa.Services.InterceptorGroupStore:add(group)
 	self._byGroupName[group.GroupName] = group.InterceptorGroupId
 	self._count = self._count + 1
 
-	self._logger:debug(
-		string.format(
-			"added interceptor group %s (groupName=%s, count=%d)",
-			group.InterceptorGroupId,
-			group.GroupName,
-			self._count
-		)
-	)
+	self._logger:debug(string.format("added interceptor group %s (groupName=%s, count=%d)", group.InterceptorGroupId, group.GroupName, self._count))
 end
 
 function Medusa.Services.InterceptorGroupStore:get(groupId)

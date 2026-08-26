@@ -5,10 +5,10 @@ require("_header")
 require("core.Logger")
 require("core.Constants")
 require("services.Services")
-require("services.MetricsService")
+require("observability.MetricsService")
 
 -- Shorthand alias
-local MS = Medusa.Services.MetricsService
+local MS = Medusa.Observability.MetricsService
 
 -- Helper: assert that a string contains a given substring, with a clear message.
 local function assertContains(haystack, needle, msg)
@@ -46,11 +46,7 @@ function TestMetricsServiceCounter:test_counter_registrationProducesAllThreeLine
 
 	local out = MS.serialize()
 
-	assertContains(
-		out,
-		"# HELP shots_fired Total shots fired by IADS",
-		"test_counter_registrationProducesAllThreeLines HELP line"
-	)
+	assertContains(out, "# HELP shots_fired Total shots fired by IADS", "test_counter_registrationProducesAllThreeLines HELP line")
 	assertContains(out, "# TYPE shots_fired counter", "test_counter_registrationProducesAllThreeLines TYPE line")
 	assertContains(out, "shots_fired 0", "test_counter_registrationProducesAllThreeLines value line")
 end
@@ -133,11 +129,7 @@ function TestMetricsServiceGauge:test_gauge_registrationProducesGaugeType()
 
 	local out = MS.serialize()
 
-	assertContains(
-		out,
-		"# HELP active_tracks Number of active tracks",
-		"test_gauge_registrationProducesGaugeType HELP line"
-	)
+	assertContains(out, "# HELP active_tracks Number of active tracks", "test_gauge_registrationProducesGaugeType HELP line")
 	assertContains(out, "# TYPE active_tracks gauge", "test_gauge_registrationProducesGaugeType TYPE line")
 	assertContains(out, "active_tracks 0", "test_gauge_registrationProducesGaugeType value line")
 end
@@ -282,10 +274,7 @@ function TestMetricsServiceSerialize:test_serialize_prometheusValueLineFormat()
 
 	-- The value line must match the pattern "november 7" followed by newline or
 	-- end of string — no extra characters on the same line.
-	lu.assertNotNil(
-		string.match(out, "november%s+7%s*[\n]?"),
-		"test_serialize_prometheusValueLineFormat: value line must end cleanly"
-	)
+	lu.assertNotNil(string.match(out, "november%s+7%s*[\n]?"), "test_serialize_prometheusValueLineFormat: value line must end cleanly")
 end
 
 -- 15 (extended). No trailing newline garbage: ensure HELP line does not bleed
@@ -404,11 +393,7 @@ function TestMetricsServiceBoundary:test_boundary_metricNameWithUnderscoresAndDi
 	MS.counter("iads_battery_kill_count_total_v2", "")
 
 	local out = MS.serialize()
-	assertContains(
-		out,
-		"# TYPE iads_battery_kill_count_total_v2 counter",
-		"test_boundary_metricNameWithUnderscoresAndDigits"
-	)
+	assertContains(out, "# TYPE iads_battery_kill_count_total_v2 counter", "test_boundary_metricNameWithUnderscoresAndDigits")
 end
 
 -- Boundary: large delta does not overflow or produce wrong output.

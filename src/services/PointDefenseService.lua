@@ -1,6 +1,5 @@
 require("_header")
 require("services.Services")
-require("services.PkModel")
 require("services.SpatialQuery")
 require("core.Constants")
 require("core.Logger")
@@ -18,79 +17,36 @@ require("entities.Track")
             ╚═╝      ╚═════╝ ╚═╝╚═╝  ╚═══╝   ╚═╝       ╚═════╝ ╚══════╝╚═╝     ╚══════╝╚═╝  ╚═══╝╚══════╝╚══════╝
 
     What this service does
-    - Finds SHORAD and HARM-capable batteries near a threatened battery using spatial queries.
-    - Activates nearby point-defense batteries to engage inbound HARMs that threaten high-value SAMs.
+    - Derives which nearby short-range batteries can defend high-value SAMs in the same partition.
+    - Assigns each viable defender to its closest eligible confirmed HARM and requests HOT readiness.
 
     How others use it
-    - HarmResponseService calls activate when a battery's doctrine says to use point defense.
-    - IadsNetwork includes point-defense evaluation as part of the HARM response tick.
+    - IadsNetwork refreshes the derived point-defense role before each HARM response pass.
+    - HarmResponseService uses the eligibility and activation operations for available and committed capacity.
 --]]
 
 Medusa.Services.PointDefenseService = {}
 
 local _logger = Medusa.Logger:ns("PointDefenseService")
-local AAT = Medusa.Constants.AssessedAircraftType
-Medusa.Services.PointDefenseService._batteryBuffer = {}
-local _pdBatteryBuffer = Medusa.Services.PointDefenseService._batteryBuffer
-Medusa.Services.PointDefenseService._harmActivationBuffer = {}
-local _harmActivationBuffer = Medusa.Services.PointDefenseService._harmActivationBuffer
 local AS = Medusa.Constants.ActivationState
 local BOS = Medusa.Constants.BatteryOperationalStatus
 local BR = Medusa.Constants.BatteryRole
-local LS = Medusa.Constants.TrackLifecycleState
-local BatteryActivationService = Medusa.Services.BatteryActivationService
 local C = Medusa.Constants
 local Battery = Medusa.Entities.Battery
-
-local function clearTable(t)
-	for k in pairs(t) do
-		t[k] = nil
-	end
-end
-
+local BatteryActivationService = Medusa.Services.BatteryActivationService
+local computeTrackCPA = Medusa.Services.HarmDetectionService.computeTrackCPA
 local HVA_ROLES = { [BR.LR_SAM] = true, [BR.MR_SAM] = true }
 local PD_ROLES = { [BR.SR_SAM] = true, [BR.AAA] = true }
+local _batteryBuffer = {}
 
-function Medusa.Services.PointDefenseService.setAssignment(pdBatteryId, targetBatteryId, batteryStore)
-	if pdBatteryId == targetBatteryId then
-		return false
-	end
-	local pdBattery = batteryStore:get(pdBatteryId)
-	local targetBattery = batteryStore:get(targetBatteryId)
-	if not pdBattery or not targetBattery then
-		return false
-	end
-	if Battery.isCrewSuppressed(pdBattery) then
-		return false
-	end
-	pdBattery.IsPointDefense = true
-	pdBattery.PointDefenseTargetId = targetBatteryId
-	targetBattery.PointDefenseProviderId = pdBatteryId
-	_logger:info(string.format("assigned PD %s -> target %s", pdBatteryId, targetBatteryId))
-	return true
+--- Reports exact nonnil partition equality for point-defense work.
+local function sharesPartition(left, right)
+	return left.PartitionKey ~= nil and left.PartitionKey == right.PartitionKey
 end
 
-function Medusa.Services.PointDefenseService.clearAssignment(pdBatteryId, batteryStore)
-	local pdBattery = batteryStore:get(pdBatteryId)
-	if not pdBattery then
-		return true
-	end
-	if pdBattery.PointDefenseTargetId then
-		local targetBattery = batteryStore:get(pdBattery.PointDefenseTargetId)
-		if targetBattery then
-			targetBattery.PointDefenseProviderId = nil
-		end
-	end
-	pdBattery.IsPointDefense = false
-	pdBattery.PointDefenseTargetId = nil
-	return true
-end
-
+--- Reports whether a battery can contribute current HARM-defense capacity.
 function Medusa.Services.PointDefenseService.isProviderViable(provider)
-	if not provider then
-		return false
-	end
-	if Battery.isIndependentAaa(provider) then
+	if not provider or Medusa.Entities.Battery.isIndependentAaa(provider) then
 		return false
 	end
 	if Battery.isCrewSuppressed(provider) then
@@ -99,255 +55,111 @@ function Medusa.Services.PointDefenseService.isProviderViable(provider)
 	if provider.OperationalStatus ~= BOS.ACTIVE and provider.OperationalStatus ~= BOS.ENGAGEMENT_IMPAIRED then
 		return false
 	end
-	if provider.TotalAmmoStatus <= 0 then
-		return false
-	end
-	return true
+	return Battery.hasKnownAmmo(provider)
 end
 
-function Medusa.Services.PointDefenseService.releaseOrphanedDefenders(ctx)
-	local batteryStore = ctx.batteryStore
-	local batteries = batteryStore:getAll(_pdBatteryBuffer)
-	local released = 0
-	for i = 1, #batteries do
-		local pd = batteries[i]
-		if pd.IsPointDefense and pd.PointDefenseTargetId then
-			local liege = batteryStore:get(pd.PointDefenseTargetId)
-			if
-				not Medusa.Services.PointDefenseService.isProviderViable(pd)
-				or not Medusa.Services.PointDefenseService.isProviderViable(liege)
-			then
-				_logger:info(
-					string.format(
-						"PD %s released: assignment to %s no longer viable",
-						pd.GroupName or pd.BatteryId,
-						pd.PointDefenseTargetId
-					)
-				)
-				Medusa.Services.PointDefenseService.clearAssignment(pd.BatteryId, batteryStore)
-				released = released + 1
-			end
-		end
-	end
-	return released
+--- Reports whether provider is a viable nearby point defender for protected.
+function Medusa.Services.PointDefenseService.canProtect(provider, protected)
+	return provider ~= protected
+		and PD_ROLES[provider.Role] == true
+		and HVA_ROLES[protected.Role] == true
+		and Medusa.Services.PointDefenseService.isProviderViable(provider)
+		and Medusa.Services.PointDefenseService.isProviderViable(protected)
+		and provider.Position ~= nil
+		and protected.Position ~= nil
+		and sharesPartition(provider, protected)
+		and Distance2D(provider.Position, protected.Position) <= C.POINT_DEFENSE_SEARCH_RADIUS_M
 end
 
-function Medusa.Services.PointDefenseService.autoAssignShorad(ctx)
+--- Refreshes the derived point-defense role from current proximity and partition state.
+function Medusa.Services.PointDefenseService.reconcileProviders(ctx)
 	local batteryStore = ctx.batteryStore
-	local geoGrid = ctx.geoGrid
-	local batteries = batteryStore:getAll(_pdBatteryBuffer)
-	local assignCount = 0
+	local batteries = batteryStore:getAll(_batteryBuffer)
+	local count = 0
 	for i = 1, #batteries do
-		local pd = batteries[i]
-		if
-			PD_ROLES[pd.Role]
-			and not Battery.isIndependentAaa(pd)
-			and not Battery.isCrewSuppressed(pd)
-			and pd.OperationalStatus == BOS.ACTIVE
-			and pd.Position
-			and not pd.IsPointDefense
-		then
-			local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(
-				geoGrid,
-				batteryStore,
-				pd.Position,
-				C.POINT_DEFENSE_SEARCH_RADIUS_M
-			)
-			local bestDist = math.huge
-			local bestId = nil
+		local provider = batteries[i]
+		local isPointDefense = false
+		if PD_ROLES[provider.Role] and provider.Position and Medusa.Services.PointDefenseService.isProviderViable(provider) then
+			local nearby = Medusa.Services.SpatialQuery.batteriesInRadius(ctx.geoGrid, batteryStore, provider.Position, C.POINT_DEFENSE_SEARCH_RADIUS_M)
 			for j = 1, #nearby do
-				local hva = nearby[j]
-				if
-					HVA_ROLES[hva.Role]
-					and hva.OperationalStatus == BOS.ACTIVE
-					and hva.Position
-					and not hva.PointDefenseProviderId
-				then
-					local dist = Distance2D(pd.Position, hva.Position)
-					if dist < bestDist then
-						bestDist = dist
-						bestId = hva.BatteryId
-					end
+				if Medusa.Services.PointDefenseService.canProtect(provider, nearby[j]) then
+					isPointDefense = true
+					break
 				end
 			end
-			if bestId then
-				Medusa.Services.PointDefenseService.setAssignment(pd.BatteryId, bestId, batteryStore)
-				assignCount = assignCount + 1
-			end
+		end
+		provider.IsPointDefense = isPointDefense
+		if isPointDefense then
+			count = count + 1
 		end
 	end
-	return assignCount
+	return count
 end
 
-local computeTrackCPA = Medusa.Services.HarmDetectionService.computeTrackCPA
-
-local function tryActivatePd(provider, harmTrack, protectedLabel, now)
-	if not Medusa.Services.PointDefenseService.isProviderViable(provider) then
-		return false
-	end
-	if provider.ActivationState == AS.STATE_HOT then
-		return false
-	end
-	if provider.CurrentTargetTrackId then
-		return false
-	end
-	if not provider.Position or not provider.EngagementRangeMax then
+--- Reports whether provider can retain or accept one confirmed HARM within its maximum envelope.
+function Medusa.Services.PointDefenseService.canEngageHarm(provider, harmTrack, doctrine)
+	if
+		not Medusa.Services.PointDefenseService.isProviderViable(provider)
+		or not provider.Position
+		or not provider.EngagementRangeMax
+		or provider.EngagementRangeMax <= 0
+		or not harmTrack
+		or harmTrack.AssessedAircraftType ~= C.AssessedAircraftType.HARM
+		or not Battery.canAcceptTrack(provider, harmTrack, doctrine)
+	then
 		return false
 	end
 	local cpaDist = computeTrackCPA(harmTrack, provider.Position)
-	if cpaDist > provider.EngagementRangeMax then
+	return cpaDist <= provider.EngagementRangeMax
+end
+
+--- Reports whether provider can accept at least one HARM in threats.
+function Medusa.Services.PointDefenseService.canEngageAnyHarm(provider, threats, doctrine)
+	for i = 1, #threats do
+		if Medusa.Services.PointDefenseService.canEngageHarm(provider, threats[i], doctrine) then
+			return true
+		end
+	end
+	return false
+end
+
+--- Confirms HOT readiness for an assigned HARM or releases the failed commitment.
+local function confirmHotOrRelease(provider, harmTrack, now, trackStore)
+	if provider.ActivationState == AS.STATE_HOT or BatteryActivationService.forceGoHot(provider, now) then
+		return true
+	end
+	Battery.releaseTrack(provider, trackStore, harmTrack)
+	return false
+end
+
+--- Assigns provider to its closest eligible HARM and returns whether HOT readiness is confirmed.
+function Medusa.Services.PointDefenseService.activateClosestHarm(provider, threats, now, doctrine, trackStore)
+	if provider.CurrentTargetTrackId then
+		for i = 1, #threats do
+			if threats[i].TrackId == provider.CurrentTargetTrackId and Medusa.Services.PointDefenseService.canEngageHarm(provider, threats[i], doctrine) then
+				return confirmHotOrRelease(provider, threats[i], now, trackStore)
+			end
+		end
+	end
+
+	local bestTrack = nil
+	local bestDistance = math.huge
+	for i = 1, #threats do
+		local track = threats[i]
+		if Medusa.Services.PointDefenseService.canEngageHarm(provider, track, doctrine) then
+			local distance = Distance2D(provider.Position, track.Position)
+			if distance < bestDistance or (distance == bestDistance and bestTrack and tostring(track.TrackId) < tostring(bestTrack.TrackId)) then
+				bestTrack = track
+				bestDistance = distance
+			end
+		end
+	end
+	if not bestTrack or not Battery.assignTrack(provider, bestTrack, now, trackStore) then
 		return false
 	end
-	Medusa.Entities.Battery.assignTrack(provider, harmTrack, now)
-	BatteryActivationService.forceGoHot(provider, now)
-	_logger:info(
-		string.format(
-			"PD %s activated for HARM track %s (protecting %s)",
-			provider.GroupName or provider.BatteryId,
-			Medusa.Entities.Track.displayId(harmTrack),
-			protectedLabel
-		)
-	)
-	return true
-end
-
-function Medusa.Services.PointDefenseService.activateForHarm(harmTrack, geoGrid, batteryStore, now, doctrine)
-	if not harmTrack.Position then
-		return 0
+	if confirmHotOrRelease(provider, bestTrack, now, trackStore) then
+		_logger:info(string.format("battery %s committed to closest HARM %s", provider.GroupName or provider.BatteryId, Medusa.Entities.Track.displayId(bestTrack)))
+		return true
 	end
-	local vel = harmTrack.SmoothedVelocity or harmTrack.Velocity
-	if not vel then
-		return 0
-	end
-
-	local defendPk = (doctrine and doctrine.DefendPk) or 0.30
-	local activated = 0
-	clearTable(_harmActivationBuffer)
-
-	-- Pass 1: activate assigned PD for batteries directly threatened by the HARM (no Pk gate)
-	local batteries = batteryStore:getAll(_pdBatteryBuffer)
-	for i = 1, #batteries do
-		local battery = batteries[i]
-		if battery.PointDefenseProviderId and battery.Position then
-			local cpaDist = computeTrackCPA(harmTrack, battery.Position)
-			if cpaDist < C.HARM_DEFAULT_THREAT_RADIUS_M then
-				local provider = batteryStore:get(battery.PointDefenseProviderId)
-				if provider and not _harmActivationBuffer[provider.BatteryId] then
-					if tryActivatePd(provider, harmTrack, battery.GroupName or battery.BatteryId, now) then
-						_harmActivationBuffer[provider.BatteryId] = true
-						activated = activated + 1
-					end
-				end
-			end
-		end
-	end
-
-	-- Pass 2: any battery along the flight path that can intercept with Pk >= DefendPk
-	local searchRadius = C.POINT_DEFENSE_SEARCH_RADIUS_M
-	local nearby =
-		Medusa.Services.SpatialQuery.batteriesInRadius(geoGrid, batteryStore, harmTrack.Position, searchRadius)
-	for i = 1, #nearby do
-		local battery = nearby[i]
-		if
-			battery.EngagementRangeMax
-			and battery.EngagementRangeMax > 0
-			and battery.Position
-			and not _harmActivationBuffer[battery.BatteryId]
-			and not battery.CurrentTargetTrackId
-			and not battery.HarmShutdownUntil
-			and battery.ActivationState ~= AS.STATE_HOT
-			and Medusa.Services.PointDefenseService.isProviderViable(battery)
-			and (battery.IsPointDefense or battery.HarmCapableUnitCount > 0)
-		then
-			local cpaDist = computeTrackCPA(harmTrack, battery.Position)
-			if cpaDist < battery.EngagementRangeMax then
-				local pk = Medusa.Services.PkModel.computePk(battery, harmTrack, cpaDist)
-				if pk < defendPk then
-					_logger:debug(
-						string.format(
-							"battery %s skipped HARM intercept (Pk=%.2f < %.2f, CPA=%.0fm)",
-							battery.GroupName or battery.BatteryId,
-							pk,
-							defendPk,
-							cpaDist
-						)
-					)
-				else
-					Medusa.Entities.Battery.assignTrack(battery, harmTrack, now)
-					if BatteryActivationService.forceGoHot(battery, now) then
-						_harmActivationBuffer[battery.BatteryId] = true
-						activated = activated + 1
-						_logger:info(
-							string.format(
-								"battery %s HOT for HARM intercept (Pk=%.2f, CPA=%.0fm)",
-								battery.GroupName or battery.BatteryId,
-								pk,
-								cpaDist
-							)
-						)
-					else
-						battery.CurrentTargetTrackId = nil
-						harmTrack.AssignedBatteryIds:remove(battery.BatteryId)
-					end
-				end
-			end
-		end
-	end
-
-	return activated
-end
-
-function Medusa.Services.PointDefenseService.engageThreats(ctx)
-	local trackStore = ctx.trackStore
-	local batteryStore = ctx.batteryStore
-	local geoGrid = ctx.geoGrid
-	local now = ctx.now
-	local batteries = batteryStore:getAll(_pdBatteryBuffer)
-	local engageCount = 0
-	for i = 1, #batteries do
-		local protected = batteries[i]
-		if protected.PointDefenseProviderId then
-			local provider = batteryStore:get(protected.PointDefenseProviderId)
-			if
-				Medusa.Services.PointDefenseService.isProviderViable(provider)
-				and not provider.CurrentTargetTrackId
-				and provider.EngagementRangeMax
-			then
-				local results = geoGrid:queryRadius(provider.Position, provider.EngagementRangeMax, { "Track" })
-				local trackIds = results.TrackIds
-				if trackIds then
-					local bestDist = math.huge
-					local bestTrack = nil
-					for trackId in pairs(trackIds) do
-						local track = trackStore:get(trackId)
-						if
-							track
-							and track.LifecycleState == LS.ACTIVE
-							and (track.AssessedAircraftType == AAT.HARM or track.IsSeadThreat)
-						then
-							local dist = Distance2D(track.Position, provider.Position)
-							if dist <= provider.EngagementRangeMax and dist < bestDist then
-								bestDist = dist
-								bestTrack = track
-							end
-						end
-					end
-					if bestTrack then
-						Medusa.Entities.Battery.assignTrack(provider, bestTrack, now)
-						BatteryActivationService.forceGoHot(provider, now)
-						_logger:info(
-							string.format(
-								"PD %s engaging %s to defend %s",
-								provider.BatteryId,
-								Medusa.Entities.Track.displayId(bestTrack),
-								protected.BatteryId
-							)
-						)
-						engageCount = engageCount + 1
-					end
-				end
-			end
-		end
-	end
-	return engageCount
+	return false
 end

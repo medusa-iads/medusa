@@ -48,7 +48,6 @@ function TestGetDoctrine:test_inline_table_all_fields_reach_doctrine()
 		ROE = "FREE",
 		HARMResponse = "SHUTDOWN",
 		PkFloor = 0.30,
-		DefendPk = 0.50,
 		LookaheadSec = 15,
 		C2DelaySec = 5,
 		HoldDownSec = 10,
@@ -71,7 +70,6 @@ function TestGetDoctrine:test_inline_table_all_fields_reach_doctrine()
 	lu.assertEquals(d.ROE, "FREE")
 	lu.assertEquals(d.HARMResponse, "SHUTDOWN")
 	lu.assertAlmostEquals(d.PkFloor, 0.30, 0.001)
-	lu.assertAlmostEquals(d.DefendPk, 0.50, 0.001)
 	lu.assertEquals(d.LookaheadSec, 15)
 	lu.assertEquals(d.C2DelaySec, 5)
 	lu.assertEquals(d.HoldDownSec, 10)
@@ -94,6 +92,7 @@ function TestGetDoctrine:test_nil_input_uses_defaults()
 	lu.assertEquals(d.ROE, "TIGHT")
 	lu.assertEquals(d.HARMResponse, "AUTO_DEFENSE")
 	lu.assertAlmostEquals(d.PkFloor, 0.25, 0.001)
+	lu.assertEquals(d.PerTrackScanUpdateRate, 2)
 	lu.assertEquals(d.MANPAD.AlertnessDecaySec, 14400)
 	lu.assertEquals(d.MANPAD.FieldRadioRangeM, 5000)
 	lu.assertEquals(d.MANPAD.AudioRangeM, 6000)
@@ -360,6 +359,72 @@ function TestGetNetworksDoctrine:test_missing_doctrine_passes_nil()
 	MEDUSA_CONFIG = nil
 end
 
+function TestGetNetworksDoctrine:test_invalid_network_identity_fields_are_skipped()
+	MEDUSA_CONFIG = {
+		Networks = {
+			true,
+			1,
+			{ name = "", coalition = 1, prefix = "empty-name" },
+			{ name = "unknown-coalition", coalition = "other", prefix = "bad" },
+			{ name = "empty-prefix", coalition = 1, prefix = "" },
+			{ name = "valid", coalition = 1, prefix = "iads" },
+		},
+	}
+	Medusa.Config.Current = nil
+	Medusa.Config:initialize()
+
+	local networks = Medusa.Config:getNetworks()
+
+	lu.assertEquals(#networks, 1)
+	lu.assertEquals(networks[1].id, "valid")
+	MEDUSA_CONFIG = nil
+end
+
+function TestGetNetworksDoctrine:test_non_table_network_collection_is_rejected()
+	MEDUSA_CONFIG = { Networks = true }
+	Medusa.Config.Current = nil
+	Medusa.Config:initialize()
+
+	lu.assertEquals(Medusa.Config:getNetworks(), {})
+	MEDUSA_CONFIG = nil
+end
+
+function TestGetNetworksDoctrine:test_duplicate_and_mistyped_network_identities_are_rejected()
+	MEDUSA_CONFIG = {
+		Networks = {
+			{ name = "valid", coalition = 1, prefix = "iads" },
+			{ name = "valid", coalition = 2, prefix = "other" },
+			{ name = 7, coalition = 1, prefix = "number-name" },
+			{ name = "number-prefix", coalition = 1, prefix = 7 },
+			{ name = "number-coalition", coalition = 9, prefix = "invalid" },
+		},
+	}
+	Medusa.Config.Current = nil
+	Medusa.Config:initialize()
+
+	local networks = Medusa.Config:getNetworks()
+
+	lu.assertEquals(#networks, 1)
+	lu.assertEquals(networks[1].id, "valid")
+	MEDUSA_CONFIG = nil
+end
+
+function TestGetNetworksDoctrine:test_malformed_roles_and_scalar_fields_use_safe_defaults()
+	MEDUSA_CONFIG = {
+		Roles = true,
+		PrometheusEnabled = "yes",
+		TrackMemorySec = 0 / 0,
+	}
+	Medusa.Config.Current = nil
+
+	local config = Medusa.Config:initialize()
+
+	lu.assertEquals(config.Roles.HQ, "hq")
+	lu.assertFalse(config.PrometheusEnabled)
+	lu.assertEquals(config.TrackMemorySec, 30)
+	MEDUSA_CONFIG = nil
+end
+
 function TestGetNetworksDoctrine:test_full_roundtrip_inline_to_resolved()
 	MEDUSA_CONFIG = {
 		Networks = {
@@ -403,6 +468,14 @@ function TestGetNetworksDoctrine:test_invalid_enum_falls_back_to_default()
 	lu.assertEquals(doctrine.ROE, "TIGHT")
 	lu.assertNotEquals(doctrine.EngageTactics, "DISTRIBUTED")
 	lu.assertEquals(doctrine.EngageTactics, "SHOOT_IN_DEPTH")
+end
+
+function TestGetNetworksDoctrine:test_boolean_fields_accept_only_boolean_values()
+	local invalid = Medusa.Entities.Doctrine.new({ ADIZEnabled = "false" })
+	local explicitFalse = Medusa.Entities.Doctrine.new({ ADIZEnabled = false })
+
+	lu.assertTrue(invalid.ADIZEnabled)
+	lu.assertFalse(explicitFalse.ADIZEnabled)
 end
 
 function TestGetNetworksDoctrine:test_multi_network_independent_doctrines()

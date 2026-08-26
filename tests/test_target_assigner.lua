@@ -36,6 +36,7 @@ local function makeTrack(overrides)
 		Velocity = { x = -200, y = 0, z = 0 },
 		LifecycleState = Medusa.Constants.TrackLifecycleState.ACTIVE,
 		TrackIdentification = "BANDIT",
+		PartitionKey = "partition-a",
 	}
 	if overrides then
 		for k, v in pairs(overrides) do
@@ -59,6 +60,8 @@ local function makeBattery(overrides)
 		TotalAmmoStatus = 10,
 		EngagementAltitudeMin = 0,
 		EngagementAltitudeMax = 30000,
+		PartitionKey = "partition-a",
+		CoordinationState = Medusa.Constants.CoordinationState.COORDINATED,
 	}
 	if overrides then
 		for k, v in pairs(overrides) do
@@ -239,7 +242,7 @@ function TestAssignTargets:test_sets_battery_target_and_track_assignment()
 	lu.assertTrue(track.AssignedBatteryIds:contains("B1"))
 end
 
-function TestAssignTargets:test_sets_assignment_time()
+function TestAssignTargets:test_sets_battery_assignment_time()
 	local track = makeTrack({ TrackId = "T1" })
 	self.trackStore:add(track)
 
@@ -254,7 +257,7 @@ function TestAssignTargets:test_sets_assignment_time()
 		doctrine = doctrine,
 	}))
 
-	lu.assertEquals(track.AssignmentTime, 1000)
+	lu.assertEquals(battery.LastAssignmentChangeTime, 1000)
 end
 
 function TestAssignTargets:test_skips_track_with_existing_assignment()
@@ -266,7 +269,7 @@ function TestAssignTargets:test_skips_track_with_existing_assignment()
 		GroupName = "SAM-existing",
 		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
 	})
-	Medusa.Entities.Battery.assignTrack(existing, track, 900)
+	Medusa.Entities.Battery.assignTrack(existing, track, 900, self.trackStore)
 	self.batteryStore:add(existing)
 
 	local battery = makeBattery({ BatteryId = "B1", GroupId = 2, GroupName = "SAM-1" })
@@ -381,7 +384,7 @@ function TestAssignTargets:test_aaa_does_not_consume_shoot_shoot_slots()
 		GroupName = "AAA-1",
 		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
 	})
-	Medusa.Entities.Battery.assignTrack(aaa, track, 900)
+	Medusa.Entities.Battery.assignTrack(aaa, track, 900, self.trackStore)
 	self.batteryStore:add(aaa)
 	self.batteryStore:add(makeBattery({ BatteryId = "B1", GroupId = 2, GroupName = "SAM-1" }))
 	self.batteryStore:add(makeBattery({ BatteryId = "B2", GroupId = 3, GroupName = "SAM-2" }))
@@ -890,6 +893,35 @@ function TestCheckDeactivations:test_independent_aaa_is_not_handed_off_by_wta()
 	lu.assertNil(result)
 end
 
+function TestCheckDeactivations:test_confirmed_harm_assignment_is_not_released_by_generic_handoff()
+	local track = makeTrack({
+		TrackId = "HARM-1",
+		AssessedAircraftType = Medusa.Constants.AssessedAircraftType.HARM,
+		Position = { x = 50000, y = 5000, z = 0 },
+		Velocity = { x = 0, y = 0, z = 0 },
+	})
+	self.trackStore:add(track)
+	local battery = makeBattery({
+		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
+		CurrentTargetTrackId = track.TrackId,
+		LastAssignmentChangeTime = 0,
+	})
+
+	local result = Medusa.Services.TargetAssigner.evaluateSingleHandoff(
+		battery,
+		makeCtx({
+			trackStore = self.trackStore,
+			batteryStore = self.batteryStore,
+			geoGrid = makeMockGeoGrid(self.batteryStore),
+			doctrine = makeFreeDoctrine({ PkFloor = 1 }),
+			now = 1000,
+		})
+	)
+
+	lu.assertNil(result)
+	lu.assertEquals(battery.CurrentTargetTrackId, track.TrackId)
+end
+
 function TestCheckDeactivations:test_returns_hot_battery_when_track_removed()
 	local battery = makeBattery({
 		BatteryId = "B1",
@@ -944,7 +976,6 @@ function TestCheckDeactivations:test_holddown_protects_stale_track()
 	local track = makeTrack({
 		TrackId = "T1",
 		LifecycleState = Medusa.Constants.TrackLifecycleState.STALE,
-		AssignmentTime = 995,
 	})
 	self.trackStore:add(track)
 
@@ -954,6 +985,7 @@ function TestCheckDeactivations:test_holddown_protects_stale_track()
 		GroupName = "SAM-1",
 		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
 		CurrentTargetTrackId = "T1",
+		LastAssignmentChangeTime = 995,
 	})
 	self.batteryStore:add(battery)
 
@@ -972,7 +1004,6 @@ function TestCheckDeactivations:test_holddown_expired_allows_deactivation()
 	local track = makeTrack({
 		TrackId = "T1",
 		LifecycleState = Medusa.Constants.TrackLifecycleState.STALE,
-		AssignmentTime = 980,
 	})
 	self.trackStore:add(track)
 
@@ -982,6 +1013,7 @@ function TestCheckDeactivations:test_holddown_expired_allows_deactivation()
 		GroupName = "SAM-1",
 		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
 		CurrentTargetTrackId = "T1",
+		LastAssignmentChangeTime = 980,
 	})
 	self.batteryStore:add(battery)
 
@@ -1000,7 +1032,6 @@ function TestCheckDeactivations:test_expired_track_always_deactivates()
 	local track = makeTrack({
 		TrackId = "T1",
 		LifecycleState = Medusa.Constants.TrackLifecycleState.EXPIRED,
-		AssignmentTime = 999,
 	})
 	self.trackStore:add(track)
 
@@ -1010,6 +1041,7 @@ function TestCheckDeactivations:test_expired_track_always_deactivates()
 		GroupName = "SAM-1",
 		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
 		CurrentTargetTrackId = "T1",
+		LastAssignmentChangeTime = 999,
 	})
 	self.batteryStore:add(battery)
 
@@ -1085,7 +1117,6 @@ function TestCheckDeactivations:test_missing_holddown_uses_default()
 	local track = makeTrack({
 		TrackId = "T1",
 		LifecycleState = Medusa.Constants.TrackLifecycleState.STALE,
-		AssignmentTime = 999,
 	})
 	self.trackStore:add(track)
 
@@ -1095,6 +1126,7 @@ function TestCheckDeactivations:test_missing_holddown_uses_default()
 		GroupName = "SAM-1",
 		ActivationState = Medusa.Constants.ActivationState.STATE_HOT,
 		CurrentTargetTrackId = "T1",
+		LastAssignmentChangeTime = 999,
 	})
 	self.batteryStore:add(battery)
 

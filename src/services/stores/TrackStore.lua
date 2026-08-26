@@ -1,6 +1,7 @@
 require("_header")
 require("services.Services")
 require("core.Logger")
+require("core.Constants")
 require("entities.Track")
 
 --[[
@@ -33,9 +34,13 @@ function Medusa.Services.TrackStore:new()
 	return o
 end
 
+--- Publishes one track when the fixed store capacity and indexes allow it.
 function Medusa.Services.TrackStore:add(track)
 	if self._byId[track.TrackId] then
 		error(string.format("duplicate track: %s", Medusa.Entities.Track.displayId(track)))
+	end
+	if self._count >= Medusa.Constants.TRACK_CAPACITY then
+		return false
 	end
 
 	self._byId[track.TrackId] = track
@@ -47,14 +52,8 @@ function Medusa.Services.TrackStore:add(track)
 	end
 	self._byIdentification[identification][track.TrackId] = track
 
-	self._logger:debug(
-		string.format(
-			"added track %s (identification=%s, count=%d)",
-			Medusa.Entities.Track.displayId(track),
-			identification,
-			self._count
-		)
-	)
+	self._logger:debug(string.format("added track %s (identification=%s, count=%d)", Medusa.Entities.Track.displayId(track), identification, self._count))
+	return true
 end
 
 function Medusa.Services.TrackStore:get(trackId)
@@ -79,9 +78,7 @@ function Medusa.Services.TrackStore:remove(trackId)
 		end
 	end
 
-	self._logger:debug(
-		string.format("removed track %s (count=%d)", Medusa.Entities.Track.displayId(track), self._count)
-	)
+	self._logger:debug(string.format("removed track %s (count=%d)", Medusa.Entities.Track.displayId(track), self._count))
 	return track
 end
 
@@ -154,12 +151,5 @@ function Medusa.Services.TrackStore:updateIdentification(trackId, newIdentificat
 	self._byIdentification[newIdentification][trackId] = track
 
 	track.TrackIdentification = newIdentification
-	self._logger:debug(
-		string.format(
-			"re-identified track %s: %s -> %s",
-			Medusa.Entities.Track.displayId(track),
-			oldIdentification,
-			newIdentification
-		)
-	)
+	self._logger:debug(string.format("re-identified track %s: %s -> %s", Medusa.Entities.Track.displayId(track), oldIdentification, newIdentification))
 end
