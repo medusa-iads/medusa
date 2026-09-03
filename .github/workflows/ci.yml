@@ -136,7 +136,7 @@ jobs:
       - name: Lint thin
         id: lint-thin
         continue-on-error: true
-        uses: YoloWingPixie/selene-lua-linter-action@24ecf180fd5bb4d3b40b4296de61b32179cb79d1 # v1
+        uses: YoloWingPixie/selene-lua-linter-action@358c2e3e46ac566a5e988bc6b37f21e2ecc01f67 # v1
         with:
           config-path: "selene.toml"
           lint-path: "${{ env.ARTIFACT_DIR }}/${{ env.ARTIFACT_NAME }}"
@@ -147,7 +147,7 @@ jobs:
       - name: Lint bundled
         id: lint-bundled
         continue-on-error: true
-        uses: YoloWingPixie/selene-lua-linter-action@24ecf180fd5bb4d3b40b4296de61b32179cb79d1 # v1
+        uses: YoloWingPixie/selene-lua-linter-action@358c2e3e46ac566a5e988bc6b37f21e2ecc01f67 # v1
         with:
           config-path: "selene-bundled.toml"
           lint-path: "${{ env.ARTIFACT_DIR }}/${{ env.BUNDLED_ARTIFACT_NAME }}"
