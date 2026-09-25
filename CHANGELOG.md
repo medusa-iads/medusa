@@ -12,12 +12,16 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Changed
 
 ### Fixed
-- Normalize DCS event unit IDs so shots are recorded
 
 ### Removed
 
 ### Deprecated
 
+
+## [1.6.0] - 2026-09-24
+
+### Fixed
+- Normalize DCS event unit IDs so shots are recorded
 
 ## [1.5.0] - 2026-08-21
 ### Added
@@ -176,7 +180,8 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 ### Added
 	- Initial Release
 
-[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/medusa-iads/medusa/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/medusa-iads/medusa/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/medusa-iads/medusa/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/medusa-iads/medusa/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/medusa-iads/medusa/compare/v1.3.0...v1.3.1
