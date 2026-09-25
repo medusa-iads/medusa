@@ -573,8 +573,8 @@ end
 
 --- Returns true if enough time has passed since last shot/assignment to justify reassessment.
 local function shouldReassess(battery, now, threshold)
-	local lastActivity = battery.LastShotTime or battery.LastAssignmentChangeTime
-	if not lastActivity then
+	local lastActivity = math.max(battery.LastShotTime or 0, battery.LastAssignmentChangeTime or 0)
+	if lastActivity == 0 then
 		return true
 	end
 	return (now - lastActivity) >= threshold

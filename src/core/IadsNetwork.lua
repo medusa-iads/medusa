@@ -530,8 +530,8 @@ function Medusa.Core.IadsNetwork:_subscribeWorldEvents()
 		if not ok or coal ~= cId then
 			return false
 		end
-		local idOk, uid = pcall(event.initiator.getID, event.initiator)
-		if idOk and uid then
+		local uid = GetUnitID(event.initiator)
+		if uid then
 			event._unitId = uid
 		end
 		return true
@@ -1060,6 +1060,7 @@ end
 function Medusa.Core.IadsNetwork:_handleShot(unitId, weaponTypeName)
 	local battery, unit = self._assetIndex:batteryRepository():getByUnitId(unitId)
 	if not battery then
+		self._logger:debug(string.format("shot ignored: no battery for unitId=%s", tostring(unitId)))
 		return
 	end
 	local isManpad = battery.Role == Medusa.Constants.BatteryRole.MANPAD
